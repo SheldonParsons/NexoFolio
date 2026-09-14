@@ -1,0 +1,620 @@
+{
+  "scope": "One user; read-only business calls; two token acquisitions. No credentials or personal values persisted.",
+  "first_pass": {
+    "base_url": "https://ztpm.gree.com:8888/api.php/v1",
+    "login_token_received": true,
+    "identity_check": {
+      "account_matches_input": false,
+      "has_id": true,
+      "admin": false,
+      "deleted": "0"
+    },
+    "pagination_check": {
+      "page1_count": 2,
+      "page2_count": 2,
+      "overlap_count": 0,
+      "same_ids": false
+    },
+    "default_project_count": 10,
+    "default_status_counts": {
+      "closed": 6,
+      "doing": 2,
+      "wait": 2
+    },
+    "project_detail_access_fields": {
+      "acl": "private",
+      "auth": "extend"
+    },
+    "calls": [
+      {
+        "label": "login",
+        "method": "POST",
+        "path": "/tokens",
+        "params": null,
+        "http_status": 201,
+        "content_type": "application/json",
+        "elapsed_ms": 2662
+      },
+      {
+        "label": "/user",
+        "method": "GET",
+        "path": "/user",
+        "params": null,
+        "http_status": 200,
+        "content_type": "application/json",
+        "elapsed_ms": 320
+      },
+      {
+        "label": "projects_page_1",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 2
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 965
+      },
+      {
+        "label": "projects_page_2",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 2,
+          "limit": 2
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 2,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 453
+      },
+      {
+        "label": "projects_default_status",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 100
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 100,
+        "total": 10,
+        "elapsed_ms": 835
+      },
+      {
+        "label": "projects_status_all",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 100,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 100,
+        "total": 10,
+        "elapsed_ms": 689,
+        "returned_status_counts": {
+          "closed": 6,
+          "doing": 2,
+          "wait": 2
+        },
+        "same_ids_as_default": true
+      },
+      {
+        "label": "projects_status_doing",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 100,
+          "status": "doing"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 100,
+        "total": 2,
+        "elapsed_ms": 1556,
+        "returned_status_counts": {
+          "doing": 2
+        },
+        "same_ids_as_default": false
+      },
+      {
+        "label": "visible_project_detail",
+        "method": "GET",
+        "path": "/projects/<visible_project_id>",
+        "params": null,
+        "http_status": 200,
+        "content_type": "application/json",
+        "elapsed_ms": 2826
+      },
+      {
+        "label": "/products",
+        "method": "GET",
+        "path": "/products",
+        "params": {
+          "page": 1,
+          "limit": 2
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 2,
+        "total": 20,
+        "elapsed_ms": 983
+      },
+      {
+        "label": "report_module_filter",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "product": "<visible_product_id>",
+          "status": "doing",
+          "page": 1,
+          "limit": 2
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 2,
+        "total": 2,
+        "elapsed_ms": 484
+      }
+    ]
+  },
+  "followup": {
+    "base_url": "https://ztpm.gree.com:8888/api.php/v1",
+    "identity_normalization": {
+      "exact_match": false,
+      "casefold_match": true,
+      "trim_casefold_match": true,
+      "returned_account_type": "str"
+    },
+    "view_shape": {
+      "type": "str",
+      "comma_separated_numeric_ids": true,
+      "project_id_count": 10,
+      "profile_privilege_keys": [
+        "superReviewer",
+        "view"
+      ]
+    },
+    "full_pagination": {
+      "pages": [
+        {
+          "page": 1,
+          "count": 2,
+          "total": 10
+        },
+        {
+          "page": 2,
+          "count": 2,
+          "total": 10
+        },
+        {
+          "page": 3,
+          "count": 2,
+          "total": 10
+        },
+        {
+          "page": 4,
+          "count": 2,
+          "total": 10
+        },
+        {
+          "page": 5,
+          "count": 2,
+          "total": 10
+        }
+      ],
+      "items": 10,
+      "unique_items": 10,
+      "duplicates": 0,
+      "view_ids_equal_list_ids": true,
+      "view_only_count": 0,
+      "list_only_count": 0
+    },
+    "project_access_summary": {
+      "acl_counts": {
+        "private": 5,
+        "program": 1,
+        "open": 4
+      },
+      "auth_counts": {
+        "extend": 10
+      },
+      "field_types": {
+        "id": [
+          "int"
+        ],
+        "status": [
+          "str"
+        ],
+        "parent": [
+          "int"
+        ],
+        "acl": [
+          "str"
+        ],
+        "auth": [
+          "str"
+        ],
+        "whitelist": [
+          "list"
+        ],
+        "PM": [
+          "str"
+        ],
+        "openedBy": [
+          "NoneType",
+          "dict"
+        ],
+        "lastEditedBy": [
+          "dict"
+        ]
+      },
+      "max_whitelist_count": 1264,
+      "list_permission_keys": []
+    },
+    "calls": [
+      {
+        "label": "followup_login",
+        "method": "POST",
+        "path": "/tokens",
+        "params": null,
+        "http_status": 201,
+        "content_type": "application/json",
+        "elapsed_ms": 3058
+      },
+      {
+        "label": "followup_user",
+        "method": "GET",
+        "path": "/user",
+        "params": null,
+        "http_status": 200,
+        "content_type": "application/json",
+        "elapsed_ms": 334
+      },
+      {
+        "label": "full_pagination_1",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 2,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 1,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 973
+      },
+      {
+        "label": "full_pagination_2",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 2,
+          "limit": 2,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 2,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 489
+      },
+      {
+        "label": "full_pagination_3",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 3,
+          "limit": 2,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 3,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 447
+      },
+      {
+        "label": "full_pagination_4",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 4,
+          "limit": 2,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 4,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 355
+      },
+      {
+        "label": "full_pagination_5",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 5,
+          "limit": 2,
+          "status": "all"
+        },
+        "http_status": 200,
+        "content_type": "application/json",
+        "page": 5,
+        "limit": 2,
+        "total": 10,
+        "elapsed_ms": 397
+      },
+      {
+        "label": "anonymous_user",
+        "method": "GET",
+        "path": "/user",
+        "params": null,
+        "http_status": 401,
+        "content_type": "application/json",
+        "elapsed_ms": 268
+      },
+      {
+        "label": "anonymous_projects",
+        "method": "GET",
+        "path": "/projects",
+        "params": {
+          "page": 1,
+          "limit": 2
+        },
+        "http_status": 401,
+        "content_type": "application/json",
+        "elapsed_ms": 281
+      }
+    ]
+  },
+  "response_shapes": {
+    "token": {
+      "token": "str"
+    },
+    "user": {
+      "profile": {
+        "id": "int",
+        "company": "int",
+        "dept": "int",
+        "account": "str",
+        "type": "str",
+        "role": {
+          "code": "str",
+          "name": "str"
+        },
+        "realname": "str",
+        "superior": "str",
+        "pinyin": "str",
+        "nickname": "str",
+        "commiter": "str",
+        "avatar": "str",
+        "birthday": "NoneType",
+        "gender": "str",
+        "email": "str",
+        "skype": "str",
+        "qq": "str",
+        "yahoo": "str",
+        "gtalk": "str",
+        "wangwang": "str",
+        "mobile": "str",
+        "phone": "str",
+        "weixin": "str",
+        "dingding": "str",
+        "slack": "str",
+        "whatsapp": "str",
+        "address": "str",
+        "zipcode": "str",
+        "nature": "str",
+        "analysis": "str",
+        "strategy": "str",
+        "join": "NoneType",
+        "visits": "int",
+        "visions": "str",
+        "ip": "str",
+        "last": "str",
+        "fails": "int",
+        "locked": "NoneType",
+        "feedback": "str",
+        "ranzhi": "str",
+        "ldap": "str",
+        "score": "int",
+        "scoreLevel": "int",
+        "resetToken": "str",
+        "deleted": "str",
+        "status": "str",
+        "clientStatus": "str",
+        "clientLang": "str",
+        "admin": "bool",
+        "superReviewer": "bool",
+        "view": {
+          "id": "int",
+          "account": "str",
+          "programs": "str",
+          "projects": "str",
+          "products": "str",
+          "sprints": "str"
+        }
+      }
+    },
+    "project_list": {
+      "page": "int",
+      "total": "int",
+      "limit": "int",
+      "projects": {
+        "type": "array",
+        "length": 2,
+        "item": {
+          "id": "int",
+          "project": "int",
+          "isTpl": "int",
+          "charter": "int",
+          "model": "str",
+          "type": "str",
+          "category": "str",
+          "product": "str",
+          "lifetime": "str",
+          "budget": "str",
+          "budgetUnit": "str",
+          "attribute": "str",
+          "percent": "int",
+          "milestone": "str",
+          "output": "str",
+          "auth": "str",
+          "storyType": "str",
+          "parent": "int",
+          "path": "str",
+          "grade": "int",
+          "name": "str",
+          "code": "str",
+          "hasProduct": "int",
+          "workflowGroup": "int",
+          "begin": "str",
+          "end": "str",
+          "firstEnd": "str",
+          "realBegan": "NoneType",
+          "realEnd": "NoneType",
+          "days": "int",
+          "status": "str",
+          "subStatus": "str",
+          "statge": "str",
+          "pri": "str",
+          "desc": "str",
+          "version": "int",
+          "parentVersion": "int",
+          "planDuration": "int",
+          "realDuration": "int",
+          "progress": "str",
+          "estimate": "str",
+          "left": "str",
+          "consumed": "float",
+          "teamCount": "int",
+          "openedBy": "NoneType",
+          "openedDate": "str",
+          "openedVersion": "str",
+          "lastEditedBy": "dict",
+          "lastEditedDate": "str",
+          "closedBy": "NoneType",
+          "closedDate": "NoneType",
+          "canceledBy": "NoneType",
+          "canceledDate": "NoneType",
+          "suspendedDate": "str",
+          "PO": "str",
+          "PM": "str",
+          "QD": "str",
+          "RD": "str",
+          "team": "str",
+          "acl": "str",
+          "whitelist": "list",
+          "tplAcl": "str",
+          "tplWhiteList": "str",
+          "order": "int",
+          "vision": "str"
+        }
+      }
+    },
+    "project_detail": {
+      "id": "int",
+      "project": "int",
+      "isTpl": "int",
+      "charter": "int",
+      "model": "str",
+      "type": "str",
+      "category": "str",
+      "product": "str",
+      "lifetime": "str",
+      "budget": "str",
+      "budgetUnit": "str",
+      "attribute": "str",
+      "percent": "int",
+      "milestone": "str",
+      "output": "str",
+      "auth": "str",
+      "storyType": "str",
+      "parent": "int",
+      "path": "str",
+      "grade": "int",
+      "name": "str",
+      "code": "str",
+      "hasProduct": "int",
+      "workflowGroup": "int",
+      "begin": "str",
+      "end": "str",
+      "firstEnd": "str",
+      "realBegan": "NoneType",
+      "realEnd": "NoneType",
+      "days": "int",
+      "status": "str",
+      "subStatus": "str",
+      "statge": "str",
+      "pri": "str",
+      "desc": "str",
+      "version": "int",
+      "parentVersion": "int",
+      "planDuration": "int",
+      "realDuration": "int",
+      "progress": "str",
+      "estimate": "int",
+      "left": "int",
+      "consumed": "float",
+      "teamCount": "int",
+      "openedBy": "NoneType",
+      "openedDate": "str",
+      "openedVersion": "str",
+      "lastEditedBy": {
+        "id": "int",
+        "account": "str",
+        "avatar": "str",
+        "realname": "str"
+      },
+      "lastEditedDate": "str",
+      "closedBy": "NoneType",
+      "closedDate": "NoneType",
+      "canceledBy": "NoneType",
+      "canceledDate": "NoneType",
+      "suspendedDate": "str",
+      "PO": "str",
+      "PM": "NoneType",
+      "QD": "str",
+      "RD": "str",
+      "team": "str",
+      "acl": "str",
+      "whitelist": {
+        "type": "array",
+        "length": 1264,
+        "item": {
+          "id": "int",
+          "account": "str",
+          "avatar": "str",
+          "realname": "str"
+        }
+      },
+      "tplAcl": "str",
+      "tplWhiteList": "str",
+      "order": "int",
+      "vision": "str"
+    }
+  }
+}

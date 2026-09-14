@@ -1,0 +1,67 @@
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17-bookworm}
+    environment:
+      POSTGRES_USER: nexofolio
+      POSTGRES_DB: nexofolio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the environment file}
+    ports:
+      - "127.0.0.1:${NEXOFOLIO_DB_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexofolio -d nexofolio"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 15s
+
+  api:
+    image: nexofolio-backend:foundation
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      args:
+        RUST_IMAGE: ${RUST_IMAGE:-rust:1.94.0-bookworm}
+        RUNTIME_IMAGE: ${RUNTIME_IMAGE:-debian:bookworm-slim}
+    environment: &backend_env
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the environment file}
+      NEXOFOLIO_BIND_ADDR: 0.0.0.0:8080
+      NEXOFOLIO_LOG: ${NEXOFOLIO_LOG:-info}
+      NEXOFOLIO_ZENTAO_BASE_URL: ${NEXOFOLIO_ZENTAO_BASE_URL:-}
+      NEXOFOLIO_SESSION_KEY: ${NEXOFOLIO_SESSION_KEY:-}
+      NEXOFOLIO_EMERGENCY_PASSWORD_HASH: ${NEXOFOLIO_EMERGENCY_PASSWORD_HASH:-}
+      NEXOFOLIO_MCP_ALLOWED_HOSTS: ${NEXOFOLIO_MCP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      NEXOFOLIO_MCP_ALLOWED_ORIGINS: ${NEXOFOLIO_MCP_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+    ports:
+      - "127.0.0.1:${NEXOFOLIO_HTTP_PORT:-18080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/health/ready"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 10s
+
+  worker:
+    image: nexofolio-backend:foundation
+    command: ["nexofolio-worker"]
+    environment: *backend_env
+    depends_on:
+      db:
+        condition: service_healthy
+    stop_grace_period: 10s
+
+  migrate:
+    image: nexofolio-backend:foundation
+    profiles: ["tools"]
+    command: ["nexofolio-admin", "migrate"]
+    environment: *backend_env
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

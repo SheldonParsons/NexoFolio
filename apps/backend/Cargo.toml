@@ -1,0 +1,66 @@
+[package]
+name = "nexofolio-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "nexofolio-api"
+path = "src/bin/api.rs"
+
+[[bin]]
+name = "nexofolio-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "nexofolio-admin"
+path = "src/bin/admin.rs"
+
+[[test]]
+name = "architecture"
+path = "../../tests/architecture/dependencies.rs"
+
+[[test]]
+name = "http_mcp"
+path = "../../tests/integration/http_mcp.rs"
+
+[[test]]
+name = "postgres"
+path = "../../tests/integration/postgres.rs"
+
+[[test]]
+name = "lifecycle"
+path = "../../tests/integration/lifecycle.rs"
+
+[[test]]
+name = "access_flow"
+path = "../../tests/integration/access_flow.rs"
+
+[dependencies]
+nexofolio-contracts.workspace = true
+nexofolio-access.workspace = true
+nexofolio-application.workspace = true
+nexofolio-infrastructure.workspace = true
+axum.workspace = true
+clap.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+sqlx.workspace = true
+argon2 = "0.5"
+async-trait.workspace = true
+http-body-util.workspace = true
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
+
+[lints]
+workspace = true

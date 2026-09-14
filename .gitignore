@@ -1,0 +1,45 @@
+# Rust build output (Cargo.lock is intentionally committed for this application).
+target/
+**/*.rs.bk
+
+# Local configuration and credentials; keep templates reviewable.
+.env
+.env.*
+!.env.example
+/deploy/.env
+/secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Runtime data, database backups and generated experiment results.
+/data/
+/backups/
+/tmp/
+/experiments/results/
+*.dump
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# Test/coverage artifacts and helper-script caches.
+/coverage/
+/test-results/
+*.profraw
+*.profdata
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Editor/OS scratch files and runtime logs.
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.log
+.DS_Store
+Thumbs.db
