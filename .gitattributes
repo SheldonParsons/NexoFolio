@@ -1,0 +1,6 @@
+# Generated contract distributions are verified against source by CI.
+contracts/capture/*.schema.json linguist-generated=true
+contracts/catalog-preview/*.schema.json linguist-generated=true
+contracts/maintenance/*.schema.json linguist-generated=true
+contracts/**/types.generated.ts linguist-generated=true
+contracts/**/manifest.json linguist-generated=true

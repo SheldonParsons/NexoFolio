@@ -5,3 +5,13 @@ target
 deploy/.env
 **/*.log
 .DS_Store
+
+# Local captures, backups, audit attachments and credentials are never build inputs.
+data
+backups
+tmp
+secrets
+experiments/results
+docs
+.venv
+**/__pycache__

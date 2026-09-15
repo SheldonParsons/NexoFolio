@@ -1,0 +1,31 @@
+{
+  "url": "http://127.0.0.1:5173/projects/9568a877-eb48-42ee-acbc-f9217f052386/catalog-preview",
+  "backend_image": "sha256:15ad8b911c4fbaf91f60d0da9fcd482cff7ec78532cae0946b49b30371be267c",
+  "backend_regular_tests": 36,
+  "backend_database_tests": 6,
+  "frontend_targeted_tests": 15,
+  "frontend_build": "passed (frontend task)",
+  "browser_verified": [
+    "login and project navigation",
+    "interface page candidate link",
+    "9 directories and 31 snapshot interfaces",
+    "product directory filters to 6 interfaces",
+    "selected getCategoryTree shows classification reason",
+    "UAT snapshot JSON expands and renders (screenshot)",
+    "candidate not yet effective notice"
+  ],
+  "permissions_verified": [
+    "missing session 401",
+    "denied project 403",
+    "cross-project task 404",
+    "revoked access 403",
+    "unsynced grants 503",
+    "invalid pagination/status/query 400",
+    "POST 405"
+  ],
+  "contract_version": "1.1.0",
+  "read_only": true,
+  "publication_added": false,
+  "screenshot": "experiments/results/catalog-preview-20260915/frontend-preview.png",
+  "commit_or_push": false
+}

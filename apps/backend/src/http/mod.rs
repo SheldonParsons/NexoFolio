@@ -1,4 +1,12 @@
 pub mod access;
+pub mod capture;
+pub mod catalog_preview;
+pub mod documents;
+pub mod downloads;
+pub mod ingestion;
+pub mod maintenance;
+pub mod official_catalog;
+pub mod services;
 use crate::{
     mcp::{FoundationMcp, require_token},
     wiring::Config,
@@ -69,9 +77,40 @@ pub fn router_with_access(
     database: Arc<dyn DatabaseProbe>,
     verifier: Arc<dyn McpTokenVerifier>,
     shutdown: CancellationToken,
-    access: Option<access::AccessHttp>,
+    access: Option<services::BackendServices>,
 ) -> Router {
-    let access_router = access.map(access::routes).unwrap_or_default();
+    let ingestion_router = access
+        .as_ref()
+        .and_then(|a| a.ingestion.clone())
+        .map(ingestion::routes)
+        .unwrap_or_default();
+    let document_router = access
+        .as_ref()
+        .and_then(|a| a.documents.clone())
+        .map(documents::routes)
+        .unwrap_or_default();
+    let catalog_router = access
+        .as_ref()
+        .and_then(|a| a.catalog_previews.clone())
+        .map(catalog_preview::routes)
+        .unwrap_or_default();
+    let official_router = access
+        .as_ref()
+        .and_then(|a| a.official_catalog.clone())
+        .map(official_catalog::routes)
+        .unwrap_or_default();
+    let capture_router = access
+        .as_ref()
+        .and_then(|a| a.ingestion.as_ref())
+        .and_then(|i| i.capture.clone())
+        .map(capture::routes)
+        .unwrap_or_default();
+    let maintenance_router = access
+        .as_ref()
+        .and_then(|a| a.maintenance.clone())
+        .map(maintenance::routes)
+        .unwrap_or_default();
+    let access_router = access.map(|s| access::routes(s.access)).unwrap_or_default();
     let transport = StreamableHttpService::new(
         || Ok(FoundationMcp),
         Arc::new(LocalSessionManager::default()),
@@ -87,7 +126,9 @@ pub fn router_with_access(
         .nest_service("/mcp", transport)
         .route_layer(middleware::from_fn_with_state(verifier, require_token));
     Router::new().route("/health/live", get(live)).route("/health/ready", get(ready))
-        .with_state(HealthState { database, timeout: config.database_timeout }).merge(mcp).merge(access_router)
+        .with_state(HealthState { database, timeout: config.database_timeout }).merge(mcp).merge(access_router).merge(ingestion_router).merge(document_router).merge(catalog_router).merge(official_router).merge(capture_router)
+        .merge(maintenance_router)
+        .merge(downloads::routes())
         .layer(CatchPanicLayer::new())
         .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, config.request_timeout))
         .layer(TraceLayer::new_for_http().make_span_with(|request: &Request| {

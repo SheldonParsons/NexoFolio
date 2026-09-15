@@ -17,11 +17,29 @@ jobs:
           --health-interval 3s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - run: rustup toolchain install 1.94.0 --profile minimal --component rustfmt --component clippy
+      - run: python3 scripts/ingestion_contract.py --check --base-ref "$CONTRACT_BASE_REF"
+        env:
+          CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: python3 scripts/document_contract.py --check --base-ref "$CONTRACT_BASE_REF"
+        env:
+          CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: python3 scripts/catalog_preview_contract.py --check --base-ref "$CONTRACT_BASE_REF"
+        env:
+          CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: python3 scripts/capture_contract.py --check --base-ref "$CONTRACT_BASE_REF"
+        env:
+          CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+      - run: python3 scripts/maintenance_contract.py --check --base-ref "$CONTRACT_BASE_REF"
+        env:
+          CONTRACT_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
       - run: cargo fmt --all --check
+      - run: python3 scripts/test_ingestion_contract.py
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - run: cargo test -p nexofolio-backend --test postgres --test access_flow --locked -- --ignored
+      - run: cargo test -p nexofolio-backend --test postgres --test access_flow --test ingestion --test processing --test catalog_preview --test capture_evidence --locked -- --ignored
         env:
           TEST_DATABASE_URL: postgres://nexofolio:isolated-ci-only@127.0.0.1:5432/nexofolio
       - run: docker build -f deploy/Dockerfile -t nexofolio-backend:foundation .

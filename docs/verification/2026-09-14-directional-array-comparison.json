@@ -1,0 +1,48 @@
+{
+  "scope": "directional empty-array comparison",
+  "workspace_tests": 31,
+  "database_tests": 5,
+  "python_contract_tests": 2,
+  "fmt": "passed",
+  "clippy": "passed",
+  "cases": [
+    "populated to empty ignored without head downgrade",
+    "empty to populated forwarded",
+    "empty sibling cannot hide new fields",
+    "existing receipt replays unchanged",
+    "legacy current head upgrades lazily",
+    "queued empty samples link unchanged without baseline overwrite",
+    "extraction limit unknown cannot act as empty-array evidence"
+  ],
+  "read_only_existing_difference_audit": {
+    "covered_by_current_definition": 1,
+    "existing_differences": 1,
+    "historical_status_modified": false,
+    "read_only": true
+  },
+  "deployment": {
+    "local_url": "http://127.0.0.1:18080",
+    "image_id": "sha256:e70997571ca6bcbf71b1af429e867001c71d8866c6ada72740d5e19d6dbea24a",
+    "health": {
+      "live": 200,
+      "ready": 200
+    },
+    "database": {
+      "projection_column": true,
+      "migration_applied": true,
+      "differences": 1
+    },
+    "services": {
+      "api": {
+        "state": "running",
+        "restart_count": 0
+      },
+      "worker": {
+        "state": "running",
+        "restart_count": 0
+      }
+    },
+    "audit_before_after_equal": true,
+    "backup": "backups/before-directional-20260914-225245.dump"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "OfficialEnvironment": {
+      "properties": {
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "environment_name": {
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "environment_id",
+        "environment_name",
+        "revision_id"
+      ],
+      "type": "object"
+    },
+    "OfficialInterface": {
+      "properties": {
+        "directory_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "environments": {
+          "items": {
+            "$ref": "#/$defs/OfficialEnvironment"
+          },
+          "type": "array"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "method",
+        "path",
+        "directory_id",
+        "environments"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "generation": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/OfficialInterface"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "page": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "total": {
+      "format": "int64",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "page",
+    "limit",
+    "total",
+    "generation"
+  ],
+  "title": "OfficialInterfacePage",
+  "type": "object"
+}

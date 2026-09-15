@@ -1,0 +1,114 @@
+{
+  "$defs": {
+    "InterfaceMergeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "member_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path_template": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "representative_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "representative_id",
+        "member_ids",
+        "path_template",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "PreviewAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "directory_id": {
+          "description": "null explicitly leaves this interface unclassified.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "PreviewNode": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "assignments": {
+      "items": {
+        "$ref": "#/$defs/PreviewAssignment"
+      },
+      "type": "array"
+    },
+    "merge_groups": {
+      "items": {
+        "$ref": "#/$defs/InterfaceMergeGroup"
+      },
+      "type": "array"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/PreviewNode"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "nodes",
+    "assignments"
+  ],
+  "title": "DirectoryCandidate",
+  "type": "object"
+}

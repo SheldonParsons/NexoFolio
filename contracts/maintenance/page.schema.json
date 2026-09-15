@@ -1,0 +1,155 @@
+{
+  "$defs": {
+    "MaintenanceStatus": {
+      "enum": [
+        "pending",
+        "running",
+        "ready",
+        "incomplete",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "MaintenanceSummary": {
+      "properties": {
+        "base_generation": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "candidate_available": {
+          "type": "boolean"
+        },
+        "coverage": {
+          "$ref": "#/$defs/ReviewCoverage"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "currently_published": {
+          "type": "boolean"
+        },
+        "error_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "model_calls": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "phase": {
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "read_count": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "snapshot_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MaintenanceStatus"
+        }
+      },
+      "required": [
+        "id",
+        "project_id",
+        "created_at",
+        "status",
+        "phase",
+        "snapshot_id",
+        "base_generation",
+        "coverage",
+        "model_calls",
+        "read_count",
+        "candidate_available",
+        "currently_published"
+      ],
+      "type": "object"
+    },
+    "ReviewCoverage": {
+      "properties": {
+        "complete": {
+          "type": "boolean"
+        },
+        "completed_segments": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reviewed_fields": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_fields": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_segments": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_interfaces",
+        "total_fields",
+        "reviewed_fields",
+        "total_segments",
+        "completed_segments",
+        "complete"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/MaintenanceSummary"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "page": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "total": {
+      "format": "int64",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "total",
+    "page",
+    "limit"
+  ],
+  "title": "MaintenancePage",
+  "type": "object"
+}

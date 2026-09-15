@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "PublishedCatalogVersion": {
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "current": {
+          "type": "boolean"
+        },
+        "source_run_id": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_task_id": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version_id",
+        "created_at",
+        "current"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "generation": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/PublishedCatalogVersion"
+      },
+      "type": "array"
+    },
+    "limit": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "page": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "total": {
+      "format": "int64",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "items",
+    "page",
+    "limit",
+    "total",
+    "generation"
+  ],
+  "title": "CatalogVersionPage",
+  "type": "object"
+}

@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "CaptureAssetsCapability": {
+      "properties": {
+        "max_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "media_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "max_bytes",
+        "media_types"
+      ],
+      "type": "object"
+    },
+    "CaptureFlush": {
+      "properties": {
+        "max_batch_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_records": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_wait_ms": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_records",
+        "max_batch_bytes",
+        "max_wait_ms"
+      ],
+      "type": "object"
+    },
+    "CaptureLimits": {
+      "properties": {
+        "max_batch_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_concurrent_batches": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_record_bytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_records": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_records",
+        "max_batch_bytes",
+        "max_record_bytes",
+        "max_concurrent_batches"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "assets": {
+      "$ref": "#/$defs/CaptureAssetsCapability"
+    },
+    "content_encodings": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "flush_defaults": {
+      "$ref": "#/$defs/CaptureFlush"
+    },
+    "limits": {
+      "$ref": "#/$defs/CaptureLimits"
+    },
+    "payload_versions": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "type": "object"
+    },
+    "schema_versions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_versions",
+    "payload_versions",
+    "limits",
+    "flush_defaults",
+    "content_encodings",
+    "assets"
+  ],
+  "title": "CaptureCapabilities",
+  "type": "object"
+}

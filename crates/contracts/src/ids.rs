@@ -30,6 +30,7 @@ macro_rules! identifier {
 
 identifier!(
     ProjectId,
+    EnvironmentId,
     UserId,
     InterfaceId,
     RevisionId,

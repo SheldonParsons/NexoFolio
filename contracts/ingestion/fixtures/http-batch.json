@@ -1,0 +1,73 @@
+{
+  "schema_version": "2",
+  "batch_id": "10000000-0000-4000-8000-000000000001",
+  "project_id": "20000000-0000-4000-8000-000000000001",
+  "source": {
+    "type": "chrome_extension",
+    "instance_id": "30000000-0000-4000-8000-000000000001"
+  },
+  "records": [
+    {
+      "record_id": "40000000-0000-4000-8000-000000000001",
+      "kind": "http_exchange",
+      "payload_version": "1",
+      "captured_at": "2026-09-14T10:00:00Z",
+      "payload": {
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.test/orders?page=1",
+          "url_truncated": false,
+          "headers": {
+            "state": "page-visible",
+            "entries": [
+              [
+                "Accept",
+                "application/json"
+              ],
+              [
+                "Authorization",
+                "Bearer synthetic-business-value"
+              ]
+            ]
+          },
+          "body": {
+            "state": "none",
+            "encoding": "none",
+            "content": "",
+            "bytes": 0
+          }
+        },
+        "response": {
+          "state": "complete",
+          "status": 200,
+          "url": "https://api.example.test/orders?page=1",
+          "headers": {
+            "state": "page-visible",
+            "entries": [
+              [
+                "Content-Type",
+                "application/json"
+              ],
+              [
+                "Set-Cookie",
+                "synthetic-cookie=example"
+              ]
+            ]
+          },
+          "body": {
+            "state": "complete",
+            "encoding": "text",
+            "content": "{\"items\":[{\"id\":1,\"name\":\"example\"}]}",
+            "bytes": 37
+          }
+        },
+        "source_page": "https://portal.example.test/orders",
+        "transport": "fetch",
+        "frame": "page"
+      }
+    }
+  ],
+  "environment": {
+    "name": "开发环境"
+  }
+}

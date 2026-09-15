@@ -69,7 +69,11 @@ impl PostgresAccess {
         } else {
             let token = self.crypto.generate();
             let ciphertext = self.crypto.encrypt(&token, &user.id.to_string())?;
-            let row=sqlx::query("INSERT INTO internal_sessions(user_id,token_hash,token_encrypted,issued_at,expires_at) VALUES($1,$2,$3,clock_timestamp(),(clock_timestamp() AT TIME ZONE 'UTC' + interval '3 months') AT TIME ZONE 'UTC') ON CONFLICT(user_id) DO UPDATE SET token_hash=excluded.token_hash,token_encrypted=excluded.token_encrypted,issued_at=excluded.issued_at,expires_at=excluded.expires_at,revoked_at=NULL RETURNING expires_at")
+            let row=sqlx::query(r#"INSERT INTO internal_sessions(user_id,token_hash,token_encrypted,issued_at,expires_at)
+            VALUES($1,$2,$3,clock_timestamp(),(clock_timestamp() AT TIME ZONE 'UTC' + interval '3 months') AT TIME ZONE 'UTC')
+            ON CONFLICT(user_id) DO UPDATE
+            SET token_hash=excluded.token_hash,token_encrypted=excluded.token_encrypted,issued_at=excluded.issued_at,expires_at=excluded.expires_at,revoked_at=NULL
+            RETURNING expires_at"#)
             .bind(uid(user.id)).bind(SessionCrypto::hash(&token)).bind(ciphertext).fetch_one(&mut **tx).await.map_err(db_error)?;
             (
                 token,
@@ -94,9 +98,82 @@ impl PostgresAccess {
 }
 #[async_trait]
 impl PlatformAccess for PostgresAccess {
+    async fn list_environments(
+        &self,
+        p: &SessionPrincipal,
+        project: ProjectId,
+        page: u32,
+        limit: u32,
+    ) -> Result<EnvironmentPage> {
+        self.require_project(p, project).await?;
+        if page == 0 || page > 100000 || !(1..=100).contains(&limit) {
+            return Err(Error::InvalidInput {
+                message: "invalid pagination".into(),
+            });
+        }
+        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(db_error)?;
+        let total: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM environments WHERE project_id=$1")
+                .bind(pid(project))
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(db_error)?;
+        let rows=sqlx::query("SELECT id,name FROM environments WHERE project_id=$1 ORDER BY name,id LIMIT $2 OFFSET $3").bind(pid(project)).bind(i64::from(limit)).bind(i64::from((page-1)*limit)).fetch_all(&mut *tx).await.map_err(db_error)?;
+        let items = rows.iter().map(crate::environments::from_row).collect();
+        tx.commit().await.map_err(db_error)?;
+        Ok(EnvironmentPage {
+            items,
+            total: total as u64,
+            page,
+            limit,
+        })
+    }
+    async fn create_environment(
+        &self,
+        p: &SessionPrincipal,
+        project: ProjectId,
+        name: &str,
+    ) -> Result<nexofolio_contracts::Environment> {
+        self.require_project(p, project).await?;
+        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
+        lock_environment_access(&mut tx, p, project).await?;
+        let result = crate::environments::resolve(
+            &mut tx,
+            pid(project),
+            &nexofolio_contracts::EnvironmentRef::ByName(nexofolio_contracts::EnvironmentByName {
+                name: name.into(),
+            }),
+        )
+        .await?;
+        tx.commit().await.map_err(db_error)?;
+        Ok(result)
+    }
+    async fn rename_environment(
+        &self,
+        p: &SessionPrincipal,
+        project: ProjectId,
+        id: nexofolio_contracts::EnvironmentId,
+        name: &str,
+    ) -> Result<nexofolio_contracts::Environment> {
+        self.require_project(p, project).await?;
+        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
+        lock_environment_access(&mut tx, p, project).await?;
+        let result = crate::environments::rename(&mut tx, pid(project), id, name).await?;
+        tx.commit().await.map_err(db_error)?;
+        Ok(result)
+    }
+
     async fn normal_login(&self, i: &ExternalIdentity) -> Result<SessionLogin> {
         let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        let row=sqlx::query("INSERT INTO users(id,instance,external_id,account,display_name) VALUES($1,$2,$3,$4,$5) ON CONFLICT(instance,external_id) DO UPDATE SET account=excluded.account,display_name=excluded.display_name,last_login_at=clock_timestamp() RETURNING id,account,display_name,enabled")
+        let row=sqlx::query(r#"INSERT INTO users(id,instance,external_id,account,display_name)
+            VALUES($1,$2,$3,$4,$5)
+            ON CONFLICT(instance,external_id) DO UPDATE
+            SET account=excluded.account,display_name=excluded.display_name,last_login_at=clock_timestamp()
+            RETURNING id,account,display_name,enabled"#)
         .bind(Uuid::new_v4()).bind(&i.instance).bind(&i.external_id).bind(&i.account).bind(&i.display_name).fetch_one(&mut *tx).await.map_err(db_error)?;
         let result = self.session(&mut tx, profile(&row)?, "zentao").await?;
         tx.commit().await.map_err(db_error)?;
@@ -217,8 +294,26 @@ impl PlatformAccess for PostgresAccess {
             .fetch_one(&mut *tx)
             .await
             .map_err(db_error)?;
-        let rows=sqlx::query("SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1 FROM user_project_access a WHERE a.project_id=p.id AND a.user_id=u.id) AS allowed FROM projects p JOIN users u ON u.id=$1 AND u.instance=p.instance AND u.enabled WHERE p.instance=$2 ORDER BY p.id LIMIT $3 OFFSET $4")
-        .bind(uid(p.user_id)).bind(&p.instance).bind(i64::from(limit)).bind(i64::from((page-1)*limit)).fetch_all(&mut *tx).await.map_err(db_error)?;
+        let rows = sqlx::query(
+            r#"SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1
+            FROM user_project_access a
+            WHERE a.project_id=p.id
+            AND a.user_id=u.id) AS allowed
+            FROM projects p
+            JOIN users u ON u.id=$1
+            AND u.instance=p.instance
+            AND u.enabled
+            WHERE p.instance=$2
+            ORDER BY p.id
+            LIMIT $3 OFFSET $4"#,
+        )
+        .bind(uid(p.user_id))
+        .bind(&p.instance)
+        .bind(i64::from(limit))
+        .bind(i64::from((page - 1) * limit))
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(db_error)?;
         let items = rows.iter().map(card).collect::<Result<Vec<_>>>()?;
         tx.commit().await.map_err(db_error)?;
         Ok(ProjectPage {
@@ -229,8 +324,25 @@ impl PlatformAccess for PostgresAccess {
         })
     }
     async fn require_project(&self, p: &SessionPrincipal, id: ProjectId) -> Result<ProjectCard> {
-        let row=sqlx::query("SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1 FROM user_project_access a WHERE a.project_id=p.id AND a.user_id=u.id) AS allowed FROM projects p JOIN users u ON u.id=$1 AND u.instance=p.instance AND u.enabled WHERE p.instance=$2 AND p.id=$3")
-        .bind(uid(p.user_id)).bind(&p.instance).bind(pid(id)).fetch_optional(&self.database.pool).await.map_err(db_error)?.ok_or(Error::NotFound)?;
+        let row = sqlx::query(
+            r#"SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1
+            FROM user_project_access a
+            WHERE a.project_id=p.id
+            AND a.user_id=u.id) AS allowed
+            FROM projects p
+            JOIN users u ON u.id=$1
+            AND u.instance=p.instance
+            AND u.enabled
+            WHERE p.instance=$2
+            AND p.id=$3"#,
+        )
+        .bind(uid(p.user_id))
+        .bind(&p.instance)
+        .bind(pid(id))
+        .fetch_optional(&self.database.pool)
+        .await
+        .map_err(db_error)?
+        .ok_or(Error::NotFound)?;
         let item = card(&row)?;
         match item.access_state {
             AccessState::Allowed => Ok(item),
@@ -264,4 +376,26 @@ fn card(row: &PgRow) -> Result<ProjectCard> {
         access_state,
         reason_code,
     })
+}
+
+async fn lock_environment_access(
+    tx: &mut Transaction<'_, Pg>,
+    p: &SessionPrincipal,
+    project: ProjectId,
+) -> Result<()> {
+    let user =
+        sqlx::query("SELECT id FROM users WHERE id=$1 AND instance=$2 AND enabled FOR SHARE")
+            .bind(uid(p.user_id))
+            .bind(&p.instance)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_error)?;
+    if user.is_none() {
+        return Err(Error::Unauthenticated);
+    }
+    let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_project_access a JOIN projects p ON a.project_id=p.id WHERE a.user_id=$1 AND a.project_id=$2 AND p.instance=$3)").bind(uid(p.user_id)).bind(pid(project)).bind(&p.instance).fetch_one(&mut **tx).await.map_err(db_error)?;
+    if !allowed {
+        return Err(Error::Forbidden);
+    }
+    Ok(())
 }

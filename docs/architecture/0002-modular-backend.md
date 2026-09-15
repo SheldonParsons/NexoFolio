@@ -398,3 +398,34 @@ Token、密码、会话、后台任务和缓存不属于接口文档导出内容
 导出使用独立的导出数据模型和格式转换器，后续在 application 增加 export 流程，不让每个 HTTP/MCP 路由自行拼装文件。
 暂不新增普通 MCP 迁移/导出工具，也不实现文件生成；当前七个工具保持其职责。
 后续重点验证：稳定 ID、源/目标权限、冲突不覆盖、并发流量不重建、选择范围准确、引用完整，以及版本化数据包的导出/导入对照。
+
+
+## 14. 采集范围与环境的最终约定
+
+用户明确：插件先选择domain＋path范围，再绑定项目；选中项目后展示该项目环境列表，选择或创建环境后即确定A项目B环境。一个范围在同一项目内绑定一个环境，不额外配置接口服务标识。
+项目＋环境是去重范围，方法/路径标识具体接口，接口结构决定是否重复。本文早期提到的service_key作为外部分区已取消。
+后端当前v2上传契约删除service_key，v1仅为原始持久队列兼容保留字段，不再参与实际判重。原观测和回执保留，迁移只合并当前比较投影。
+
+## 手动目录候选路径
+
+管理 CLI → application::CatalogPreviewService → knowledge::CatalogPreviewStore / rebuild::DirectoryGenerator / rebuild::DirectoryReviewer。PostgresCatalogPreviews、ChatCatalogGenerator 在 infrastructure 实现端口。contracts/catalog-preview 的 Rust 类型与生成 Schema 固定跨模块输入输出；入站采集不依赖这条路径。
+
+本轮执行的是第一版全项目目录候选。原 CatalogBuilder/CatalogPublisher 等骨架接口仍是未来重构与发布的扩展边界，当前手动流程不调用发布器或自动触发器。ready 只表示候选结构检查通过，不代表业务分类正确或已经生效。
+
+
+### 持续证据与维护扩展
+
+`evidence`是独立核心包，只依赖contracts和纯处理库。`CaptureEvidenceRepository`/`BlobStore`隔离证据与卷；`CaptureGateway`在application组合接收和读取接口，HTTP不绑定PostgreSQL实现。`MaintenanceModel`在rebuild定义，应用层负责完整覆盖与回读流程，`MaintenanceStore`负责租约/检查点合同，基础设施实现SQL与模型请求。
+
+模型请求的构造、保存和发送分开：先把完整provider JSON（无鉴权头）存入`maintenance_calls`，再发请求，保存结果后续租；退出/超时不把未完成片段记作已读。每个字段分片使用稳定unit ID，完整覆盖后才可进入规划；所有引用都回到固定快照，不允许任意SQL/文件/网络读取或发布操作。
+
+旧目录发布与整体知识发布共享`project_catalogs.generation`，避免两种写入相互覆盖。整体发布还验证快照中的全部定义修订，目录与语义指针在同一事务切换。模型只产候选；生产发布策略为人工项目权限校验。原始观测、结构差异及未来裁决不会被语义操作改写。
+
+
+## 审计后的依赖落点
+
+`AccessHttp`仅持有登录/会话能力，`http/services.rs`负责传输组合，`wiring/services.rs`装配业务依赖。发布由应用层`KnowledgePublicationService`调用注入的策略，再进入`KnowledgeActivationStore`事务。项目事务权限校验共用`infrastructure/project_access.rs`。
+
+维护执行的分片上下文、执行阶段和原文回读分别组织在`application/maintenance_engine/`；字段引用、阅读覆盖、回读要求、候选动作和上下文提示分别在`rebuild/maintenance/`。证据纯判断在`evidence/relations.rs`，事实/关系/UI持久化在`infrastructure/evidence_processing/`。没有为拆文件新增crate或微服务。
+
+旧目录与统一维护保留不同的业务合同，共用有界模型HTTP传输。当前迁移策略是复用共同规则并冻结旧入口扩展，不在缺乏旧队列/调用方退役依据时删除兼容能力。

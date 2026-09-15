@@ -1,0 +1,20 @@
+{
+  "contract_version": "1.5.0",
+  "files": {
+    "activation.schema.json": "6faaf6a0bbf5c99df16c5ba9e45e4a7c7c444b41b9c951fcda5d9d641e8b1354",
+    "candidate.schema.json": "669efc97204876dc58279228dc97438e290f6dc863a57404bd10a467b331e1cd",
+    "checkpoints.schema.json": "480e2aeb70c5ae22b5c692bc02bc660095acebcaa4ff05c76c0ee5bb284dd41d",
+    "interface-knowledge.schema.json": "e5932bb27e975eae6796e48ebcfecf7b1561c4b17eca53820223407b4506449f",
+    "page.schema.json": "1a365cd7ca767b279806ba5ec6583c997c5a5d26c5f2c3c889952293b0a92050",
+    "plan.schema.json": "037fe6818673c05e7336359c6e9ec680207c383763cc7e1966cd32aac70eef80",
+    "publish.schema.json": "2f55daa3ad3f09e77b63f37d02461d8aa93a3547c2b67f9143fea99d4a665fd3",
+    "reply.schema.json": "76c1906c9569af77ff8b2b6b2519a9c3f4797b1fb3bd307d5b7bc5ac6ca1a750",
+    "restore.schema.json": "1991ccf9df27855d08a6787bcba7749f8a62b0106596342091ee37b029d78e00",
+    "run.schema.json": "b510a00693b361f9ca70340ed60602db67da9b8c4408b4cb7620560e15461e8c",
+    "snapshot.schema.json": "ea43a45d309ed237bcd22baf1ea3f6697e96778e585b0d14ca534a987da6aa63",
+    "start.schema.json": "d1613937133f6782d99a9deb5f99ba33419ddce7d487b512a64e6d583056471d",
+    "versions.schema.json": "1c75217a5f96bb3df42a414f4860568313bd1724f812469052aafc09c39e984e",
+    "types.generated.ts": "f7266c46bee72eea001e0c857bcb8977152a3223dd96851c6793ffcd6bf46f91",
+    "behavior.md": "e502cdb9f2164c803172cfc36c952b36eefd7fb411c7ac2d71bc2e79a502bb17"
+  }
+}

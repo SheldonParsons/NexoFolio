@@ -1,0 +1,777 @@
+{
+  "$defs": {
+    "AnnotationDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeEvidenceRef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/SemanticTarget"
+        },
+        "value": {
+          "$ref": "#/$defs/SemanticValue"
+        },
+        "verification": {
+          "$ref": "#/$defs/Verification"
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "value",
+        "evidence",
+        "verification",
+        "note"
+      ],
+      "type": "object"
+    },
+    "CatalogEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": true,
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "environment_name": {
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "environment_id",
+        "environment_name",
+        "revision_id",
+        "definition"
+      ],
+      "type": "object"
+    },
+    "CatalogInterface": {
+      "additionalProperties": false,
+      "properties": {
+        "environments": {
+          "items": {
+            "$ref": "#/$defs/CatalogEnvironment"
+          },
+          "type": "array"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "recognized_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "interface_id",
+        "method",
+        "path",
+        "environments"
+      ],
+      "type": "object"
+    },
+    "DefinitionBasis": {
+      "properties": {
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "environment_id",
+        "revision_id"
+      ],
+      "type": "object"
+    },
+    "DirectoryCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "assignments": {
+          "items": {
+            "$ref": "#/$defs/PreviewAssignment"
+          },
+          "type": "array"
+        },
+        "merge_groups": {
+          "items": {
+            "$ref": "#/$defs/InterfaceMergeGroup"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/PreviewNode"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "assignments"
+      ],
+      "type": "object"
+    },
+    "DirectoryCounts": {
+      "properties": {
+        "direct_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "directory_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "directory_id",
+        "direct_interfaces"
+      ],
+      "type": "object"
+    },
+    "EnumEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/UiValueState"
+        },
+        "value": true
+      },
+      "required": [
+        "state",
+        "value"
+      ],
+      "type": "object"
+    },
+    "EvidenceFact": {
+      "properties": {
+        "data": true,
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "first_seen": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "last_seen": {
+          "type": "string"
+        },
+        "observations": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "samples": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "subject": true
+      },
+      "required": [
+        "id",
+        "project_id",
+        "environment_id",
+        "kind",
+        "subject",
+        "data",
+        "observations",
+        "first_seen",
+        "last_seen",
+        "samples"
+      ],
+      "type": "object"
+    },
+    "FieldRef": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "environment_id",
+        "revision_id",
+        "location",
+        "path"
+      ],
+      "type": "object"
+    },
+    "InterfaceMergeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "member_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path_template": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "representative_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "representative_id",
+        "member_ids",
+        "path_template",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "KnowledgeEvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/KnowledgeReferenceKind"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "KnowledgeField": {
+      "properties": {
+        "ancestors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "existing_annotations": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reference": {
+          "$ref": "#/$defs/FieldRef"
+        },
+        "schema": true,
+        "schema_pointers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "reference",
+        "schema",
+        "schema_pointers",
+        "ancestors",
+        "existing_annotations"
+      ],
+      "type": "object"
+    },
+    "KnowledgeReferenceKind": {
+      "enum": [
+        "field",
+        "fact",
+        "interface",
+        "directory",
+        "image",
+        "summary",
+        "annotation"
+      ],
+      "type": "string"
+    },
+    "PathIdentity": {
+      "properties": {
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/PathParameter"
+          },
+          "type": "array"
+        },
+        "rule_version": {
+          "type": "string"
+        },
+        "template": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_version",
+        "template",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "PathParameter": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PathParameterKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "segment_index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "segment_index",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PathParameterKind": {
+      "enum": [
+        "uuid",
+        "hex32",
+        "hex64",
+        "integer"
+      ],
+      "type": "string"
+    },
+    "PreviewAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "directory_id": {
+          "description": "null explicitly leaves this interface unclassified.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "PreviewMetrics": {
+      "properties": {
+        "assigned_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "directories": {
+          "items": {
+            "$ref": "#/$defs/DirectoryCounts"
+          },
+          "type": "array"
+        },
+        "directory_count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "logical_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_depth": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "snapshot_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unclassified_interfaces": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unclassified_ratio": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "snapshot_interfaces",
+        "assigned_interfaces",
+        "unclassified_interfaces",
+        "unclassified_ratio",
+        "directory_count",
+        "max_depth",
+        "directories"
+      ],
+      "type": "object"
+    },
+    "PreviewNode": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "type": "object"
+    },
+    "SemanticAnnotation": {
+      "properties": {
+        "annotation": {
+          "$ref": "#/$defs/AnnotationDraft"
+        },
+        "basis": {
+          "items": {
+            "$ref": "#/$defs/DefinitionBasis"
+          },
+          "type": "array"
+        },
+        "source_run_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "annotation",
+        "basis",
+        "source_run_id",
+        "stale"
+      ],
+      "type": "object"
+    },
+    "SemanticTarget": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "interface_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "kind": {
+              "const": "interface",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "interface_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "kind": {
+              "const": "field",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "field"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SemanticValue": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "description",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "conditions": true,
+            "kind": {
+              "const": "parameter_relation",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "target": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "transform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "target",
+            "transform",
+            "conditions"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/EnumEntry"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "enum",
+              "type": "string"
+            },
+            "scope": true
+          },
+          "required": [
+            "kind",
+            "entries",
+            "complete",
+            "scope"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "UiValueState": {
+      "enum": [
+        "present",
+        "omitted",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Verification": {
+      "enum": [
+        "observed",
+        "inferred",
+        "needs_review"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "annotations": {
+      "items": {
+        "$ref": "#/$defs/SemanticAnnotation"
+      },
+      "type": "array"
+    },
+    "base_catalog_version": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "base_generation": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "base_knowledge_version": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "catalog": {
+      "$ref": "#/$defs/DirectoryCandidate"
+    },
+    "directory_metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PreviewMetrics"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "facts": {
+      "items": {
+        "$ref": "#/$defs/EvidenceFact"
+      },
+      "type": "array"
+    },
+    "fields": {
+      "items": {
+        "$ref": "#/$defs/KnowledgeField"
+      },
+      "type": "array"
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "interfaces": {
+      "items": {
+        "$ref": "#/$defs/CatalogInterface"
+      },
+      "type": "array"
+    },
+    "pending_observations": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "previous_maintenance": {
+      "description": "Last published maintenance result, informational only; never independent evidence."
+    },
+    "project_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "system_directory_id": {
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "base_generation",
+    "system_directory_id",
+    "catalog",
+    "interfaces",
+    "fields",
+    "annotations",
+    "facts",
+    "pending_observations"
+  ],
+  "title": "KnowledgeSnapshot",
+  "type": "object"
+}

@@ -11,6 +11,8 @@ nexofolio-contracts.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10"
+uuid.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

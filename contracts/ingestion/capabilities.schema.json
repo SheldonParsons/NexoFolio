@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_versions": {
+      "const": [
+        "1",
+        "2"
+      ]
+    },
+    "payload_versions": {
+      "const": {
+        "http_exchange": [
+          "1"
+        ]
+      }
+    },
+    "limits": {
+      "const": {
+        "max_records": 50,
+        "max_batch_bytes": 8388608,
+        "max_record_bytes": 4194304,
+        "max_concurrent_batches": 16
+      }
+    },
+    "flush_defaults": {
+      "const": {
+        "max_records": 20,
+        "max_batch_bytes": 4194304,
+        "max_wait_ms": 1000
+      }
+    },
+    "content_encodings": {
+      "const": [
+        "identity"
+      ]
+    }
+  },
+  "required": [
+    "schema_versions",
+    "payload_versions",
+    "limits",
+    "flush_defaults",
+    "content_encodings"
+  ]
+}

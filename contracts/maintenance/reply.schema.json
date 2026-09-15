@@ -1,0 +1,811 @@
+{
+  "$defs": {
+    "AnnotationDraft": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeEvidenceRef"
+          },
+          "type": "array"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/SemanticTarget"
+        },
+        "value": {
+          "$ref": "#/$defs/SemanticValue"
+        },
+        "verification": {
+          "$ref": "#/$defs/Verification"
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "value",
+        "evidence",
+        "verification",
+        "note"
+      ],
+      "type": "object"
+    },
+    "DirectoryCandidate": {
+      "additionalProperties": false,
+      "properties": {
+        "assignments": {
+          "items": {
+            "$ref": "#/$defs/PreviewAssignment"
+          },
+          "type": "array"
+        },
+        "merge_groups": {
+          "items": {
+            "$ref": "#/$defs/InterfaceMergeGroup"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/PreviewNode"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "nodes",
+        "assignments"
+      ],
+      "type": "object"
+    },
+    "EnumEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/$defs/UiValueState"
+        },
+        "value": true
+      },
+      "required": [
+        "state",
+        "value"
+      ],
+      "type": "object"
+    },
+    "FieldAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/FieldReviewDisposition"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/KnowledgeEvidenceRef"
+          },
+          "type": "array"
+        },
+        "field_id": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "unit_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit_id",
+        "field_id",
+        "disposition",
+        "note",
+        "evidence"
+      ],
+      "type": "object"
+    },
+    "FieldRef": {
+      "additionalProperties": false,
+      "properties": {
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "environment_id",
+        "revision_id",
+        "location",
+        "path"
+      ],
+      "type": "object"
+    },
+    "FieldReviewDisposition": {
+      "enum": [
+        "keep",
+        "change",
+        "conflict",
+        "needs_evidence"
+      ],
+      "type": "string"
+    },
+    "InterfaceMergeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "member_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path_template": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "representative_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "representative_id",
+        "member_ids",
+        "path_template",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "KnowledgeEvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/KnowledgeReferenceKind"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "type": "object"
+    },
+    "KnowledgeReferenceKind": {
+      "enum": [
+        "field",
+        "fact",
+        "interface",
+        "directory",
+        "image",
+        "summary",
+        "annotation"
+      ],
+      "type": "string"
+    },
+    "MaintenanceAction": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "set_directory",
+              "type": "string"
+            },
+            "node": {
+              "$ref": "#/$defs/PreviewNode"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "node",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "directory_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "remove_directory",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "directory_id",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "directory_id": {
+              "format": "uuid",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "interface_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "kind": {
+              "const": "assign_interface",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "interface_id",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "candidate": {
+              "$ref": "#/$defs/DirectoryCandidate"
+            },
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "replace_catalog",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "candidate",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "group": {
+              "$ref": "#/$defs/InterfaceMergeGroup"
+            },
+            "kind": {
+              "const": "upsert_merge_group",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "group",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "remove_merge_group",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "representative_id": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "representative_id",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "annotation": {
+              "$ref": "#/$defs/AnnotationDraft"
+            },
+            "kind": {
+              "const": "upsert_annotation",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "annotation",
+            "reason"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "annotation_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "evidence": {
+              "items": {
+                "$ref": "#/$defs/KnowledgeEvidenceRef"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "retract_annotation",
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "annotation_id",
+            "reason",
+            "evidence"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "MaintenancePlan": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/MaintenanceAction"
+          },
+          "type": "array"
+        },
+        "expected_benefit": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "strategy": {
+          "$ref": "#/$defs/MaintenanceStrategy"
+        }
+      },
+      "required": [
+        "strategy",
+        "reason",
+        "expected_benefit",
+        "actions"
+      ],
+      "type": "object"
+    },
+    "MaintenanceRead": {
+      "additionalProperties": false,
+      "properties": {
+        "ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ids"
+      ],
+      "type": "object"
+    },
+    "MaintenanceStrategy": {
+      "enum": [
+        "keep",
+        "insert",
+        "partial",
+        "full"
+      ],
+      "type": "string"
+    },
+    "PreviewAssignment": {
+      "additionalProperties": false,
+      "properties": {
+        "directory_id": {
+          "description": "null explicitly leaves this interface unclassified.",
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interface_id",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "PreviewNode": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "type": "object"
+    },
+    "SegmentReview": {
+      "additionalProperties": false,
+      "properties": {
+        "assessments": {
+          "items": {
+            "$ref": "#/$defs/FieldAssessment"
+          },
+          "type": "array"
+        },
+        "segment_id": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "segment_id",
+        "assessments",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "SemanticTarget": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "interface_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "kind": {
+              "const": "interface",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "interface_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "field": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "kind": {
+              "const": "field",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "field"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SemanticValue": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "description",
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "conditions": true,
+            "kind": {
+              "const": "parameter_relation",
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "target": {
+              "$ref": "#/$defs/FieldRef"
+            },
+            "transform": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "source",
+            "target",
+            "transform",
+            "conditions"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "complete": {
+              "type": "boolean"
+            },
+            "entries": {
+              "items": {
+                "$ref": "#/$defs/EnumEntry"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "enum",
+              "type": "string"
+            },
+            "scope": true
+          },
+          "required": [
+            "kind",
+            "entries",
+            "complete",
+            "scope"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "UiValueState": {
+      "enum": [
+        "present",
+        "omitted",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Verification": {
+      "enum": [
+        "observed",
+        "inferred",
+        "needs_review"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/MaintenanceRead"
+          },
+          "type": "array"
+        },
+        "type": {
+          "const": "read",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "requests"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "review": {
+          "$ref": "#/$defs/SegmentReview"
+        },
+        "type": {
+          "const": "review",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "review"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "$ref": "#/$defs/MaintenancePlan"
+        },
+        "type": {
+          "const": "plan",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "plan"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "type": {
+          "const": "summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "summary"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "type": {
+          "const": "image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "read",
+        "summary",
+        "limitations"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "MaintenanceReply"
+}

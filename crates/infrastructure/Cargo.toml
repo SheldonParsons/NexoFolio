@@ -6,8 +6,10 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.22"
 async-trait.workspace = true
 nexofolio-contracts.workspace = true
+nexofolio-evidence.workspace = true
 nexofolio-access.workspace = true
 nexofolio-application.workspace = true
 nexofolio-intake.workspace = true

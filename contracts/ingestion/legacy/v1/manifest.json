@@ -1,0 +1,21 @@
+{
+  "contract_version": "1.0.0",
+  "schema_version": "1",
+  "supported_payloads": {
+    "http_exchange": [
+      "1"
+    ]
+  },
+  "files": {
+    "batch.schema.json": "749c4d13d0de098e457e832385e6d314e2a14e745722457b01207e3b600641f4",
+    "capabilities.schema.json": "f9512576b342fc70ae87d3a5922609f80195ee1147327cc25d000633cacfd86b",
+    "envelope.schema.json": "4ff0546baf12780024ae69e80cc71cba02fc049c4f7e648602c3669a0df782a9",
+    "environment-page.schema.json": "db0129fc66ed161c01a941ef7b2d68a6c74d875f25b40f25c11d7eb1ee398f2c",
+    "environment-write.schema.json": "c700bdc5f958331dd3f790c50f9e764c95e68a8079be79fa9bf2a6ebbfd88fd5",
+    "environment.schema.json": "727efa9ae90a228f91713e03a7fc1d48d1daf80fd10039dee00ffe1c7ba8ea34",
+    "receipt.schema.json": "10d0b499a56b8f5c87d8c0de76250bdc558cd9eb07d26e9aa7f37416662c11ef",
+    "fixtures/http-batch.json": "a019f2b1132830b4be069f7ea48178bb3934789bbe5b0b8367d4cea9a45eec90",
+    "behavior.md": "31cbead6881e9cebb8c101eb092b820c65fdeb4785b654ad394426aedfd4e228"
+  },
+  "types_sha256": "cfdb29071f63daf54c197859c4b13edf85d33bd761f2f3d1703b3db726e9649d"
+}

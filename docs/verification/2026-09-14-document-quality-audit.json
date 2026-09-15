@@ -1,0 +1,73 @@
+{
+  "read_only": true,
+  "inbox_count": 77,
+  "completed_count": 77,
+  "definitions_checked": 31,
+  "observations_checked": 77,
+  "unlinked_completed": 0,
+  "all_initial_baselines_still_current": true,
+  "definition_coverage": {
+    "request_none": 24,
+    "response_complete": 31,
+    "response_media:application/json": 31,
+    "response_json_verified": 31,
+    "request_complete": 7,
+    "request_media:application/json": 7,
+    "request_json_verified": 7
+  },
+  "findings": [],
+  "differences": [
+    {
+      "ingestion_id": "d52cb766-b88f-4293-824a-02e0597ae6e0",
+      "changed_schema_paths": [
+        "/limitations",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/properties",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/type",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/unknown"
+      ],
+      "path_count": 4,
+      "has_actual_definition_difference": true
+    },
+    {
+      "ingestion_id": "f19a8db2-d8cd-46b2-b325-4f43e514fc7c",
+      "changed_schema_paths": [
+        "/limitations",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/properties",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/type",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/unknown"
+      ],
+      "path_count": 4,
+      "has_actual_definition_difference": true
+    },
+    {
+      "ingestion_id": "994c68e3-6d3c-4994-b1c8-6f401a3e7d07",
+      "changed_schema_paths": [
+        "/limitations",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/properties",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/type",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/unknown"
+      ],
+      "path_count": 4,
+      "has_actual_definition_difference": true
+    },
+    {
+      "ingestion_id": "106c9937-5825-4125-a2a2-8d81166391e0",
+      "changed_schema_paths": [
+        "/limitations",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/properties",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/type",
+        "/response/body/observed_schema/properties/data/items/properties/item/items/unknown"
+      ],
+      "path_count": 4,
+      "has_actual_definition_difference": true
+    }
+  ],
+  "review_findings": [
+    {
+      "code": "WEAKER_EVIDENCE_NOT_CONFIRMED_CHANGE",
+      "unique_pending_difference_count": 1,
+      "linked_observation_count": 4,
+      "detail": "Current baseline observed object items; later samples contain empty arrays and report unknown item type. This does not establish removal/type change. Baseline remains intact."
+    }
+  ]
+}

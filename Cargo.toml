@@ -28,6 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 nexofolio-contracts = { path = "crates/contracts" }
+nexofolio-evidence = { path = "crates/evidence" }
 nexofolio-access = { path = "crates/access" }
 nexofolio-knowledge = { path = "crates/knowledge" }
 nexofolio-intake = { path = "crates/intake" }

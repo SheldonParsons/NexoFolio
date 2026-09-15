@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "CatalogEnvironment": {
+      "additionalProperties": false,
+      "properties": {
+        "definition": true,
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "environment_name": {
+          "type": "string"
+        },
+        "revision_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "environment_id",
+        "environment_name",
+        "revision_id",
+        "definition"
+      ],
+      "type": "object"
+    },
+    "CatalogInterface": {
+      "additionalProperties": false,
+      "properties": {
+        "environments": {
+          "items": {
+            "$ref": "#/$defs/CatalogEnvironment"
+          },
+          "type": "array"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "recognized_path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "interface_id",
+        "method",
+        "path",
+        "environments"
+      ],
+      "type": "object"
+    },
+    "PathIdentity": {
+      "properties": {
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/PathParameter"
+          },
+          "type": "array"
+        },
+        "rule_version": {
+          "type": "string"
+        },
+        "template": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_version",
+        "template",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "PathParameter": {
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PathParameterKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "segment_index": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "segment_index",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "PathParameterKind": {
+      "enum": [
+        "uuid",
+        "hex32",
+        "hex64",
+        "integer"
+      ],
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "interfaces": {
+      "items": {
+        "$ref": "#/$defs/CatalogInterface"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "project_name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "project_name",
+    "interfaces"
+  ],
+  "title": "CatalogSnapshot",
+  "type": "object"
+}

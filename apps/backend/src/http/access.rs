@@ -68,13 +68,25 @@ impl IntoResponse for AccessError {
                 "PROJECT_ACCESS_DENIED",
                 "你暂无该项目的访问权限，请联系项目负责人或禅道管理员",
             ),
-            Error::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND", "项目不存在"),
+            Error::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND", "资源不存在"),
             Error::Unavailable {
                 component: "project_access",
             } => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "PROJECT_ACCESS_UNAVAILABLE",
                 "暂时无法确认项目权限",
+            ),
+            Error::Unavailable {
+                component: "capture_backpressure" | "asset_backpressure",
+            } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "CAPTURE_BUSY",
+                "采集队列或存储繁忙，请保留原记录稍后重试",
+            ),
+            Error::InvalidInput { ref message } if message == "SNAPSHOT_TOO_LARGE" => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "SNAPSHOT_TOO_LARGE",
+                "本轮资料超过快照容量，尚未创建候选；请调整容量配置或资料保留策略",
             ),
             Error::InvalidInput { .. } => (
                 StatusCode::BAD_REQUEST,
@@ -84,7 +96,7 @@ impl IntoResponse for AccessError {
             Error::NotConfigured { .. } => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "NOT_CONFIGURED",
-                "登录服务尚未配置",
+                "服务能力尚未配置",
             ),
             Error::Conflict => (StatusCode::CONFLICT, "CONFLICT", "当前数据版本发生变化"),
             _ => (
@@ -98,6 +110,11 @@ impl IntoResponse for AccessError {
             Json(serde_json::json!({"error":{"code":code,"message":message}})),
         )
             .into_response();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, "2".parse().unwrap());
+        }
         if status == StatusCode::UNAUTHORIZED {
             response.headers_mut().insert(
                 header::WWW_AUTHENTICATE,
@@ -113,6 +130,14 @@ pub fn routes(state: AccessHttp) -> Router {
         .route("/v1/auth/me", get(me))
         .route("/v1/projects", get(projects))
         .route("/v1/projects/{project_id}", get(project))
+        .route(
+            "/v1/projects/{project_id}/environments",
+            get(environments).post(create_environment),
+        )
+        .route(
+            "/v1/projects/{project_id}/environments/{environment_id}",
+            axum::routing::patch(rename_environment),
+        )
         .route_layer(middleware::from_fn_with_state(
             state.store.clone(),
             session_auth,
@@ -160,7 +185,7 @@ async fn login(
         .await?;
     Ok(Json(serde_json::json!({"user":result.session.user,"token":result.session.token.expose(),"token_type":"Bearer","expires_at":result.session.expires_at,"token_reused":result.session.reused,"project_sync":result.sync})).into_response())
 }
-async fn session_auth(
+pub(crate) async fn session_auth(
     State(store): State<Arc<dyn PlatformAccess>>,
     mut req: Request,
     next: Next,
@@ -203,4 +228,44 @@ async fn project(
     Path(id): Path<ProjectId>,
 ) -> Result<Json<nexofolio_access::ProjectCard>, AccessError> {
     Ok(Json(s.store.require_project(&p, id).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnvironmentName {
+    name: String,
+}
+async fn environments(
+    State(s): State<AccessHttp>,
+    Extension(p): Extension<SessionPrincipal>,
+    Path(project): Path<ProjectId>,
+    Query(q): Query<Pagination>,
+) -> Result<Json<nexofolio_access::EnvironmentPage>, AccessError> {
+    Ok(Json(
+        s.store
+            .list_environments(&p, project, q.page, q.limit)
+            .await?,
+    ))
+}
+async fn create_environment(
+    State(s): State<AccessHttp>,
+    Extension(p): Extension<SessionPrincipal>,
+    Path(project): Path<ProjectId>,
+    Json(body): Json<EnvironmentName>,
+) -> Result<Json<nexofolio_contracts::Environment>, AccessError> {
+    Ok(Json(
+        s.store.create_environment(&p, project, &body.name).await?,
+    ))
+}
+async fn rename_environment(
+    State(s): State<AccessHttp>,
+    Extension(p): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, nexofolio_contracts::EnvironmentId)>,
+    Json(body): Json<EnvironmentName>,
+) -> Result<Json<nexofolio_contracts::Environment>, AccessError> {
+    Ok(Json(
+        s.store
+            .rename_environment(&p, project, id, &body.name)
+            .await?,
+    ))
 }

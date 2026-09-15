@@ -4,12 +4,15 @@ use nexofolio_contracts::Result;
 use nexofolio_infrastructure::{ConfiguredEmergencyPassword, Postgres, PostgresAccess, Zentao};
 use std::sync::Arc;
 
-pub fn build_access(config: &Config, database: Postgres) -> Result<Option<AccessHttp>> {
+pub fn build_access(
+    config: &Config,
+    database: Postgres,
+) -> Result<Option<crate::http::services::BackendServices>> {
     let (Some(base), Some(key)) = (&config.zentao_base_url, &config.session_key) else {
         return Ok(None);
     };
     let provider = Arc::new(Zentao::new(base)?);
-    let store = Arc::new(PostgresAccess::new(database, key)?);
+    let store = Arc::new(PostgresAccess::new(database.clone(), key)?);
     let emergency = Arc::new(ConfiguredEmergencyPassword::new(
         config.emergency_password_hash.as_ref(),
     )?);
@@ -19,5 +22,6 @@ pub fn build_access(config: &Config, database: Postgres) -> Result<Option<Access
         emergency,
         store.clone(),
     ));
-    Ok(Some(AccessHttp::new(login, store)))
+    let access = AccessHttp::new(login, store.clone());
+    super::services::build_services(config, database, store, access).map(Some)
 }

@@ -12,6 +12,11 @@ schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+uuid.workspace = true
+sha2 = "0.10"
+url = "2"
+base64 = "0.22"
+
 [dev-dependencies]
 tokio.workspace = true
 

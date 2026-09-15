@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "data": true,
+    "environment_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "first_seen": {
+      "type": "string"
+    },
+    "id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "last_seen": {
+      "type": "string"
+    },
+    "observations": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "project_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "samples": {
+      "items": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "subject": true
+  },
+  "required": [
+    "id",
+    "project_id",
+    "environment_id",
+    "kind",
+    "subject",
+    "data",
+    "observations",
+    "first_seen",
+    "last_seen",
+    "samples"
+  ],
+  "title": "EvidenceFact",
+  "type": "object"
+}

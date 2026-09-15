@@ -1,0 +1,32 @@
+{
+  "contract_version": "2.2.0",
+  "schema_version": "2",
+  "supported_payloads": {
+    "http_exchange": [
+      "1"
+    ]
+  },
+  "files": {
+    "batch.schema.json": "db86248340cd6d9ad121641ff2ba3292b2d1e05032421c4653fdf363dbff3f61",
+    "capabilities.schema.json": "c17a2e08f59de27c63edb45a4f5e3f99b216cd86f37b0f0e3dec2471314a9d60",
+    "envelope.schema.json": "d24bb659a25a0a8d1cfa8e71ef9f339d3e9e00200aa7f5e1f199f875048abd7a",
+    "environment-page.schema.json": "db0129fc66ed161c01a941ef7b2d68a6c74d875f25b40f25c11d7eb1ee398f2c",
+    "environment-write.schema.json": "c700bdc5f958331dd3f790c50f9e764c95e68a8079be79fa9bf2a6ebbfd88fd5",
+    "environment.schema.json": "727efa9ae90a228f91713e03a7fc1d48d1daf80fd10039dee00ffe1c7ba8ea34",
+    "receipt.schema.json": "88457eb68e13148909a75d980a0a2e1e49d0031f1ebe18b8f20b8b96b6ca22fc",
+    "fixtures/http-batch.json": "bbf49180880a5a0e09eb88c590b5b2edd24d83d6bcd0b5a98f21643b0aa3a8b6",
+    "behavior.md": "6264298e8fa2fc8db3a0ebd1bbbec69840c53d4f5bbb84b720f3ddd3ec75983d",
+    "legacy/v1/batch.schema.json": "749c4d13d0de098e457e832385e6d314e2a14e745722457b01207e3b600641f4",
+    "legacy/v1/behavior.md": "31cbead6881e9cebb8c101eb092b820c65fdeb4785b654ad394426aedfd4e228",
+    "legacy/v1/capabilities.schema.json": "f9512576b342fc70ae87d3a5922609f80195ee1147327cc25d000633cacfd86b",
+    "legacy/v1/envelope.schema.json": "4ff0546baf12780024ae69e80cc71cba02fc049c4f7e648602c3669a0df782a9",
+    "legacy/v1/environment-page.schema.json": "db0129fc66ed161c01a941ef7b2d68a6c74d875f25b40f25c11d7eb1ee398f2c",
+    "legacy/v1/environment-write.schema.json": "c700bdc5f958331dd3f790c50f9e764c95e68a8079be79fa9bf2a6ebbfd88fd5",
+    "legacy/v1/environment.schema.json": "727efa9ae90a228f91713e03a7fc1d48d1daf80fd10039dee00ffe1c7ba8ea34",
+    "legacy/v1/fixtures/http-batch.json": "a019f2b1132830b4be069f7ea48178bb3934789bbe5b0b8367d4cea9a45eec90",
+    "legacy/v1/manifest.json": "5c3a04e22202f7fcff91ff50db3357ddd2601a26aec612b892b57bbe34a72548",
+    "legacy/v1/receipt.schema.json": "10d0b499a56b8f5c87d8c0de76250bdc558cd9eb07d26e9aa7f37416662c11ef",
+    "legacy/v1/types.generated.ts": "cfdb29071f63daf54c197859c4b13edf85d33bd761f2f3d1703b3db726e9649d"
+  },
+  "types_sha256": "9530b5abb9d7698b69c4b53b56445183c08a49d95fdde1112351393b15e525c9"
+}

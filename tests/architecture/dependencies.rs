@@ -2,9 +2,17 @@ use serde_json::{Value, json};
 use std::{collections::HashSet, process::Command};
 
 fn violations(metadata: &Value) -> Vec<String> {
-    let core = ["access", "knowledge", "intake", "triggers", "rebuild"];
+    let core = [
+        "access",
+        "knowledge",
+        "intake",
+        "triggers",
+        "rebuild",
+        "evidence",
+    ];
     let known = [
         "contracts",
+        "evidence",
         "access",
         "knowledge",
         "intake",
@@ -44,16 +52,28 @@ fn violations(metadata: &Value) -> Vec<String> {
                 .chain(["contracts", "application"].iter())
                 .map(|s| format!("nexofolio-{s}"))
                 .collect(),
-            "backend" => ["application", "infrastructure", "contracts", "access"]
-                .iter()
-                .map(|s| format!("nexofolio-{s}"))
-                .collect(),
+            "backend" => [
+                "application",
+                "infrastructure",
+                "contracts",
+                "access",
+                "intake",
+                "knowledge",
+            ]
+            .iter()
+            .map(|s| format!("nexofolio-{s}"))
+            .collect(),
             _ => unreachable!(),
         };
         for dependency in package["dependencies"].as_array().unwrap() {
             let dep = dependency["name"].as_str().unwrap();
             let local = dep.starts_with("nexofolio-") || dependency["path"].is_string();
-            if local && !allowed_local.iter().any(|s| s == dep) {
+            if local
+                && !allowed_local.iter().any(|s| s == dep)
+                && !(short == "backend"
+                    && ["nexofolio-rebuild", "nexofolio-evidence"].contains(&dep)
+                    && dependency["kind"] == "dev")
+            {
                 errors.push(format!("{name} -> {dep}: forbidden local dependency"));
             }
             if !local && (core.contains(&short) || short == "contracts" || short == "application") {
@@ -67,7 +87,10 @@ fn violations(metadata: &Value) -> Vec<String> {
                     "zeroize",
                 ];
                 let test_runtime = dep == "tokio" && dependency["kind"] == "dev";
-                if !basic.contains(&dep) && !test_runtime {
+                let intake_pure = ["intake", "knowledge", "evidence", "rebuild", "application"]
+                    .contains(&short)
+                    && ["sha2", "url", "base64"].contains(&dep);
+                if !basic.contains(&dep) && !test_runtime && !intake_pure {
                     errors.push(format!(
                         "{name} -> {dep}: infrastructure dependency in core"
                     ));

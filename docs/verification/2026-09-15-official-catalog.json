@@ -1,0 +1,34 @@
+{
+  "backend_regular_tests": 41,
+  "database_integration_tests": 6,
+  "real_replay_tests": 1,
+  "frontend_tests": 86,
+  "frontend_build": "passed (frontend task)",
+  "publication_in_isolated_test": [
+    "publish and identical retry",
+    "conflicting request reuse409",
+    "new interface automatically unclassified",
+    "saved versions restore and null reset",
+    "concurrent writes one200 one409",
+    "forced database failure full rollback",
+    "system node identity update/delete rejected",
+    "reserved system node candidate rejected",
+    "permission revoked publish/restore403",
+    "cross-project publish/restore404"
+  ],
+  "live_state": {
+    "version_id": null,
+    "generation": 0,
+    "system_name": "待分类",
+    "system_locked": true,
+    "formal_interfaces": 31,
+    "published_versions": 0,
+    "read_http_verified": true,
+    "real_publish_performed": false
+  },
+  "backup": "backups/before-official-catalog-20260915-103057.dump",
+  "contract": "catalog-preview 1.3.1 / documents 1.3.0",
+  "ego_lite_used": false,
+  "committed": false,
+  "pushed": false
+}

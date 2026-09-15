@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "InterfaceMergeGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "member_ids": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path_template": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "representative_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "representative_id",
+        "member_ids",
+        "path_template",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "OfficialDirectory": {
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "direct_interfaces": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description",
+        "system",
+        "locked",
+        "direct_interfaces"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "generation": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "merge_groups": {
+      "items": {
+        "$ref": "#/$defs/InterfaceMergeGroup"
+      },
+      "type": "array"
+    },
+    "nodes": {
+      "items": {
+        "$ref": "#/$defs/OfficialDirectory"
+      },
+      "type": "array"
+    },
+    "project_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "source_run_id": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source_task_id": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "total_interfaces": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "unclassified_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "version_id": {
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "project_id",
+    "generation",
+    "unclassified_id",
+    "total_interfaces",
+    "nodes",
+    "merge_groups"
+  ],
+  "title": "OfficialCatalog",
+  "type": "object"
+}

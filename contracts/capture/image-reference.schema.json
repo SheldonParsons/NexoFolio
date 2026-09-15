@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "asset_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "complete": {
+      "type": "boolean"
+    },
+    "device_pixel_ratio": {
+      "format": "double",
+      "type": "number"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "trigger_record_id": {
+      "default": null,
+      "format": "uuid",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "viewport_height": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "viewport_width": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "asset_id",
+    "viewport_width",
+    "viewport_height",
+    "device_pixel_ratio",
+    "complete",
+    "limitations"
+  ],
+  "title": "ImageReferencePayload",
+  "type": "object"
+}

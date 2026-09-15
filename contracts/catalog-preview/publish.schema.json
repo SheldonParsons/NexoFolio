@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "expected_generation": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "request_id": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "task_id": {
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_id",
+    "expected_generation",
+    "request_id"
+  ],
+  "title": "PublishCatalog",
+  "type": "object"
+}

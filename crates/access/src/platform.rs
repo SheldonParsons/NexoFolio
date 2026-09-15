@@ -76,6 +76,27 @@ pub struct SyncCounts {
 
 #[async_trait]
 pub trait PlatformAccess: Send + Sync {
+    async fn list_environments(
+        &self,
+        principal: &SessionPrincipal,
+        project: nexofolio_contracts::ProjectId,
+        page: u32,
+        limit: u32,
+    ) -> Result<EnvironmentPage>;
+    async fn create_environment(
+        &self,
+        principal: &SessionPrincipal,
+        project: nexofolio_contracts::ProjectId,
+        name: &str,
+    ) -> Result<nexofolio_contracts::Environment>;
+    async fn rename_environment(
+        &self,
+        principal: &SessionPrincipal,
+        project: nexofolio_contracts::ProjectId,
+        id: nexofolio_contracts::EnvironmentId,
+        name: &str,
+    ) -> Result<nexofolio_contracts::Environment>;
+
     async fn normal_login(&self, identity: &ExternalIdentity) -> Result<SessionLogin>;
     async fn emergency_login(&self, instance: &str, account: &str) -> Result<SessionLogin>;
     async fn next_sync_generation(&self) -> Result<i64>;
@@ -99,4 +120,12 @@ pub trait PlatformAccess: Send + Sync {
         principal: &SessionPrincipal,
         project: ProjectId,
     ) -> Result<ProjectCard>;
+}
+
+#[derive(Debug, Serialize)]
+pub struct EnvironmentPage {
+    pub items: Vec<nexofolio_contracts::Environment>,
+    pub total: u64,
+    pub page: u32,
+    pub limit: u32,
 }

@@ -1,0 +1,152 @@
+{
+  "captured_at": "2026-09-15T05:54:23.932306+00:00",
+  "scope": "backend-only",
+  "basis": "local working tree, including uncommitted code; source review, not runtime acceptance",
+  "head": "a4c27c6e4d25eb404892b39c4529f53be65f27a9",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "24bbc81a30255cfb96bd6bbef19607afe35660af67758d65efb94d29f9a60d5d",
+      "bytes": 15050,
+      "git_status": "M README.md"
+    },
+    {
+      "path": "Cargo.toml",
+      "sha256": "f0c983b96eee14e6a92ace69c5bfadb6a1fe29e5263e01d904cf12db004551bf",
+      "bytes": 1781,
+      "git_status": "M Cargo.toml"
+    },
+    {
+      "path": "apps/backend/src/bin/api.rs",
+      "sha256": "37927d2614cf32eb101c7d386ddffe3f18a543344d1da2d9eaec531ab1ba0ac7",
+      "bytes": 1282,
+      "git_status": ""
+    },
+    {
+      "path": "apps/backend/src/bin/worker.rs",
+      "sha256": "5faa627247e3d23f75c627d3102911369d3e181e3edc73d3d1985668ee35ae2b",
+      "bytes": 1931,
+      "git_status": "M apps/backend/src/bin/worker.rs"
+    },
+    {
+      "path": "apps/backend/src/bin/admin.rs",
+      "sha256": "3f21f21fd563e9bdc0256e2e71260ea575b44916e96dad68bb666082ab79f994",
+      "bytes": 5379,
+      "git_status": "M apps/backend/src/bin/admin.rs"
+    },
+    {
+      "path": "apps/backend/src/wiring/access.rs",
+      "sha256": "5ada1f5e31f9f5706413b46a4c36ecc4d02ee1160aba4a1fd84fccef1dbe8634",
+      "bytes": 3174,
+      "git_status": "M apps/backend/src/wiring/access.rs"
+    },
+    {
+      "path": "apps/backend/src/wiring/catalog.rs",
+      "sha256": "92ba28fcbff73022e1a99565d7001ce72e427d457f9138f0da0e98be32a9c702",
+      "bytes": 2341,
+      "git_status": "?? apps/backend/src/wiring/catalog.rs"
+    },
+    {
+      "path": "apps/backend/src/wiring/lifecycle.rs",
+      "sha256": "4d669ac7ad2204727fad5d74e0b975d30abe2099a7c241af64633ced86107172",
+      "bytes": 3572,
+      "git_status": "M apps/backend/src/wiring/lifecycle.rs"
+    },
+    {
+      "path": "apps/backend/src/http/mod.rs",
+      "sha256": "c2c38db4b39dfbaa9b260a89486e1a80cb87a64eab5cba6fe136f5f869724fb6",
+      "bytes": 5577,
+      "git_status": "M apps/backend/src/http/mod.rs"
+    },
+    {
+      "path": "apps/backend/src/http/maintenance.rs",
+      "sha256": "eea8c1627aab4b31dc947a83c24ff695952865282554e5c12440325615a108a5",
+      "bytes": 5631,
+      "git_status": "?? apps/backend/src/http/maintenance.rs"
+    },
+    {
+      "path": "apps/backend/src/http/ingestion.rs",
+      "sha256": "8a23960daaa700461364b267af29b34d1d70440f593283099a4970926e5956b7",
+      "bytes": 10619,
+      "git_status": "?? apps/backend/src/http/ingestion.rs"
+    },
+    {
+      "path": "apps/backend/src/http/capture.rs",
+      "sha256": "406fbc07156ff0e26a5083f01998f7678de479664e7395f29e006d64857c9ec1",
+      "bytes": 11718,
+      "git_status": "?? apps/backend/src/http/capture.rs"
+    },
+    {
+      "path": "apps/backend/src/mcp/mod.rs",
+      "sha256": "240f3b99dd0f96a9eb8927acab16d68c176dd2844c6ee8ca586fec0dcbfa4263",
+      "bytes": 607,
+      "git_status": ""
+    },
+    {
+      "path": "crates/application/src/lib.rs",
+      "sha256": "dcddcb2e6397901c77e6f3db16f50347dbefde9f3fed26cdd63360550b0606b9",
+      "bytes": 501,
+      "git_status": "M crates/application/src/lib.rs"
+    },
+    {
+      "path": "crates/application/Cargo.toml",
+      "sha256": "90e68af529de8d2491325bad3f69461f819755140a7878d13ab565e0a92a8e48",
+      "bytes": 596,
+      "git_status": "M crates/application/Cargo.toml"
+    },
+    {
+      "path": "crates/infrastructure/Cargo.toml",
+      "sha256": "f7ca68614ec00c677cd6d7941dd7ad6a30e6d547ef8802c6cd3c06596d455d35",
+      "bytes": 928,
+      "git_status": "M crates/infrastructure/Cargo.toml"
+    },
+    {
+      "path": "crates/evidence/src/lib.rs",
+      "sha256": "e56d9fbc926dd9c6d1d74049f9f6fdeb94dcdca52bdcbdfb58b5ccc33177beae",
+      "bytes": 1841,
+      "git_status": "?? crates/evidence/src/lib.rs"
+    },
+    {
+      "path": "crates/triggers/src/lib.rs",
+      "sha256": "7edb0bbb7f099da6c03c825de6be5d2c6d7223c2ce513021d3d8a8e74fde8700",
+      "bytes": 987,
+      "git_status": ""
+    },
+    {
+      "path": "crates/rebuild/src/lib.rs",
+      "sha256": "81f60401f2f47b7c9c4356e560aa8987b216ff79382d9f89218c1de04a8fb987",
+      "bytes": 1530,
+      "git_status": "M crates/rebuild/src/lib.rs"
+    },
+    {
+      "path": "tests/architecture/dependencies.rs",
+      "sha256": "cfab48e7ae934787bbdd5217eb7105b258693212adbed73d37885435cd7fd804",
+      "bytes": 5427,
+      "git_status": "M tests/architecture/dependencies.rs"
+    },
+    {
+      "path": "crates/infrastructure/src/unconfigured.rs",
+      "sha256": "1009ca09bd4a55fd810da6e914cc8e427ad7b56e28ad3695cf738cff9620786d",
+      "bytes": 4249,
+      "git_status": ""
+    },
+    {
+      "path": "crates/infrastructure/src/admission.rs",
+      "sha256": "45cbcd07ab475bd26968fc07832bfebbe5952cb73eae98e327952a17ba24dac4",
+      "bytes": 12641,
+      "git_status": "?? crates/infrastructure/src/admission.rs"
+    },
+    {
+      "path": "crates/infrastructure/src/documents.rs",
+      "sha256": "2a99600b75e443a6fce032ea65b20acc990e8d8f2e428f4007722a83fb83d492",
+      "bytes": 17762,
+      "git_status": "?? crates/infrastructure/src/documents.rs"
+    },
+    {
+      "path": "deploy/compose.yaml",
+      "sha256": "855f7f980c838879123860dc0722384c4f46fab9f463a3c73878132be436f6cc",
+      "bytes": 3166,
+      "git_status": "M deploy/compose.yaml"
+    }
+  ]
+}

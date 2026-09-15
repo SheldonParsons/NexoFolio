@@ -1,0 +1,21 @@
+{
+  "contract_version": "1.2.0",
+  "schema_version": "3",
+  "files": {
+    "asset.schema.json": "b189a81dc4a5d155a6368ddb7bd12df676a905f8ed07e91f371085afe510de3d",
+    "batch.schema.json": "6a056ff3e35480c65ceef1d1353f9ba5c4474904a553b2e2cf6ccdf70bc1be76",
+    "capabilities.schema.json": "c880f2d08a9de4a4bdca670bc643c67ce67665182e5ba30f2b0c508b357c9a7b",
+    "context.schema.json": "faa68dd2b3b3df16539de4cfb399f19504574f3a9dd903f022c5483514350923",
+    "evidence-page.schema.json": "bb354de2938b4db2b9791db1d9997af54aa31e72ea79cb4cc0823f230e34f1e2",
+    "evidence.schema.json": "462a0223dd54bb1596de047a7170f74857c9f8dceadae3cad23659ce13c1a0be",
+    "image-reference.schema.json": "67583be2db2c7036c89203b030634a5e87e587a3aa9366e6d8a8c89b06a39a8d",
+    "interaction.schema.json": "32a91ebca8786002ee758da6b84e0ad148b02c24a8207c8bd944c6dd304403dc",
+    "observation.schema.json": "29d4fafed323411db77ef662e2f63ed82273143925933cf0c1ffd00e6ab07797",
+    "page-context.schema.json": "6db4a94f189d3aae5cb2b352f8b3ebebb537bf3d88620e95689ec7b0a08dea43",
+    "receipt.schema.json": "bfe69db45ca408e4a297049d10d6cd21f1260a3759d8172f05dcf9abf816458c",
+    "record.schema.json": "96b64aa98d6a63bdec1725b204811c87094e3cfdad6e39fc0c2f6ea2c3762bae",
+    "ui-snapshot.schema.json": "501e1f7f5355e166ec227d2986e60c65e15b3beed7bcfb023e4a736a264102e9",
+    "types.generated.ts": "64458572c8c8b8f7af91bfead800e016c8ef317058874ac67cfe63d0926c35df",
+    "behavior.md": "80f133fa2e06fa5dadece87d79d57295917f7be6d6b07ab431095c5e63a1b407"
+  }
+}

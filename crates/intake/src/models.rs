@@ -1,3 +1,4 @@
+//! Legacy internal skeleton contracts; external uploads use batch.rs and the versioned machine schemas.
 use nexofolio_contracts::{InterfaceId, ProjectId};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
