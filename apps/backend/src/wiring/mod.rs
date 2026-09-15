@@ -9,9 +9,8 @@ use nexofolio_contracts::{Error, Result};
 use tracing_subscriber::EnvFilter;
 
 pub fn init_logging(filter: &str) -> Result<()> {
-    let filter = EnvFilter::try_new(filter).map_err(|_| Error::InvalidInput {
-        message: "NEXOFOLIO_LOG is invalid".into(),
-    })?;
+    let filter =
+        EnvFilter::try_new(filter).map_err(|_| Error::invalid("NEXOFOLIO_LOG is invalid"))?;
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(filter)

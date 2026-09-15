@@ -1,9 +1,10 @@
 use async_trait::async_trait;
 use nexofolio_application::OrganizationServices;
 use nexofolio_contracts::{
-    CatalogVersion, KnowledgeEvent, KnowledgeEventKind, ProjectId, RebuildScope, Result,
+    CatalogSnapshot, DirectoryCandidate, GeneratorInfo, KnowledgeEvent, KnowledgeEventKind,
+    ProjectId, RebuildScope, Result,
 };
-use nexofolio_rebuild::{CandidatePlan, CatalogBuilder, RebuildRequest};
+use nexofolio_rebuild::DirectoryGenerator;
 use nexofolio_triggers::{DirectoryMetrics, TriggerDecision, TriggerPolicy};
 use std::sync::{
     Arc,
@@ -29,13 +30,21 @@ impl TriggerPolicy for InspectPolicy {
 }
 struct FixtureBuilder(Arc<AtomicUsize>);
 #[async_trait]
-impl CatalogBuilder for FixtureBuilder {
-    async fn build(&self, request: RebuildRequest) -> Result<CandidatePlan> {
+impl DirectoryGenerator for FixtureBuilder {
+    fn info(&self) -> Result<GeneratorInfo> {
+        Ok(GeneratorInfo {
+            adapter: "fixture".into(),
+            model: "fixture".into(),
+            prompt_version: "1".into(),
+            prompt_sha256: "fixture".into(),
+        })
+    }
+    async fn generate(&self, _: &CatalogSnapshot) -> Result<DirectoryCandidate> {
         self.0.fetch_add(1, Ordering::SeqCst);
-        Ok(CandidatePlan {
-            request,
-            candidate: CatalogVersion::new(),
-            changes: serde_json::json!([]),
+        Ok(DirectoryCandidate {
+            nodes: vec![],
+            assignments: vec![],
+            merge_groups: vec![],
         })
     }
 }
@@ -72,13 +81,10 @@ async fn trigger_replacement_does_not_invoke_or_change_builder() {
     ));
     assert_eq!(count.load(Ordering::SeqCst), 0);
     second
-        .build_candidate(RebuildRequest {
+        .build_candidate(&CatalogSnapshot {
             project_id: event.project_id,
-            scope: RebuildScope::Project,
-            base_catalog: CatalogVersion::new(),
-            event_position: 1,
-            inputs: vec![],
-            policy_version: "fixture".into(),
+            project_name: "fixture".into(),
+            interfaces: vec![],
         })
         .await
         .unwrap();

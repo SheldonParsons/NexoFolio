@@ -30,9 +30,7 @@ fn decode<T: serde::de::DeserializeOwned>(v: Value) -> Result<T> {
 }
 fn pagination(page: u32, limit: u32) -> Result<()> {
     if !(1..=100000).contains(&page) || !(1..=100).contains(&limit) {
-        Err(Error::InvalidInput {
-            message: "invalid pagination".into(),
-        })
+        Err(Error::invalid("invalid pagination"))
     } else {
         Ok(())
     }
@@ -352,9 +350,7 @@ impl CatalogActivationStore for PostgresOfficialCatalog {
                 || uuid(n.id) == s.system
                 || n.parent.is_some_and(|p| uuid(p) == s.system)
         }) {
-            return Err(Error::InvalidInput {
-                message: "system directory is immutable".into(),
-            });
+            return Err(Error::invalid("system directory is immutable"));
         }
         let ids: Vec<_> = candidate
             .assignments

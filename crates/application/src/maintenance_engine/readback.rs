@@ -33,7 +33,9 @@ impl MaintenanceEngine {
             }
             let item = json!({"reference":reference,"source":primary,"originals":originals});
             if reference.kind == "image" || bytes(&item) > self.data_limit() {
-                let summary = self.readback(lease, &reference, coverage, saved).await?;
+                let summary = self
+                    .readback(lease, &reference, (primary, originals), coverage, saved)
+                    .await?;
                 results.push((reference, summary));
             } else {
                 pending.push(item);
@@ -68,16 +70,9 @@ impl MaintenanceEngine {
                 let reference: KnowledgeEvidenceRef =
                     serde_json::from_value(item["reference"].clone())
                         .map_err(|_| invalid("READBACK_CONTRACT_INVALID"))?;
-                let checkpoint = MaintenanceCheckpoint {
-                    id: format!("read-complete:{}:{}", reference.kind, reference.id),
-                    phase: "readback_complete".into(),
-                    references: vec![reference.clone()],
-                    review: None,
-                    summary: Some(summary.clone()),
-                    data: json!({"source":item["source"],"original_sources":item["originals"].as_array().map(Vec::len),"batched":true}),
-                };
-                self.store.checkpoint(lease, &checkpoint, coverage).await?;
-                saved.insert(checkpoint.id.clone(), checkpoint);
+                self.complete_read(lease, &reference, &summary,
+                    json!({"source":item["source"],"original_sources":item["originals"].as_array().map(Vec::len),"batched":true}),
+                    coverage, saved).await?;
                 results.push((reference, summary.clone()));
             }
         }
@@ -87,27 +82,11 @@ impl MaintenanceEngine {
         &self,
         lease: &MaintenanceLease,
         r: &KnowledgeEvidenceRef,
+        source: (Value, Vec<Value>),
         coverage: &ReviewCoverage,
         saved: &mut HashMap<String, MaintenanceCheckpoint>,
     ) -> Result<String> {
-        let data = resource(&lease.snapshot, r, saved)?;
-        let primary = data.clone();
-        let mut originals = vec![data];
-        if r.kind == "fact" {
-            let f = lease
-                .snapshot
-                .facts
-                .iter()
-                .find(|f| f.id.to_string() == r.id)
-                .ok_or(Error::NotFound)?;
-            for event in &f.samples {
-                originals.push(
-                    self.sources
-                        .observation(lease.snapshot.project_id, *event)
-                        .await?,
-                );
-            }
-        }
+        let (primary, originals) = source;
         if r.kind == "image" {
             if self.model.identity()["vision_enabled"] != true {
                 return Err(Error::NotConfigured {
@@ -136,16 +115,15 @@ impl MaintenanceEngine {
             else {
                 return Err(invalid("IMAGE_NOT_READ"));
             };
-            let c = MaintenanceCheckpoint {
-                id: format!("read-complete:image:{}", r.id),
-                phase: "readback_complete".into(),
-                references: vec![r.clone()],
-                review: None,
-                summary: Some(summary.clone()),
-                data: json!({"image_read":true,"limitations":limitations,"source":primary}),
-            };
-            self.store.checkpoint(lease, &c, coverage).await?;
-            saved.insert(c.id.clone(), c);
+            self.complete_read(
+                lease,
+                r,
+                &summary,
+                json!({"image_read":true,"limitations":limitations,"source":primary}),
+                coverage,
+                saved,
+            )
+            .await?;
             return Ok(summary);
         }
         let mut summaries = vec![];
@@ -175,16 +153,36 @@ impl MaintenanceEngine {
         }
         let index = self.global(lease, summaries, coverage, saved).await?;
         let summary = index.to_string();
-        let c = MaintenanceCheckpoint {
-            id: format!("read-complete:{}:{}", r.kind, r.id),
-            phase: "readback_complete".into(),
-            references: vec![r.clone()],
-            review: None,
-            summary: Some(summary.clone()),
-            data: json!({"source":primary,"original_sources":originals.len()}),
-        };
-        self.store.checkpoint(lease, &c, coverage).await?;
-        saved.insert(c.id.clone(), c);
+        self.complete_read(
+            lease,
+            r,
+            &summary,
+            json!({"source":primary,"original_sources":originals.len()}),
+            coverage,
+            saved,
+        )
+        .await?;
         Ok(summary)
+    }
+    async fn complete_read(
+        &self,
+        lease: &MaintenanceLease,
+        reference: &KnowledgeEvidenceRef,
+        summary: &str,
+        data: Value,
+        coverage: &ReviewCoverage,
+        saved: &mut HashMap<String, MaintenanceCheckpoint>,
+    ) -> Result<()> {
+        let checkpoint = MaintenanceCheckpoint {
+            id: format!("read-complete:{}:{}", reference.kind, reference.id),
+            phase: "readback_complete".into(),
+            references: vec![reference.clone()],
+            review: None,
+            summary: Some(summary.into()),
+            data,
+        };
+        self.store.checkpoint(lease, &checkpoint, coverage).await?;
+        saved.insert(checkpoint.id.clone(), checkpoint);
+        Ok(())
     }
 }

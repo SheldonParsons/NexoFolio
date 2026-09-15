@@ -424,8 +424,10 @@ Token、密码、会话、后台任务和缓存不属于接口文档导出内容
 
 ## 审计后的依赖落点
 
-`AccessHttp`仅持有登录/会话能力，`http/services.rs`负责传输组合，`wiring/services.rs`装配业务依赖。发布由应用层`KnowledgePublicationService`调用注入的策略，再进入`KnowledgeActivationStore`事务。项目事务权限校验共用`infrastructure/project_access.rs`。
+`AccessHttp`仅持有登录/会话能力；`wiring/services.rs`直接装配业务Router，不再另设一套每次都填满的可选服务容器。发布由应用层`KnowledgePublicationService`调用注入的策略，再进入`KnowledgeActivationStore`事务。项目事务权限校验共用`infrastructure/project_access.rs`。
 
 维护执行的分片上下文、执行阶段和原文回读分别组织在`application/maintenance_engine/`；字段引用、阅读覆盖、回读要求、候选动作和上下文提示分别在`rebuild/maintenance/`。证据纯判断在`evidence/relations.rs`，事实/关系/UI持久化在`infrastructure/evidence_processing/`。没有为拆文件新增crate或微服务。
 
 旧目录与统一维护保留不同的业务合同，共用有界模型HTTP传输。当前迁移策略是复用共同规则并冻结旧入口扩展，不在缺乏旧队列/调用方退役依据时删除兼容能力。
+
+早期未接入业务的采集/通用任务/旧重构草图已删除；以当前batch、DocumentReader、MaintenanceStore、DirectoryGenerator等实际使用的端口为模块边界。公共HTTP合同和数据库版本保持兼容。

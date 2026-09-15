@@ -21,20 +21,7 @@ pub struct MaintenanceHttp {
     pub publication: Arc<KnowledgePublicationService>,
     pub model_configured: bool,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Page {
-    #[serde(default = "one")]
-    page: u32,
-    #[serde(default = "size")]
-    limit: u32,
-}
-fn one() -> u32 {
-    1
-}
-fn size() -> u32 {
-    20
-}
+use super::Page;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Env {
@@ -70,16 +57,7 @@ pub fn routes(s: MaintenanceHttp) -> Router {
             session_auth,
         ))
         .with_state(s)
-        .layer(middleware::from_fn(
-            |r: axum::extract::Request, n: axum::middleware::Next| async move {
-                let mut response = n.run(r).await;
-                response.headers_mut().insert(
-                    axum::http::header::CACHE_CONTROL,
-                    "no-store".parse().unwrap(),
-                );
-                response
-            },
-        ))
+        .layer(middleware::from_fn(super::access::no_store))
 }
 async fn start(
     State(s): State<MaintenanceHttp>,

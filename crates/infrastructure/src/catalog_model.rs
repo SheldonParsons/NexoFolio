@@ -38,9 +38,7 @@ fn unavailable() -> Error {
     }
 }
 fn invalid() -> Error {
-    Error::InvalidInput {
-        message: "catalog model returned an invalid or incomplete candidate".into(),
-    }
+    Error::invalid("catalog model returned an invalid or incomplete candidate")
 }
 #[async_trait]
 impl DirectoryGenerator for ChatCatalogGenerator {

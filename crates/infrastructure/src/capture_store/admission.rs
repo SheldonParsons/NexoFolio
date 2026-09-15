@@ -108,26 +108,8 @@ impl CaptureAdmissionStore for PostgresCaptureStore {
             .iter()
             .filter_map(|r| r.http.as_ref().map(|h| h.identity_key.clone()))
             .collect();
-        let rows=sqlx::query(r#"SELECT h.identity_key,h.structural_projection,h.algorithm_version,h.ingestion_id,CASE WHEN h.algorithm_version<>'http-structure-2' THEN i.raw_record ELSE NULL END AS raw_record
-            FROM ingestion_heads h
-            JOIN ingestion_inbox i ON i.id=h.ingestion_id
-            WHERE h.project_id=$1
-            AND h.environment_id=$2
-            AND h.identity_key=ANY($3)"#).bind(uuid(batch.project_id)).bind(env).bind(keys).fetch_all(&mut *tx).await.map_err(err)?;
-        let mut heads = std::collections::HashMap::<String, (Uuid, Option<Value>)>::new();
-        for row in rows {
-            let projection = if row.get::<String, _>("algorithm_version") == "http-structure-2" {
-                row.get("structural_projection")
-            } else {
-                row.get::<Option<Value>, _>("raw_record")
-                    .as_ref()
-                    .and_then(nexofolio_intake::http_projection)
-            };
-            heads.insert(
-                row.get("identity_key"),
-                (row.get("ingestion_id"), projection),
-            );
-        }
+        let mut heads =
+            crate::ingestion_heads::load(&mut tx, uuid(batch.project_id), env, &keys).await?;
         let mut blobs = std::collections::HashMap::<String, nexofolio_evidence::BlobRef>::new();
         if new_count > 0 {
             let reserved = sqlx::query(
@@ -164,30 +146,25 @@ impl CaptureAdmissionStore for PostgresCaptureStore {
                 continue;
             }
             let (ingestion, structure) = if let Some(http) = &r.http {
-                let duplicate = heads.get(&http.identity_key).filter(|(_, known)| {
-                    http.structural_projection
-                        .as_ref()
-                        .zip(known.as_ref())
-                        .is_some_and(|(incoming, known)| {
-                            nexofolio_intake::http_projection_covers(known, incoming)
-                        })
-                });
-                if let Some((id, _)) = duplicate {
-                    (Some(*id), "duplicate")
+                let duplicate = heads
+                    .get(&http.identity_key)
+                    .filter(|head| head.covers(http));
+                if let Some(head) = duplicate {
+                    (Some(head.id), "duplicate")
                 } else {
                     let ingestion = Uuid::new_v4();
                     sqlx::query(r#"INSERT INTO ingestion_inbox(id,project_id,actor_id,producer_id,source_type,record_id,batch_id,environment_id,legacy_service_key,identity_key,structural_hash,raw_record,path_identity)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"#)
       .bind(ingestion).bind(uuid(batch.project_id)).bind(uuid(actor)).bind(batch.source.instance_id).bind(&batch.source.r#type).bind(id).bind(batch.batch_id).bind(env).bind(&batch.service_key).bind(&http.identity_key).bind(&http.structural_hash).bind(&r.raw).bind(serde_json::to_value(&http.path_identity).expect("serializes")).execute(&mut *tx).await.map_err(err)?;
-                    sqlx::query(r#"INSERT INTO ingestion_heads(project_id,environment_id,identity_key,algorithm_version,structural_hash,ingestion_id,structural_projection)
-            VALUES($1,$2,$3,'http-structure-2',$4,$5,$6)
-            ON CONFLICT(project_id,environment_id,identity_key) DO UPDATE
-            SET algorithm_version=excluded.algorithm_version,structural_hash=excluded.structural_hash,ingestion_id=excluded.ingestion_id,structural_projection=excluded.structural_projection"#)
-      .bind(uuid(batch.project_id)).bind(env).bind(&http.identity_key).bind(&http.structural_hash).bind(ingestion).bind(&http.structural_projection).execute(&mut *tx).await.map_err(err)?;
-                    heads.insert(
-                        http.identity_key.clone(),
-                        (ingestion, http.structural_projection.clone()),
-                    );
+                    let head = crate::ingestion_heads::replace(
+                        &mut tx,
+                        uuid(batch.project_id),
+                        env,
+                        ingestion,
+                        http,
+                    )
+                    .await?;
+                    heads.insert(http.identity_key.clone(), head);
                     (Some(ingestion), "accepted")
                 }
             } else {

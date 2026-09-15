@@ -71,28 +71,21 @@ impl CaptureHttp {
         let envelopes = self.envelopes.clone();
         let records = self.records.clone();
         let parsed = tokio::task::spawn_blocking(move || -> Result<_> {
-            let raw: Value = serde_json::from_slice(&bytes).map_err(|_| Error::InvalidInput {
-                message: "invalid capture JSON".into(),
-            })?;
+            let raw: Value = serde_json::from_slice(&bytes)
+                .map_err(|_| Error::invalid("invalid capture JSON"))?;
             let version = match raw["schema_version"].as_str() {
                 Some("1") => 0,
                 Some("2") => 1,
                 Some("3") => 2,
                 _ => {
-                    return Err(Error::InvalidInput {
-                        message: "unsupported capture schema".into(),
-                    });
+                    return Err(Error::invalid("unsupported capture schema"));
                 }
             };
             if !envelopes[version].is_valid(&raw) {
-                return Err(Error::InvalidInput {
-                    message: "invalid capture envelope".into(),
-                });
+                return Err(Error::invalid("invalid capture envelope"));
             }
-            let batch: CaptureBatch =
-                serde_json::from_value(raw).map_err(|_| Error::InvalidInput {
-                    message: "invalid capture envelope".into(),
-                })?;
+            let batch: CaptureBatch = serde_json::from_value(raw)
+                .map_err(|_| Error::invalid("invalid capture envelope"))?;
             Ok((batch, version))
         })
         .await;
@@ -253,9 +246,7 @@ async fn upload(
         .to_owned();
     let body = to_bytes(req.into_body(), 8 * 1024 * 1024)
         .await
-        .map_err(|_| Error::InvalidInput {
-            message: "asset exceeds8MiB".into(),
-        })?;
+        .map_err(|_| Error::invalid("asset exceeds8MiB"))?;
     Ok(Json(
         s.store
             .put_asset(p.user_id, project, id, &media, body.to_vec())

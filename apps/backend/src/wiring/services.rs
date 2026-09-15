@@ -9,7 +9,7 @@ pub(super) fn build_services(
     database: Postgres,
     store: Arc<dyn PlatformAccess>,
     access: AccessHttp,
-) -> Result<crate::http::services::BackendServices> {
+) -> Result<axum::Router> {
     let service = Arc::new(nexofolio_application::IngestionService::new(
         store.clone(),
         Arc::new(PostgresAdmission::new(database.clone())),
@@ -68,18 +68,16 @@ pub(super) fn build_services(
         knowledge: maintenance_store,
         model_configured: config.catalog_model.is_some(),
     };
-    let mut state = crate::http::services::BackendServices {
-        access,
-        maintenance: None,
-        official_catalog: None,
-        catalog_previews: None,
-        documents: None,
-        ingestion: None,
-    };
-    state.maintenance = Some(maintenance);
-    state.official_catalog = Some(official_http);
-    state.catalog_previews = Some(previews);
-    state.documents = Some(documents);
-    state.ingestion = Some(ingestion);
-    Ok(state)
+    let capture = ingestion
+        .capture
+        .clone()
+        .map(crate::http::capture::routes)
+        .unwrap_or_default();
+    Ok(crate::http::access::routes(access)
+        .merge(crate::http::ingestion::routes(ingestion))
+        .merge(crate::http::documents::routes(documents))
+        .merge(crate::http::catalog_preview::routes(previews))
+        .merge(crate::http::official_catalog::routes(official_http))
+        .merge(crate::http::maintenance::routes(maintenance))
+        .merge(capture))
 }

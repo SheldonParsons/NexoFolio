@@ -149,7 +149,7 @@ pub fn routes(state: AccessHttp) -> Router {
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn(no_store))
 }
-async fn no_store(req: Request, next: Next) -> Response {
+pub(super) async fn no_store(req: Request, next: Next) -> Response {
     let mut r = next.run(req).await;
     r.headers_mut()
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
@@ -166,10 +166,7 @@ async fn login(
         || password.expose().is_empty()
         || password.expose().len() > 1024
     {
-        return Err(Error::InvalidInput {
-            message: "invalid credentials shape".into(),
-        }
-        .into());
+        return Err(Error::invalid("invalid credentials shape").into());
     }
     let Ok(_permit) = s.permits.clone().try_acquire_owned() else {
         return Ok((

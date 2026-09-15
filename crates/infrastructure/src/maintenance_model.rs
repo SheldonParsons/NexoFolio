@@ -135,18 +135,14 @@ impl MaintenanceModel for ChatMaintenanceModel {
 
 fn parse_completion(out: Value) -> Result<ModelInvocation> {
     if out["choices"][0]["finish_reason"] != "stop" {
-        return Err(Error::InvalidInput {
-            message: "MODEL_OUTPUT_INCOMPLETE".into(),
-        });
+        return Err(Error::invalid("MODEL_OUTPUT_INCOMPLETE"));
     }
     let content = serde_json::from_str(
         out["choices"][0]["message"]["content"]
             .as_str()
             .ok_or_else(bad)?,
     )
-    .map_err(|_| Error::InvalidInput {
-        message: "MODEL_INVALID_JSON".into(),
-    })?;
+    .map_err(|_| Error::invalid("MODEL_INVALID_JSON"))?;
     Ok(ModelInvocation {
         content,
         usage: out.get("usage").filter(|v| v.is_object()).cloned(),

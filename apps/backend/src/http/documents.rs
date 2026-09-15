@@ -58,16 +58,7 @@ pub fn routes(state: DocumentsHttp) -> Router {
             session_auth,
         ))
         .with_state(state)
-        .layer(middleware::from_fn(
-            |req: axum::extract::Request, next: axum::middleware::Next| async move {
-                let mut response = next.run(req).await;
-                response.headers_mut().insert(
-                    axum::http::header::CACHE_CONTROL,
-                    "no-store".parse().unwrap(),
-                );
-                response
-            },
-        ))
+        .layer(middleware::from_fn(super::access::no_store))
 }
 async fn list(
     State(s): State<DocumentsHttp>,

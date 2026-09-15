@@ -25,9 +25,7 @@ fn db_error(_: sqlx::Error) -> Error {
     }
 }
 fn invalid() -> Error {
-    Error::InvalidInput {
-        message: "catalog snapshot or candidate exceeds preview limits".into(),
-    }
+    Error::invalid("catalog snapshot or candidate exceeds preview limits")
 }
 fn decode(row: sqlx::postgres::PgRow) -> Result<PreviewTask> {
     serde_json::from_value(row.get::<Value, _>("value")).map_err(|_| Error::Unavailable {
@@ -57,9 +55,7 @@ impl CatalogPreviewStore for PostgresCatalogPreviews {
             WHERE d.project_id=$1"#)
             .bind(uuid(project)).fetch_one(&mut *tx).await.map_err(db_error)?;
         if size.get::<i64, _>("interfaces") == 0 {
-            return Err(Error::InvalidInput {
-                message: "project has no observed interfaces".into(),
-            });
+            return Err(Error::invalid("project has no observed interfaces"));
         }
         if size.get::<i64, _>("interfaces") > MAX_PREVIEW_INTERFACES as i64
             || size.get::<i64, _>("bytes") > MAX_PREVIEW_BYTES as i64
@@ -288,9 +284,7 @@ impl nexofolio_knowledge::CatalogPreviewReader for PostgresCatalogPreviews {
         status: Option<PreviewStatus>,
     ) -> Result<CatalogPreviewPage> {
         if !(1..=100000).contains(&page) || !(1..=100).contains(&limit) {
-            return Err(Error::InvalidInput {
-                message: "invalid catalog preview pagination".into(),
-            });
+            return Err(Error::invalid("invalid catalog preview pagination"));
         }
         let mut tx = self.authorized_read(user, project).await?;
         let status = status.map(|s| {

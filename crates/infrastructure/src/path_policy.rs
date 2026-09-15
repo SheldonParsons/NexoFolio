@@ -27,9 +27,7 @@ impl nexofolio_intake::ProjectPathPolicies for PostgresPathPolicies {
     }
     async fn set(&self, project: ProjectId, policy: &PathPolicy) -> Result<()> {
         if !policy.valid() {
-            return Err(Error::InvalidInput {
-                message: "invalid path policy".into(),
-            });
+            return Err(Error::invalid("invalid path policy"));
         }
         let result = sqlx::query("UPDATE projects SET path_policy=$2 WHERE id=$1")
             .bind(project.to_string().parse::<Uuid>().expect("UUID"))

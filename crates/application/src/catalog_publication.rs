@@ -43,9 +43,7 @@ impl CatalogPublicationService {
         request: &PublishCatalog,
     ) -> Result<CatalogActivation> {
         if request.expected_generation < 0 {
-            return Err(Error::InvalidInput {
-                message: "invalid directory generation".into(),
-            });
+            return Err(Error::invalid("invalid directory generation"));
         }
         let task = self
             .previews
@@ -53,9 +51,7 @@ impl CatalogPublicationService {
             .await?
             .task;
         if !matches!(task.status, PreviewStatus::Ready) {
-            return Err(Error::InvalidInput {
-                message: "candidate is not ready".into(),
-            });
+            return Err(Error::invalid("candidate is not ready"));
         }
         let candidate = task.candidate.as_ref().ok_or(Error::Conflict)?;
         if !self
@@ -63,9 +59,7 @@ impl CatalogPublicationService {
             .review(&task.snapshot, candidate)
             .structurally_valid
         {
-            return Err(Error::InvalidInput {
-                message: "candidate does not pass publication checks".into(),
-            });
+            return Err(Error::invalid("candidate does not pass publication checks"));
         }
         self.store.publish(user, project, request, &task).await
     }
@@ -76,9 +70,7 @@ impl CatalogPublicationService {
         request: &RestoreCatalog,
     ) -> Result<CatalogActivation> {
         if request.expected_generation < 0 {
-            return Err(Error::InvalidInput {
-                message: "invalid directory generation".into(),
-            });
+            return Err(Error::invalid("invalid directory generation"));
         }
         self.store.restore(user, project, request).await
     }

@@ -12,6 +12,7 @@ pub use session_crypto::ConfiguredEmergencyPassword;
 pub use zentao::Zentao;
 
 mod admission;
+mod ingestion_heads;
 pub use admission::PostgresAdmission;
 
 mod environments;

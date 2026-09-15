@@ -17,14 +17,7 @@ pub struct OfficialCatalogHttp {
     pub reader: Arc<dyn OfficialCatalogReader>,
     pub publication: Arc<CatalogPublicationService>,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Page {
-    #[serde(default = "first")]
-    page: u32,
-    #[serde(default = "size")]
-    limit: u32,
-}
+use super::Page;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Interfaces {
@@ -53,16 +46,7 @@ pub fn routes(s: OfficialCatalogHttp) -> Router {
             session_auth,
         ))
         .with_state(s)
-        .layer(middleware::from_fn(
-            |r: axum::extract::Request, n: axum::middleware::Next| async move {
-                let mut response = n.run(r).await;
-                response.headers_mut().insert(
-                    axum::http::header::CACHE_CONTROL,
-                    "no-store".parse().unwrap(),
-                );
-                response
-            },
-        ))
+        .layer(middleware::from_fn(super::access::no_store))
 }
 async fn current(
     State(s): State<OfficialCatalogHttp>,

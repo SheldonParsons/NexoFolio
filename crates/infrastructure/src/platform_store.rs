@@ -107,9 +107,7 @@ impl PlatformAccess for PostgresAccess {
     ) -> Result<EnvironmentPage> {
         self.require_project(p, project).await?;
         if page == 0 || page > 100000 || !(1..=100).contains(&limit) {
-            return Err(Error::InvalidInput {
-                message: "invalid pagination".into(),
-            });
+            return Err(Error::invalid("invalid pagination"));
         }
         let mut tx = self.database.pool.begin().await.map_err(db_error)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -280,9 +278,7 @@ impl PlatformAccess for PostgresAccess {
         limit: u32,
     ) -> Result<ProjectPage> {
         if page == 0 || page > 100000 || !(1..=100).contains(&limit) {
-            return Err(Error::InvalidInput {
-                message: "page must be 1..100000 and limit 1..100".into(),
-            });
+            return Err(Error::invalid("page must be 1..100000 and limit 1..100"));
         }
         let mut tx = self.database.pool.begin().await.map_err(db_error)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")

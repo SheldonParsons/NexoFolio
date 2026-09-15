@@ -4,10 +4,7 @@ use nexofolio_contracts::Result;
 use nexofolio_infrastructure::{ConfiguredEmergencyPassword, Postgres, PostgresAccess, Zentao};
 use std::sync::Arc;
 
-pub fn build_access(
-    config: &Config,
-    database: Postgres,
-) -> Result<Option<crate::http::services::BackendServices>> {
+pub fn build_access(config: &Config, database: Postgres) -> Result<Option<axum::Router>> {
     let (Some(base), Some(key)) = (&config.zentao_base_url, &config.session_key) else {
         return Ok(None);
     };

@@ -2,15 +2,9 @@ use crate::Postgres;
 use async_trait::async_trait;
 use nexofolio_contracts::{Error, Result};
 use nexofolio_intake::{Admission, AdmissionResult, AdmissionStore, ReceiptStatus, RecordReceipt};
-use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
-struct Head {
-    hash: Option<Vec<u8>>,
-    projection: Option<Value>,
-    id: Uuid,
-}
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -111,34 +105,8 @@ impl AdmissionStore for PostgresAdmission {
                 )
             })
             .collect();
-        let previous=sqlx::query(r#"SELECT h.identity_key,h.structural_hash,h.algorithm_version,h.ingestion_id,h.structural_projection,CASE WHEN h.algorithm_version <> 'http-structure-2' THEN i.raw_record ELSE NULL END AS legacy_raw
-            FROM ingestion_heads h
-            JOIN ingestion_inbox i ON i.id=h.ingestion_id
-            WHERE h.project_id=$1
-            AND h.environment_id=$2
-            AND h.identity_key=ANY($3)"#).bind(project).bind(environment_id).bind(&identities).fetch_all(&mut *tx).await.map_err(db_error)?;
-        let mut heads = std::collections::HashMap::<String, Head>::new();
-        for r in previous {
-            let identity: String = r.get("identity_key");
-            let mut head = Head {
-                hash: r.get("structural_hash"),
-                projection: r.get("structural_projection"),
-                id: r.get("ingestion_id"),
-            };
-            if r.get::<String, _>("algorithm_version") != "http-structure-2" {
-                // Upgrade only the current head under its existing lock; never scan history.
-                head.projection = r
-                    .get::<Option<Value>, _>("legacy_raw")
-                    .as_ref()
-                    .and_then(nexofolio_intake::http_projection);
-                head.hash = head.projection.as_ref().map(|p| {
-                    Sha256::digest(serde_json::to_vec(p).expect("JSON serializes")).to_vec()
-                });
-                sqlx::query("UPDATE ingestion_heads SET algorithm_version='http-structure-2',structural_projection=$4,structural_hash=$5 WHERE project_id=$1 AND environment_id=$2 AND identity_key=$3")
-                    .bind(project).bind(environment_id).bind(&identity).bind(&head.projection).bind(&head.hash).execute(&mut *tx).await.map_err(db_error)?;
-            }
-            heads.insert(identity, head);
-        }
+        let mut heads =
+            crate::ingestion_heads::load(&mut tx, project, environment_id, &identities).await?;
         let capture_ids:Vec<Uuid>=sqlx::query_scalar("SELECT record_id FROM capture_receipts WHERE actor_id=$1 AND producer_id=$2 AND record_id=ANY($3)").bind(actor).bind(batch.source.instance_id).bind(&ids).fetch_all(&mut *tx).await.map_err(db_error)?;
         let mut to_insert = Vec::new();
         let mut receipts = Vec::new();
@@ -180,17 +148,9 @@ impl AdmissionStore for PostgresAdmission {
                 });
                 continue;
             }
-            let duplicate = heads.get(&row.identity_key).filter(|head| {
-                row.structural_hash.is_some()
-                    && (head.hash == row.structural_hash
-                        || head
-                            .projection
-                            .as_ref()
-                            .zip(row.structural_projection.as_ref())
-                            .is_some_and(|(known, incoming)| {
-                                nexofolio_intake::http_projection_covers(known, incoming)
-                            }))
-            });
+            let duplicate = heads
+                .get(&row.identity_key)
+                .filter(|head| head.covers(&row));
             let (id, status, code) = if let Some(head) = duplicate {
                 (head.id, "ignored", "DUPLICATE_CURRENT_STRUCTURE")
             } else {
@@ -198,20 +158,10 @@ impl AdmissionStore for PostgresAdmission {
                 sqlx::query(r#"INSERT INTO ingestion_inbox(id,project_id,actor_id,producer_id,source_type,record_id,batch_id,environment_id,legacy_service_key,identity_key,structural_hash,raw_record,path_identity)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"#)
       .bind(id).bind(project).bind(actor).bind(batch.source.instance_id).bind(&batch.source.r#type).bind(row.record_id).bind(batch.batch_id).bind(environment_id).bind(&batch.legacy_service_key).bind(&row.identity_key).bind(&row.structural_hash).bind(&row.raw).bind(serde_json::to_value(&row.path_identity).expect("serializes")).execute(&mut *tx).await.map_err(db_error)?;
-                sqlx::query(r#"INSERT INTO ingestion_heads(project_id,environment_id,identity_key,algorithm_version,structural_hash,ingestion_id,structural_projection)
-            VALUES($1,$2,$3,'http-structure-2',$4,$5,$6)
-            ON CONFLICT(project_id,environment_id,identity_key) DO UPDATE
-            SET structural_hash=excluded.structural_hash,ingestion_id=excluded.ingestion_id,algorithm_version=excluded.algorithm_version,structural_projection=excluded.structural_projection"#)
-                  .bind(project).bind(environment_id).bind(&row.identity_key).bind(&row.structural_hash).bind(id).bind(&row.structural_projection).execute(&mut *tx).await.map_err(db_error)?;
-                // Ignored weaker observations must not downgrade the head, including within a batch.
-                heads.insert(
-                    row.identity_key.clone(),
-                    Head {
-                        hash: row.structural_hash,
-                        projection: row.structural_projection,
-                        id,
-                    },
-                );
+                let head =
+                    crate::ingestion_heads::replace(&mut tx, project, environment_id, id, &row)
+                        .await?;
+                heads.insert(row.identity_key.clone(), head);
                 (id, "accepted", "FORWARDED")
             };
             known.insert(

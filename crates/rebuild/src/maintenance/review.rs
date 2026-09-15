@@ -36,9 +36,7 @@ pub fn review_segments(
     max_bytes: usize,
 ) -> Result<Vec<ReviewSegment>> {
     if max_bytes < 2048 {
-        return Err(Error::InvalidInput {
-            message: "model input budget too small".into(),
-        });
+        return Err(Error::invalid("model input budget too small"));
     }
     let mut units = Vec::new();
     let profiles = field_evidence_profiles(snapshot);
@@ -86,9 +84,7 @@ pub fn review_segments(
                 > max_bytes.saturating_sub(512)
             {
                 if next.is_empty() {
-                    return Err(Error::InvalidInput {
-                        message: "FIELD_EXCEEDS_MODEL_BUDGET".into(),
-                    });
+                    return Err(Error::invalid("FIELD_EXCEEDS_MODEL_BUDGET"));
                 }
                 fragments.push(make(std::mem::take(&mut next), fragments.len() as u32));
             }
@@ -129,9 +125,7 @@ pub fn review_segments(
                 trial.push(unit.clone());
                 if serde_json::to_vec(&trial).unwrap().len() > max_bytes {
                     if pending.is_empty() {
-                        return Err(Error::InvalidInput {
-                            message: "REVIEW_UNIT_EXCEEDS_MODEL_BUDGET".into(),
-                        });
+                        return Err(Error::invalid("REVIEW_UNIT_EXCEEDS_MODEL_BUDGET"));
                     }
                     result.push(ReviewSegment {
                         id: format!("segment-{}", result.len()),
@@ -159,9 +153,7 @@ pub fn validate_segment(segment: &ReviewSegment, review: &SegmentReview) -> Resu
         .collect();
     let mut seen = HashSet::new();
     if segment.id != review.segment_id {
-        return Err(Error::InvalidInput {
-            message: "REVIEW_SEGMENT_MISMATCH".into(),
-        });
+        return Err(Error::invalid("REVIEW_SEGMENT_MISMATCH"));
     }
     for a in &review.assessments {
         if expected.get(a.unit_id.as_str()) != Some(&a.field_id.as_str())
@@ -169,15 +161,11 @@ pub fn validate_segment(segment: &ReviewSegment, review: &SegmentReview) -> Resu
             || a.note.trim().is_empty()
             || !["keep", "change", "conflict", "needs_evidence"].contains(&a.disposition.as_str())
         {
-            return Err(Error::InvalidInput {
-                message: "REVIEW_COVERAGE_INVALID".into(),
-            });
+            return Err(Error::invalid("REVIEW_COVERAGE_INVALID"));
         }
     }
     if seen.len() != expected.len() {
-        return Err(Error::InvalidInput {
-            message: "REVIEW_COVERAGE_INCOMPLETE".into(),
-        });
+        return Err(Error::invalid("REVIEW_COVERAGE_INCOMPLETE"));
     }
     Ok(())
 }

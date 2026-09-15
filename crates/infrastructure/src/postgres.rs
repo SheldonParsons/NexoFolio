@@ -16,19 +16,13 @@ impl Postgres {
     /// Lazy connections keep liveness available during database outages.
     pub fn new(url: &Secret, max_connections: u32, timeout: Duration) -> Result<Self> {
         if max_connections == 0 || timeout.is_zero() {
-            return Err(Error::InvalidInput {
-                message: "database pool limits must be positive".into(),
-            });
+            return Err(Error::invalid("database pool limits must be positive"));
         }
         if !url.expose().starts_with("postgres://") && !url.expose().starts_with("postgresql://") {
-            return Err(Error::InvalidInput {
-                message: "DATABASE_URL must be a PostgreSQL URL".into(),
-            });
+            return Err(Error::invalid("DATABASE_URL must be a PostgreSQL URL"));
         }
         let options = PgConnectOptions::from_str(url.expose())
-            .map_err(|_| Error::InvalidInput {
-                message: "DATABASE_URL is invalid".into(),
-            })?
+            .map_err(|_| Error::invalid("DATABASE_URL is invalid"))?
             .disable_statement_logging();
         let pool = PgPoolOptions::new()
             .max_connections(max_connections)

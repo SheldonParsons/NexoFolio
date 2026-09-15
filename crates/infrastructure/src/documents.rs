@@ -89,16 +89,13 @@ impl ObservationProcessor for PostgresDocuments {
             nexofolio_knowledge::apply_observed_path(&mut definition, path)?;
         }
         if format!("{} {}", definition.method, definition.path) != claim.identity_key {
-            return Err(Error::InvalidInput {
-                message: "IDENTITY_MISMATCH".into(),
-            });
+            return Err(Error::invalid("IDENTITY_MISMATCH"));
         }
-        let value = serde_json::to_value(&definition).map_err(|_| Error::InvalidInput {
-            message: "INVALID_DEFINITION".into(),
-        })?;
-        let hash = Sha256::digest(serde_json::to_vec(&value).map_err(|_| Error::InvalidInput {
-            message: "INVALID_DEFINITION".into(),
-        })?)
+        let value =
+            serde_json::to_value(&definition).map_err(|_| Error::invalid("INVALID_DEFINITION"))?;
+        let hash = Sha256::digest(
+            serde_json::to_vec(&value).map_err(|_| Error::invalid("INVALID_DEFINITION"))?,
+        )
         .to_vec();
         let mut tx = self.database.pool.begin().await.map_err(db_error)?;
         let valid: Option<Uuid> = sqlx::query_scalar(
@@ -268,9 +265,7 @@ impl PostgresDocuments {
 }
 fn pagination(page: u32, limit: u32) -> Result<()> {
     if page == 0 || page > 100000 || !(1..=100).contains(&limit) {
-        return Err(Error::InvalidInput {
-            message: "invalid pagination".into(),
-        });
+        return Err(Error::invalid("invalid pagination"));
     }
     Ok(())
 }
@@ -282,9 +277,7 @@ impl DocumentReader for PostgresDocuments {
         self.environment(project, q.environment_id).await?;
         let query = q.query.unwrap_or_default();
         if query.len() > 500 {
-            return Err(Error::InvalidInput {
-                message: "query too long".into(),
-            });
+            return Err(Error::invalid("query too long"));
         }
         let mut tx = self.database.pool.begin().await.map_err(db_error)?;
         sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")

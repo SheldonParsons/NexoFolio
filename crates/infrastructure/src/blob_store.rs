@@ -14,9 +14,7 @@ fn unavailable() -> Error {
 }
 fn location(root: &std::path::Path, project: ProjectId, hash: &str) -> Result<PathBuf> {
     if hash.len() != 64 || !hash.bytes().all(|c| c.is_ascii_hexdigit()) {
-        return Err(Error::InvalidInput {
-            message: "invalid content reference".into(),
-        });
+        return Err(Error::invalid("invalid content reference"));
     }
     Ok(root.join(project.to_string()).join(&hash[..2]).join(hash))
 }

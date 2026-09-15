@@ -8,9 +8,7 @@ pub(crate) struct ChatTransport {
     key: Secret,
 }
 fn invalid() -> Error {
-    Error::InvalidInput {
-        message: "invalid model endpoint configuration".into(),
-    }
+    Error::invalid("invalid model endpoint configuration")
 }
 impl ChatTransport {
     pub(crate) fn new(base: &str, key: Secret, timeout: Duration) -> Result<Self> {
@@ -72,14 +70,10 @@ impl ChatTransport {
             component: "model_response",
         })? {
             if bytes.len() + chunk.len() > max_bytes {
-                return Err(Error::InvalidInput {
-                    message: "MODEL_RESPONSE_TOO_LARGE".into(),
-                });
+                return Err(Error::invalid("MODEL_RESPONSE_TOO_LARGE"));
             }
             bytes.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&bytes).map_err(|_| Error::InvalidInput {
-            message: "MODEL_INVALID_RESPONSE".into(),
-        })
+        serde_json::from_slice(&bytes).map_err(|_| Error::invalid("MODEL_INVALID_RESPONSE"))
     }
 }

@@ -106,7 +106,12 @@ def main():
             status(url + "/health/ready", 200)
             report["checks"].append("api_and_worker_graceful_stop_and_restart")
             report["runtime_libraries"] = dc("exec", "-T", "api", "ldd", "/usr/local/bin/nexofolio-api").splitlines()
-            report["image"] = json.loads(run(["docker", "image", "inspect", "nexofolio-backend:foundation",
+            actual_image = run(["docker", "inspect", "--format", "{{.Image}}", dc("ps", "--quiet", "api")])
+            selected_image = environment.get("BACKEND_IMAGE", "nexofolio-backend:foundation")
+            assert actual_image == run(["docker", "image", "inspect", selected_image, "--format", "{{.Id}}"])
+            assert actual_image == run(["docker", "inspect", "--format", "{{.Image}}", dc("ps", "--quiet", "worker")])
+            report["checks"].append("api_worker_match_selected_image")
+            report["image"] = json.loads(run(["docker", "image", "inspect", actual_image,
                                               "--format", '{{json .}}']))
             report["image"] = {key: report["image"][key] for key in ["Id", "Os", "Architecture"]}
             print(json.dumps(report, ensure_ascii=False, indent=2))

@@ -1,16 +1,16 @@
-use nexofolio_contracts::{KnowledgeEvent, Result};
-use nexofolio_rebuild::{CandidatePlan, CatalogBuilder, RebuildRequest};
+use nexofolio_contracts::{CatalogSnapshot, DirectoryCandidate, KnowledgeEvent, Result};
+use nexofolio_rebuild::DirectoryGenerator;
 use nexofolio_triggers::{DirectoryMetrics, TriggerDecision, TriggerPolicy};
 use std::sync::Arc;
 
 /// Wiring boundary only: inspecting a trigger cannot itself launch a rebuild.
 pub struct OrganizationServices {
     trigger: Arc<dyn TriggerPolicy>,
-    builder: Arc<dyn CatalogBuilder>,
+    builder: Arc<dyn DirectoryGenerator>,
 }
 
 impl OrganizationServices {
-    pub fn new(trigger: Arc<dyn TriggerPolicy>, builder: Arc<dyn CatalogBuilder>) -> Self {
+    pub fn new(trigger: Arc<dyn TriggerPolicy>, builder: Arc<dyn DirectoryGenerator>) -> Self {
         Self { trigger, builder }
     }
     pub async fn inspect(
@@ -20,7 +20,7 @@ impl OrganizationServices {
     ) -> Result<TriggerDecision> {
         self.trigger.evaluate(event, metrics).await
     }
-    pub async fn build_candidate(&self, request: RebuildRequest) -> Result<CandidatePlan> {
-        self.builder.build(request).await
+    pub async fn build_candidate(&self, snapshot: &CatalogSnapshot) -> Result<DirectoryCandidate> {
+        self.builder.generate(snapshot).await
     }
 }

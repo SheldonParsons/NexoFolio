@@ -56,9 +56,8 @@ struct Project {
 
 impl Zentao {
     pub fn new(base: &str) -> Result<Self> {
-        let mut url = Url::parse(base).map_err(|_| Error::InvalidInput {
-            message: "NEXOFOLIO_ZENTAO_BASE_URL is invalid".into(),
-        })?;
+        let mut url =
+            Url::parse(base).map_err(|_| Error::invalid("NEXOFOLIO_ZENTAO_BASE_URL is invalid"))?;
         let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
         if (url.scheme() != "https" && !(url.scheme() == "http" && loopback))
             || !url.username().is_empty()
@@ -66,7 +65,9 @@ impl Zentao {
             || url.query().is_some()
             || url.fragment().is_some()
         {
-            return Err(Error::InvalidInput {message:"ZenTao requires HTTPS (HTTP is allowed only on loopback), without embedded credentials/query".into()});
+            return Err(Error::invalid(
+                "ZenTao requires HTTPS (HTTP is allowed only on loopback), without embedded credentials/query",
+            ));
         }
         url.set_path(&format!("{}/", url.path().trim_end_matches('/')));
         let client = Client::builder()

@@ -1,0 +1,98 @@
+{
+  "baseline": "81bd90a6d79717955d9c410b36ee7f9bf07863d8",
+  "rust_lines": {
+    "production_file_lines": [
+      15435,
+      14920
+    ],
+    "dedicated_test_lines": [
+      5961,
+      5967
+    ]
+  },
+  "net_rust_lines": -509,
+  "inline_test_sections_changed": [],
+  "checks": [
+    {
+      "check": "fmt",
+      "exit_code": 0,
+      "seconds": 0.28
+    },
+    {
+      "check": "ingestion-contract",
+      "exit_code": 0,
+      "seconds": 0.04
+    },
+    {
+      "check": "capture-contract",
+      "exit_code": 0,
+      "seconds": 3.76
+    },
+    {
+      "check": "document-contract",
+      "exit_code": 0,
+      "seconds": 0.05
+    },
+    {
+      "check": "catalog_preview-contract",
+      "exit_code": 0,
+      "seconds": 1.58
+    },
+    {
+      "check": "maintenance-contract",
+      "exit_code": 0,
+      "seconds": 0.79
+    },
+    {
+      "check": "contract-governance",
+      "exit_code": 0,
+      "seconds": 0.07
+    },
+    {
+      "check": "clippy",
+      "exit_code": 0,
+      "seconds": 10.96
+    },
+    {
+      "check": "workspace-tests",
+      "exit_code": 0,
+      "seconds": 54.9
+    },
+    {
+      "check": "database-tests",
+      "exit_code": 0,
+      "seconds": 10.54
+    }
+  ],
+  "generated_files_or_format_compaction_counted_as_reduction": false,
+  "scope": "backend only; external contracts and migrations unchanged",
+  "container": {
+    "project": "nexofolio-check-64964f79",
+    "checks": [
+      "real_postgres_probe_and_repeatable_migrations",
+      "linux_http_health_and_unauthorized_mcp",
+      "container_admin_and_access_schema",
+      "database_outage_and_recovery",
+      "shared_evidence_volume_survives_restart",
+      "api_and_worker_graceful_stop_and_restart",
+      "api_worker_match_selected_image"
+    ],
+    "runtime_libraries": [
+      "linux-vdso.so.1 (0x0000ffff89c9f000)",
+      "\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffff89c30000)",
+      "\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffff88950000)",
+      "\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffff887a0000)",
+      "\t/lib/ld-linux-aarch64.so.1 (0x0000ffff89c62000)"
+    ],
+    "image": {
+      "Id": "sha256:c218c8be7791cb350b7bdcdc968e7dd80bb5631b9a72cf342b3d6bc2d115a962",
+      "Os": "linux",
+      "Architecture": "arm64"
+    }
+  },
+  "rust_diff": {
+    "added": 309,
+    "deleted": 818,
+    "net": -509
+  }
+}

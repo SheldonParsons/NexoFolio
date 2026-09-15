@@ -224,3 +224,5 @@ NEXOFOLIO_CAPTURE_BENCHMARK=/tmp/capture-benchmark.json cargo test -p nexofolio-
 - [审计问题优化与验证](docs/audits/2026-09-15-optimization.md)
 
 架构图HTML和视觉检查附件可以本地重新生成，不进入业务代码提交；合同生成物仍随版本发布并由CI检查一致性。
+
+- [真实源码精简修正与行数](docs/audits/2026-09-15-source-reduction.md)

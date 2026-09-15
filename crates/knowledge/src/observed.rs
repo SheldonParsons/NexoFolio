@@ -78,9 +78,7 @@ pub trait DocumentReader: Send + Sync {
 }
 
 pub fn extract_observed(raw: &Value) -> Result<ObservedDefinition> {
-    let invalid = || nexofolio_contracts::Error::InvalidInput {
-        message: "INVALID_OBSERVATION".into(),
-    };
+    let invalid = || nexofolio_contracts::Error::invalid("INVALID_OBSERVATION");
     let p = raw.get("payload").ok_or_else(invalid)?;
     let req = p.get("request").ok_or_else(invalid)?;
     let res = p.get("response").ok_or_else(invalid)?;
@@ -313,19 +311,15 @@ pub fn apply_observed_path(
     path: &nexofolio_contracts::PathIdentity,
 ) -> Result<()> {
     if path.rule_version != nexofolio_contracts::PATH_RULE_VERSION {
-        return Err(nexofolio_contracts::Error::InvalidInput {
-            message: "UNKNOWN_PATH_RULE".into(),
-        });
+        return Err(nexofolio_contracts::Error::invalid("UNKNOWN_PATH_RULE"));
     }
     if path.parameters.is_empty() {
         return Ok(());
     }
     definition.path = path.template.clone();
-    let parameters = definition.request["parameters"].as_array_mut().ok_or(
-        nexofolio_contracts::Error::InvalidInput {
-            message: "INVALID_PARAMETERS".into(),
-        },
-    )?;
+    let parameters = definition.request["parameters"]
+        .as_array_mut()
+        .ok_or(nexofolio_contracts::Error::invalid("INVALID_PARAMETERS"))?;
     for parameter in &path.parameters {
         parameters
             .push(json!({"name":parameter.name,"in":"path","observed_schema":{"type":"string"}}));

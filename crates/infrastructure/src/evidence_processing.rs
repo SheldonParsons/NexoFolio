@@ -158,10 +158,8 @@ impl PostgresCaptureStore {
             ));
         }
         if matches!(event.kind, CaptureKind::ImageReference) {
-            let asset: ImageReferencePayload =
-                serde_json::from_value(payload.clone()).map_err(|_| Error::InvalidInput {
-                    message: "invalid image reference".into(),
-                })?;
+            let asset: ImageReferencePayload = serde_json::from_value(payload.clone())
+                .map_err(|_| Error::invalid("invalid image reference"))?;
             let exists: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM capture_assets WHERE project_id=$1 AND id=$2)",
             )

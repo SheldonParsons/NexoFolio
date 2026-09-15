@@ -13,13 +13,12 @@ pub struct SessionCrypto {
 }
 impl SessionCrypto {
     pub fn new(key: &Secret) -> Result<Self> {
-        let bytes = decode_hex(key.expose()).ok_or_else(|| Error::InvalidInput {
-            message: "NEXOFOLIO_SESSION_KEY must be 64 hex characters".into(),
-        })?;
+        let bytes = decode_hex(key.expose())
+            .ok_or_else(|| Error::invalid("NEXOFOLIO_SESSION_KEY must be 64 hex characters"))?;
         if bytes.len() != 32 {
-            return Err(Error::InvalidInput {
-                message: "NEXOFOLIO_SESSION_KEY must be 64 hex characters".into(),
-            });
+            return Err(Error::invalid(
+                "NEXOFOLIO_SESSION_KEY must be 64 hex characters",
+            ));
         }
         Ok(Self {
             cipher: Aes256Gcm::new_from_slice(&bytes).map_err(|_| Error::Unavailable {
@@ -94,13 +93,11 @@ pub struct ConfiguredEmergencyPassword {
 impl ConfiguredEmergencyPassword {
     pub fn new(hash: Option<&Secret>) -> Result<Self> {
         if let Some(hash) = hash {
-            let p = PasswordHash::new(hash.expose()).map_err(|_| Error::InvalidInput {
-                message: "NEXOFOLIO_EMERGENCY_PASSWORD_HASH must be an Argon2id PHC hash".into(),
+            let p = PasswordHash::new(hash.expose()).map_err(|_| {
+                Error::invalid("NEXOFOLIO_EMERGENCY_PASSWORD_HASH must be an Argon2id PHC hash")
             })?;
             if p.algorithm.as_str() != "argon2id" {
-                return Err(Error::InvalidInput {
-                    message: "Emergency password hash must use Argon2id".into(),
-                });
+                return Err(Error::invalid("Emergency password hash must use Argon2id"));
             }
         }
         Ok(Self {

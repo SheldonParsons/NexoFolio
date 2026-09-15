@@ -57,9 +57,7 @@ impl PostgresCaptureStore {
             _ => false,
         };
         if !valid || bytes.len() > 8 * 1024 * 1024 {
-            return Err(Error::InvalidInput {
-                message: "unsupported or oversized image".into(),
-            });
+            return Err(Error::invalid("unsupported or oversized image"));
         }
         let mut tx = self.database.pool.begin().await.map_err(err)?;
         authorize(&mut tx, user, project).await?;
@@ -180,9 +178,7 @@ impl PostgresCaptureStore {
         environment: Option<EnvironmentId>,
     ) -> Result<EvidencePage> {
         if page == 0 || page > 100000 || limit == 0 || limit > 100 {
-            return Err(Error::InvalidInput {
-                message: "invalid evidence pagination".into(),
-            });
+            return Err(Error::invalid("invalid evidence pagination"));
         }
         let mut tx = self.database.pool.begin().await.map_err(err)?;
         authorize(&mut tx, user, project).await?;
