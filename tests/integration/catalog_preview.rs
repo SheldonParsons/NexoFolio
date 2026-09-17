@@ -1,9 +1,6 @@
-use nexofolio_application::CatalogPreviewService;
 use nexofolio_contracts::*;
-use nexofolio_infrastructure::{
-    ChatCatalogGenerator, Postgres, PostgresCatalogPreviews, Unconfigured,
-};
-use nexofolio_knowledge::CatalogPreviewStore;
+use nexofolio_infrastructure::{ChatMaintenanceModel, Postgres, PostgresCatalogPreviews};
+use nexofolio_rebuild::{DirectoryReviewer, MaintenanceModel, StructuralDirectoryReviewer};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
@@ -25,7 +22,7 @@ async fn seed(sql: &sqlx::PgPool, p: Uuid, e: Uuid, user: Uuid, path: &str) -> I
 }
 #[tokio::test]
 #[ignore = "requires isolated TEST_DATABASE_URL"]
-async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
+async fn historical_candidates_remain_readable_and_publication_isolated() {
     let original = std::env::var("TEST_DATABASE_URL").unwrap();
     let admin = sqlx::PgPool::connect(&original).await.unwrap();
     let schema = format!("preview_{}", Uuid::new_v4().simple());
@@ -51,9 +48,8 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
         .await
         .unwrap();
     let store = Arc::new(PostgresCatalogPreviews::new(db.clone()));
-    assert!(store.create(project).await.is_err());
     let first = seed(&sql, p, e, user, "/users").await;
-    let initial = store.create(project).await.unwrap();
+    let initial = historical_snapshot(&sql, &store, project).await;
     let second = seed(&sql, p, e, user, "/orders").await;
     assert_ne!(first, second);
     assert_eq!(
@@ -66,50 +62,14 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
             .len(),
         1
     );
-    let unconfigured = CatalogPreviewService::standard(store.clone(), Arc::new(Unconfigured));
-    assert!(matches!(
-        unconfigured.run(initial.task_id).await,
-        Err(Error::NotConfigured { .. })
-    ));
-    assert!(matches!(
-        store.read(initial.task_id).await.unwrap().status,
-        PreviewStatus::Pending
-    ));
-
-    // The actual HTTP adapter talks to a local protocol fixture, never a fake production path.
     let node = DirectoryId::new();
     let parent = DirectoryId::new();
-    let candidate = json!({"nodes":[{"id":node,"parent":parent,"name":"用户管理","description":"用户接口"},{"id":parent,"parent":null,"name":"业务","description":"业务接口"}],"assignments":[{"interface_id":first,"directory_id":node,"reason":"/users路径"}]});
-    let candidate_for_server = candidate.clone();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}/v1", listener.local_addr().unwrap());
-    let app=axum::Router::new().route("/v1/chat/completions",axum::routing::post(move |headers:axum::http::HeaderMap,axum::Json(body):axum::Json<Value>|{
-        let candidate=candidate_for_server.clone();async move{
-            assert_eq!(headers.get("authorization").unwrap(),"Bearer synthetic-model-key");
-            assert_eq!(body["response_format"]["type"],"json_object");
-            let input:Value=serde_json::from_str(body["messages"][1]["content"].as_str().unwrap()).unwrap();
-            let content=if body["model"]=="omit-interface"{json!({"nodes":[],"assignments":[]}).to_string()}else{assert_eq!(input["interfaces"].as_array().unwrap().len(),1);candidate.to_string()};
-            if body["model"]=="bad-response"{return axum::Json(json!({"choices":[{"finish_reason":"length","message":{"content":content}}]}));}
-            axum::Json(json!({"choices":[{"finish_reason":"stop","message":{"content":content}}]}))
-        }
-    }));
-    let server = tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    });
-    let service = |model: &str| {
-        CatalogPreviewService::standard(
-            store.clone(),
-            Arc::new(
-                ChatCatalogGenerator::new(&base, Secret::new("synthetic-model-key"), model.into())
-                    .unwrap(),
-            ),
-        )
-    };
-    let result = service("fixture").run(initial.task_id).await.unwrap();
+    let candidate:DirectoryCandidate=serde_json::from_value(json!({"nodes":[{"id":node,"parent":parent,"name":"用户管理","description":"用户接口"},{"id":parent,"parent":null,"name":"业务","description":"业务接口"}],"assignments":[{"interface_id":first,"directory_id":node,"reason":"historical fixture"}]})).unwrap();
+    let review = StructuralDirectoryReviewer.review(&initial.snapshot, &candidate);
+    save_historical_candidate(&sql, &initial, &candidate, &review).await;
+    let result = store.read(initial.task_id).await.unwrap();
     assert!(matches!(result.status, PreviewStatus::Ready));
-    assert!(result.review.as_ref().unwrap().structurally_valid);
     assert_eq!(result.snapshot_sha256, initial.snapshot_sha256);
-    assert!(service("fixture").run(initial.task_id).await.is_err());
     let task_schema: Value = serde_json::from_str(include_str!(
         "../../contracts/catalog-preview/task.schema.json"
     ))
@@ -119,103 +79,6 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
             .unwrap()
             .is_valid(&serde_json::to_value(&result).unwrap())
     );
-    let assignments: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM catalog_preview_assignments WHERE candidate_id=$1",
-    )
-    .bind(uuid(result.candidate_id))
-    .fetch_one(&sql)
-    .await
-    .unwrap();
-    assert_eq!(assignments, 1);
-    let docs: i64 = sqlx::query_scalar("SELECT count(*) FROM interface_environment_current")
-        .fetch_one(&sql)
-        .await
-        .unwrap();
-    assert_eq!(docs, 2);
-
-    let rejected = service("omit-interface")
-        .run(store.create(project).await.unwrap().task_id)
-        .await
-        .unwrap();
-    assert!(matches!(rejected.status, PreviewStatus::Rejected));
-    assert!(!rejected.review.unwrap().structurally_valid);
-    let nodes: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM catalog_preview_nodes WHERE candidate_id=$1")
-            .bind(uuid(rejected.candidate_id))
-            .fetch_one(&sql)
-            .await
-            .unwrap();
-    assert_eq!(nodes, 0);
-    let failing = store.create(project).await.unwrap();
-    // bad-response uses omit-interface output to keep fixture independent from snapshot size.
-    let bad_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let bad_base = format!("http://{}/v1", bad_listener.local_addr().unwrap());
-    let bad_server = tokio::spawn(async move {
-        axum::serve(
-            bad_listener,
-            axum::Router::new().route(
-                "/v1/chat/completions",
-                axum::routing::post(|| async {
-                    axum::Json(
-                        json!({"choices":[{"finish_reason":"length","message":{"content":"{}"}}]}),
-                    )
-                }),
-            ),
-        )
-        .await
-        .unwrap();
-    });
-    let failing_service = CatalogPreviewService::standard(
-        store.clone(),
-        Arc::new(
-            ChatCatalogGenerator::new(&bad_base, Secret::new("synthetic"), "fixture".into())
-                .unwrap(),
-        ),
-    );
-    assert!(failing_service.run(failing.task_id).await.is_err());
-    assert!(matches!(
-        store.read(failing.task_id).await.unwrap().status,
-        PreviewStatus::Failed
-    ));
-    assert_eq!(
-        store
-            .read(failing.task_id)
-            .await
-            .unwrap()
-            .error_code
-            .as_deref(),
-        Some("MODEL_INVALID_RESULT")
-    );
-    let retry = service("omit-interface")
-        .run(failing.task_id)
-        .await
-        .unwrap();
-    assert_eq!(retry.generation, 2);
-
-    let leased = store.create(project).await.unwrap();
-    let info = GeneratorInfo {
-        adapter: "test".into(),
-        model: "test".into(),
-        prompt_version: "test".into(),
-        prompt_sha256: "fixture".into(),
-    };
-    let old = store.claim(leased.task_id, &info).await.unwrap();
-    assert!(store.claim(leased.task_id, &info).await.is_err());
-    sqlx::query("UPDATE catalog_preview_tasks SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1").bind(uuid(leased.task_id)).execute(&sql).await.unwrap();
-    let fresh = store.claim(leased.task_id, &info).await.unwrap();
-    assert_eq!(fresh.generation, old.generation + 1);
-    assert!(
-        store
-            .complete(
-                &old,
-                &serde_json::from_value(candidate).unwrap(),
-                result.review.as_ref().unwrap()
-            )
-            .await
-            .is_err()
-    );
-    assert!(store.fail(&old, "TEST_STALE").await.is_err());
-    store.fail(&fresh, "TEST_FINISHED").await.unwrap();
     assert_eq!(
         store
             .read(initial.task_id)
@@ -226,6 +89,25 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
             .len(),
         1
     );
+    // Applying the retirement migration to historical data stops only unfinished tasks.
+    let unfinished = historical_snapshot(&sql, &store, project).await;
+    sqlx::raw_sql(include_str!(
+        "../../migrations/202609150006_retire_directory_generation.sql"
+    ))
+    .execute(&sql)
+    .await
+    .unwrap();
+    let retired = store.read(unfinished.task_id).await.unwrap();
+    assert!(matches!(retired.status, PreviewStatus::Failed));
+    assert_eq!(
+        retired.error_code.as_deref(),
+        Some("LEGACY_GENERATION_RETIRED")
+    );
+    assert!(matches!(
+        store.read(initial.task_id).await.unwrap().status,
+        PreviewStatus::Ready
+    ));
+    assert_eq!(retired.snapshot_sha256, unfinished.snapshot_sha256);
     // Public readers require a real internal session and current project access.
     use nexofolio_access::{ExternalIdentity, PlatformAccess};
     let access = Arc::new(
@@ -292,6 +174,18 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
     let client = reqwest::Client::new();
     let endpoint = format!("{http_base}/v1/projects/{project}/catalog-previews");
     assert_eq!(client.get(&endpoint).send().await.unwrap().status(), 401);
+    assert_eq!(
+        client
+            .post(&endpoint)
+            .bearer_auth(session.token.expose())
+            .json(&json!({}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        405,
+        "historical readers must not accept generation requests"
+    );
     let response = client
         .get(format!("{endpoint}?page=1&limit=1&status=ready"))
         .bearer_auth(session.token.expose())
@@ -605,8 +499,7 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
             .revision_id
             .to_string()
     );
-    let next_task = store.create(project).await.unwrap();
-    let next_claim = store.claim(next_task.task_id, &info).await.unwrap();
+    let next_task = historical_snapshot(&sql, &store, project).await;
     let mut next_candidate = result.candidate.clone().unwrap();
     let target = next_candidate.assignments[0].directory_id;
     next_candidate.assignments = next_task
@@ -623,10 +516,7 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
     review.metrics.snapshot_interfaces = 3;
     review.metrics.assigned_interfaces = 3;
     review.metrics.logical_interfaces = Some(3);
-    store
-        .complete(&next_claim, &next_candidate, &review)
-        .await
-        .unwrap();
+    save_historical_candidate(&sql, &next_task, &next_candidate, &review).await;
     let next_request =
         json!({"task_id":next_task.task_id,"expected_generation":1,"request_id":Uuid::new_v4()});
     // Force a failure after version/node insertion and verify full transaction rollback.
@@ -761,14 +651,10 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
         .await
         .unwrap();
     assert_eq!(versions["total"], 2);
-    let poison = store.create(project).await.unwrap();
-    let poison_claim = store.claim(poison.task_id, &info).await.unwrap();
+    let poison = historical_snapshot(&sql, &store, project).await;
     let mut poison_candidate = next_candidate.clone();
     poison_candidate.nodes[0].name = "待分类".into();
-    store
-        .complete(&poison_claim, &poison_candidate, &review)
-        .await
-        .unwrap();
+    save_historical_candidate(&sql, &poison, &poison_candidate, &review).await;
     let poison_request = json!({"task_id":poison.task_id,"expected_generation":restored["generation"],"request_id":Uuid::new_v4()});
     write_catalog(
         &client,
@@ -795,8 +681,6 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
         .unwrap();
     assert_eq!(revisions, 3);
     http_server.abort();
-    server.abort();
-    bad_server.abort();
     sql.close().await;
     db.close().await;
     sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
@@ -807,10 +691,7 @@ async fn preview_snapshot_model_contract_fencing_and_candidate_isolation() {
 }
 
 #[tokio::test]
-async fn model_adapter_rejects_truncation_unknown_fields_and_http_errors() {
-    use nexofolio_contracts::CatalogSnapshot;
-    // Exercise through the application with a protocol fixture in the DB test; here validate
-    // adapter wire handling via a tiny generator-independent response server.
+async fn maintenance_model_rejects_truncation_unknown_contract_fields_and_http_errors() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     let app=axum::Router::new().route("/v1/chat/completions",axum::routing::post(|axum::Json(request):axum::Json<Value>|async move{
@@ -818,85 +699,83 @@ async fn model_adapter_rejects_truncation_unknown_fields_and_http_errors() {
         match request["model"].as_str().unwrap(){
             "http-error"=>(axum::http::StatusCode::BAD_GATEWAY,"private provider body").into_response(),
             "truncated"=>axum::Json(json!({"choices":[{"finish_reason":"length","message":{"content":"{}"}}]})).into_response(),
-            "unknown-field"=>axum::Json(json!({"choices":[{"finish_reason":"stop","message":{"content":"{\"nodes\":[],\"assignments\":[],\"publish\":true}"}}]})).into_response(),
+            "unknown-field"=>axum::Json(json!({"choices":[{"finish_reason":"stop","message":{"content":"{\"type\":\"summary\",\"summary\":\"x\",\"publish\":true}"}}]})).into_response(),
             _=>axum::Json(json!({"choices":[{"finish_reason":"stop","message":{"content":"not-json"}}]})).into_response(),
         }
     }));
     let server = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    // Local trait re-export is unnecessary: use the concrete adapter through a bounded store
-    // facade below to retain the backend dependency whitelist.
-    let _snapshot = CatalogSnapshot {
-        project_id: ProjectId::new(),
-        project_name: "fixture".into(),
-        interfaces: vec![],
-    };
-    for model in ["http-error", "truncated", "unknown-field", "not-json"] {
-        let generator =
-            ChatCatalogGenerator::new(&base, Secret::new("secret-fixture"), model.into()).unwrap();
-        let store = Arc::new(SingleTaskStore::new());
-        let service = CatalogPreviewService::standard(store.clone(), Arc::new(generator));
-        let result = service.run(store.task.task_id).await;
-        let message = result.unwrap_err().to_string();
-        assert!(!message.contains("private provider body"));
-        assert!(!message.contains("secret-fixture"));
-        assert!(store.failed.load(std::sync::atomic::Ordering::SeqCst));
+    for name in ["http-error", "truncated", "unknown-field", "not-json"] {
+        let model =
+            ChatMaintenanceModel::new(&base, Secret::new("secret-fixture"), name.into(), false)
+                .unwrap();
+        let request = model.prepare("plan", json!({}), 2048).unwrap();
+        match model.invoke(&request).await {
+            Ok(value) => assert!(serde_json::from_value::<MaintenanceReply>(value).is_err()),
+            Err(error) => {
+                let message = error.to_string();
+                assert!(!message.contains("secret-fixture"));
+                assert!(!message.contains("private provider body"));
+            }
+        }
     }
     server.abort();
 }
-struct SingleTaskStore {
-    task: PreviewTask,
-    failed: std::sync::atomic::AtomicBool,
-}
-impl SingleTaskStore {
-    fn new() -> Self {
-        Self {
-            task: PreviewTask {
-                task_id: JobId::new(),
-                candidate_id: CatalogVersion::new(),
-                contract_version: CATALOG_PREVIEW_VERSION.into(),
-                status: PreviewStatus::Pending,
-                snapshot_at: "fixture".into(),
-                snapshot_sha256: "fixture".into(),
-                snapshot: CatalogSnapshot {
-                    project_id: ProjectId::new(),
-                    project_name: "fixture".into(),
-                    interfaces: vec![],
-                },
-                generation: 1,
-                generator: None,
-                error_code: None,
-                candidate: None,
-                review: None,
-            },
-            failed: std::sync::atomic::AtomicBool::new(false),
-        }
+
+#[test]
+fn retired_generation_commands_are_not_executable() {
+    let binary = env!("CARGO_BIN_EXE_nexofolio-admin");
+    let help = std::process::Command::new(binary)
+        .arg("--help")
+        .output()
+        .unwrap();
+    let help = String::from_utf8(help.stdout).unwrap();
+    assert!(help.contains("catalog-show"));
+    for command in ["catalog-create", "catalog-run", "catalog-preview"] {
+        assert!(!help.contains(command));
+        let response = std::process::Command::new(binary)
+            .arg(command)
+            .output()
+            .unwrap();
+        assert_eq!(response.status.code(), Some(2));
+        assert!(
+            String::from_utf8(response.stderr)
+                .unwrap()
+                .contains("unrecognized subcommand")
+        );
     }
 }
-#[async_trait::async_trait]
-impl CatalogPreviewStore for SingleTaskStore {
-    async fn create(&self, _: ProjectId) -> Result<PreviewTask> {
-        Ok(self.task.clone())
-    }
-    async fn read(&self, _: JobId) -> Result<PreviewTask> {
-        Ok(self.task.clone())
-    }
-    async fn claim(&self, _: JobId, _: &GeneratorInfo) -> Result<PreviewTask> {
-        Ok(self.task.clone())
-    }
-    async fn complete(
-        &self,
-        _: &PreviewTask,
-        _: &DirectoryCandidate,
-        _: &PreviewReview,
-    ) -> Result<()> {
-        panic!("invalid response must not complete")
-    }
-    async fn fail(&self, _: &PreviewTask, _: &'static str) -> Result<()> {
-        self.failed.store(true, std::sync::atomic::Ordering::SeqCst);
-        Ok(())
-    }
+
+// Explicit synthetic historical database fixtures: no generator, lease or task executor.
+async fn historical_snapshot(
+    sql: &sqlx::PgPool,
+    store: &PostgresCatalogPreviews,
+    project: ProjectId,
+) -> PreviewTask {
+    let interfaces:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('interface_id',d.id,'method',d.method,'path',d.path,'environments',jsonb_agg(jsonb_build_object('environment_id',e.id,'environment_name',e.name,'revision_id',r.id,'definition',r.definition) ORDER BY e.id)) FROM interface_documents d JOIN interface_environment_current c ON c.interface_id=d.id JOIN interface_observed_revisions r ON r.id=c.current_revision_id JOIN environments e ON e.id=c.environment_id WHERE d.project_id=$1 GROUP BY d.id ORDER BY d.id")
+        .bind(uuid(project)).fetch_all(sql).await.unwrap();
+    let task = JobId::new();
+    sqlx::query("INSERT INTO catalog_preview_tasks(id,project_id,candidate_id,contract_version,snapshot,snapshot_sha256) VALUES($1,$2,$3,$4,$5,$6)")
+        .bind(uuid(task)).bind(uuid(project)).bind(Uuid::new_v4()).bind(CATALOG_PREVIEW_VERSION)
+        .bind(json!({"project_id":project,"project_name":"Historical fixture","interfaces":interfaces})).bind("0".repeat(64)).execute(sql).await.unwrap();
+    store.read(task).await.unwrap()
+}
+async fn save_historical_candidate(
+    sql: &sqlx::PgPool,
+    task: &PreviewTask,
+    candidate: &DirectoryCandidate,
+    review: &PreviewReview,
+) {
+    sqlx::query(
+        "UPDATE catalog_preview_tasks SET status='ready',candidate=$2,review=$3 WHERE id=$1",
+    )
+    .bind(uuid(task.task_id))
+    .bind(serde_json::to_value(candidate).unwrap())
+    .bind(serde_json::to_value(review).unwrap())
+    .execute(sql)
+    .await
+    .unwrap();
 }
 
 async fn write_catalog(

@@ -1,3 +1,4 @@
+pub(crate) mod assessments;
 use crate::Postgres;
 use async_trait::async_trait;
 use nexofolio_contracts::{EnvironmentId, Error, InterfaceId, ProjectId, Result, UserId};
@@ -147,14 +148,16 @@ impl ObservationProcessor for PostgresDocuments {
         .fetch_optional(&mut *tx)
         .await
         .map_err(db_error)?;
+        let assessment = nexofolio_knowledge::assess_definition(
+            current
+                .as_ref()
+                .map(|row| row.get::<Value, _>("definition"))
+                .as_ref(),
+            &value,
+        );
         let (revision, difference, outcome) = if let Some(row) = current {
             let revision: Uuid = row.get("id");
-            if row.get::<Vec<u8>, _>("definition_hash") == hash
-                || nexofolio_knowledge::definition_covers(
-                    &row.get::<Value, _>("definition"),
-                    &value,
-                )
-            {
+            if assessment.is_duplicate() {
                 (revision, None, "unchanged")
             } else {
                 let id:Uuid=sqlx::query_scalar(r#"INSERT INTO interface_observed_differences(id,interface_id,environment_id,base_revision_id,proposed_definition,definition_hash,origin_ingestion_id)
@@ -172,8 +175,8 @@ impl ObservationProcessor for PostgresDocuments {
             sqlx::query("INSERT INTO interface_environment_current(interface_id,environment_id,current_revision_id) VALUES($1,$2,$3)").bind(interface).bind(uuid(claim.environment_id)).bind(revision).execute(&mut *tx).await.map_err(db_error)?;
             (revision, None, "created")
         };
-        sqlx::query("INSERT INTO interface_observations(ingestion_id,interface_id,environment_id,compared_revision_id,difference_id,outcome) VALUES($1,$2,$3,$4,$5,$6)")
-   .bind(claim.ingestion_id).bind(interface).bind(uuid(claim.environment_id)).bind(revision).bind(difference).bind(outcome).execute(&mut *tx).await.map_err(db_error)?;
+        sqlx::query("INSERT INTO interface_observations(ingestion_id,interface_id,environment_id,compared_revision_id,difference_id,outcome,assessment,extractor_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
+   .bind(claim.ingestion_id).bind(interface).bind(uuid(claim.environment_id)).bind(revision).bind(difference).bind(outcome).bind(serde_json::to_value(&assessment).expect("serializes")).bind(&definition.extractor_version).execute(&mut *tx).await.map_err(db_error)?;
         let updated=sqlx::query(r#"UPDATE ingestion_inbox
             SET status='completed',lease_until=NULL,completed_at=clock_timestamp(),last_error_code=NULL
             WHERE id=$1
@@ -356,7 +359,7 @@ impl DocumentReader for PostgresDocuments {
             AND c.environment_id=$3"#)
    .bind(uuid(project)).bind(uuid(id)).bind(uuid(env)).fetch_optional(&self.database.pool).await.map_err(db_error)?.ok_or(Error::NotFound)?;
         Ok(
-            json!({"interface_id":id,"project_id":project,"environment":{"id":env,"name":row.get::<String,_>("environment_name")},"method":row.get::<String,_>("method"),"path":row.get::<String,_>("path"),"revision_id":row.get::<Uuid,_>("revision_id"),"state":"observed","classification":if row.get::<bool,_>("classified"){"classified"}else{"unclassified"},"definition":row.get::<Value,_>("definition"),"origin_ingestion_id":row.get::<Uuid,_>("origin_ingestion_id"),"created_at":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at").to_rfc3339(),"pending_difference_count":row.get::<i64,_>("differences")}),
+            json!({"interface_id":id,"project_id":project,"environment":{"id":env,"name":row.get::<String,_>("environment_name")},"method":row.get::<String,_>("method"),"path":row.get::<String,_>("path"),"revision_id":row.get::<Uuid,_>("revision_id"),"state":"observed","classification":if row.get::<bool,_>("classified"){"classified"}else{"unclassified"},"definition":nexofolio_knowledge::compact_definition(row.get::<Value,_>("definition")),"origin_ingestion_id":row.get::<Uuid,_>("origin_ingestion_id"),"created_at":row.get::<chrono::DateTime<chrono::Utc>,_>("created_at").to_rfc3339(),"pending_difference_count":row.get::<i64,_>("differences")}),
         )
     }
     async fn observations(

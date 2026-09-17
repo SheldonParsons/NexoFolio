@@ -2,16 +2,16 @@
 use nexofolio_access::{
     ExternalIdentity, ExternalProject, PlatformAccess, ProjectSnapshot, SessionPrincipal,
 };
-use nexofolio_application::ProcessingService;
+use nexofolio_application::{MaintenanceStore, ProcessingService};
 use nexofolio_backend::{
     http,
     wiring::{Config, build_access},
 };
-use nexofolio_contracts::Secret;
+use nexofolio_contracts::{Secret, StartMaintenance};
 use nexofolio_infrastructure::{
-    Postgres, PostgresAccess, PostgresCatalogPreviews, PostgresDocuments, Unconfigured,
+    FileBlobStore, Postgres, PostgresAccess, PostgresCaptureStore, PostgresDocuments,
+    PostgresMaintenance, Unconfigured,
 };
-use nexofolio_knowledge::CatalogPreviewStore;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -83,10 +83,13 @@ async fn real_observations_replay_through_http_and_worker() {
         sessions.insert(actor.to_owned(), session);
     }
     let project = project.unwrap();
+    let blobs = std::env::temp_dir().join(format!("nexo-replay-{}", Uuid::new_v4()));
     let config = Config::from_lookup(|k| match k {
         "DATABASE_URL" => Some(url.clone()),
         "NEXOFOLIO_ZENTAO_BASE_URL" => Some(instance.into()),
         "NEXOFOLIO_SESSION_KEY" => Some(key.clone()),
+        "NEXOFOLIO_CAPTURE_ENABLED" => Some("true".into()),
+        "NEXOFOLIO_BLOB_ROOT" => Some(blobs.to_string_lossy().into_owned()),
         _ => None,
     })
     .unwrap();
@@ -112,7 +115,7 @@ async fn real_observations_replay_through_http_and_worker() {
     let mut ignored = 0;
     let mut inconclusive = 0;
     for row in &input {
-        let batch = json!({"schema_version":"2","batch_id":Uuid::new_v4(),"project_id":project,"environment":{"name":row["environment_name"]},"source":{"type":row["source_type"],"instance_id":row["producer_id"]},"records":[row["raw_record"]]});
+        let batch = json!({"schema_version":row["schema_version"].as_str().unwrap_or("2"),"batch_id":Uuid::new_v4(),"project_id":project,"environment":{"name":row["environment_name"]},"source":{"type":row["source_type"],"instance_id":row["producer_id"]},"records":[row["raw_record"]]});
         let prepared: nexofolio_intake::IngestionBatch =
             serde_json::from_value(batch.clone()).unwrap();
         if nexofolio_intake::prepare_http(&prepared, 0)
@@ -133,6 +136,7 @@ async fn real_observations_replay_through_http_and_worker() {
         let response: Value = response.json().await.unwrap();
         let result = response["results"][0].clone();
         match result["status"].as_str().unwrap() {
+            "accepted" if result["structure"] == "duplicate" => ignored += 1,
             "accepted" => {
                 accepted += 1;
                 let id: Uuid = result["ingestion_id"].as_str().unwrap().parse().unwrap();
@@ -142,12 +146,45 @@ async fn real_observations_replay_through_http_and_worker() {
                         .fetch_one(&sql)
                         .await
                         .unwrap();
-                assert_eq!(raw, row["raw_record"]);
+                assert!(raw == row["raw_record"], "accepted raw record changed");
             }
             "ignored" => ignored += 1,
             _ => panic!("replay unexpectedly rejected a captured record"),
         };
-        receipts.push(json!({"source_observation":row["id"],"status":result["status"],"ingestion_id":result["ingestion_id"],"reason_code":result["reason_code"]}));
+        if batch["schema_version"] == "3" {
+            let event: Uuid = result["observation_id"].as_str().unwrap().parse().unwrap();
+            let capture =
+                PostgresCaptureStore::new(db.clone(), Arc::new(FileBlobStore::new(blobs.clone())));
+            let observation = capture
+                .observation(
+                    sessions[row["actor_id"].as_str().unwrap()].user.id,
+                    project,
+                    event,
+                )
+                .await
+                .unwrap();
+            assert!(
+                observation.payload.as_ref() == Some(&row["raw_record"]["payload"]),
+                "captured payload changed"
+            );
+            let retry: Value = client
+                .post(format!("{base}/v1/ingestion/batches"))
+                .bearer_auth(sessions[row["actor_id"].as_str().unwrap()].token.expose())
+                .json(&batch)
+                .send()
+                .await
+                .unwrap()
+                .json()
+                .await
+                .unwrap();
+            assert_eq!(retry["results"][0]["replayed"], true);
+            assert_eq!(
+                retry["results"][0]["observation_id"],
+                result["observation_id"]
+            );
+            assert_eq!(retry["results"][0]["structure"], result["structure"]);
+        }
+        receipts.push(json!({"source_observation":row["id"],"status":result["status"],"structure":result["structure"],"ingestion_id":result["ingestion_id"],"reason_code":result["reason_code"]}));
     }
     let processor = Arc::new(PostgresDocuments::new(db.clone()));
     let service = ProcessingService::new(processor);
@@ -190,11 +227,22 @@ async fn real_observations_replay_through_http_and_worker() {
             .fetch_one(&sql)
             .await
             .unwrap();
-    let task = PostgresCatalogPreviews::new(db.clone())
-        .create(project)
+    let capture =
+        PostgresCaptureStore::new(db.clone(), Arc::new(FileBlobStore::new(blobs.clone())));
+    while capture.process_evidence_one().await.unwrap() {}
+    let task = PostgresMaintenance::new(db.clone())
+        .start(
+            sessions.values().next().unwrap().user.id,
+            project,
+            &StartMaintenance {
+                request_id: Uuid::new_v4(),
+            },
+        )
         .await
         .unwrap();
-    let report = json!({"input_observations":input.len(),"accepted":accepted,"ignored":ignored,"inconclusive_at_admission":inconclusive,"documents":count,"table_config_documents":groups,"completed":completed,"outcomes":outcomes,"pending_differences":differences,"raw_accepted_records_equal":true,"task_id":task.task_id,"project_id":project,"schema":schema,"receipts":receipts});
+    let assessments: Vec<Value> = sqlx::query_scalar("SELECT jsonb_build_object('outcome',o.outcome,'path',d.path,'assessment',o.assessment) FROM interface_observations o JOIN interface_documents d ON d.id=o.interface_id ORDER BY o.processed_at,o.ingestion_id")
+        .fetch_all(&sql).await.unwrap();
+    let report = json!({"input_observations":input.len(),"accepted":accepted,"ignored":ignored,"inconclusive_at_admission":inconclusive,"documents":count,"table_config_documents":groups,"completed":completed,"outcomes":outcomes,"pending_differences":differences,"raw_accepted_records_equal":true,"run_id":task.id,"project_id":project,"schema":schema,"receipts":receipts,"assessments":assessments});
     std::fs::write(
         std::env::var("NEXOFOLIO_REPLAY_REPORT").unwrap(),
         serde_json::to_vec_pretty(&report).unwrap(),
@@ -203,8 +251,7 @@ async fn real_observations_replay_through_http_and_worker() {
     // Private connection metadata enables a separately authorized model pass on this isolated data.
     std::fs::write(
         std::env::var("NEXOFOLIO_REPLAY_CONNECTION").unwrap(),
-        serde_json::to_vec(&json!({"url":url,"task_id":task.task_id,"project_id":project}))
-            .unwrap(),
+        serde_json::to_vec(&json!({"url":url,"run_id":task.id,"project_id":project})).unwrap(),
     )
     .unwrap();
     println!(
@@ -216,4 +263,5 @@ async fn real_observations_replay_through_http_and_worker() {
     sql.close().await;
     db.close().await;
     admin.close().await;
+    std::fs::remove_dir_all(blobs).unwrap();
 }

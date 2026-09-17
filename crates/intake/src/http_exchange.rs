@@ -26,39 +26,6 @@ fn media(headers: &Value) -> String {
         })
         .unwrap_or_default()
 }
-fn shape(v: &Value, depth: usize, remaining: &mut usize) -> Option<Value> {
-    if depth > 64 || *remaining == 0 {
-        return None;
-    }
-    *remaining -= 1;
-    Some(match v {
-        Value::Null => return None,
-        Value::Bool(_) => json!({"type":"boolean"}),
-        Value::Number(_) => json!({"type":"number"}),
-        Value::String(_) => json!({"type":"string"}),
-        Value::Object(obj) => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in obj {
-                map.insert(k.clone(), shape(v, depth + 1, remaining)?);
-            }
-            json!({"type":"object","properties":map})
-        }
-        Value::Array(items) => {
-            if items.is_empty() {
-                return Some(json!({"type":"array","items":{"unknown":true}}));
-            }
-            let mut variants = std::collections::BTreeSet::new();
-            for item in items {
-                variants.insert(serde_json::to_string(&shape(item, depth + 1, remaining)?).ok()?);
-            }
-            let values: Vec<Value> = variants
-                .into_iter()
-                .map(|s| serde_json::from_str(&s).expect("serialized shape"))
-                .collect();
-            json!({"type":"array","items":if values.len()==1{values[0].clone()}else{json!({"anyOf":values})}})
-        }
-    })
-}
 fn header_names(headers: &Value) -> std::collections::BTreeSet<String> {
     headers["entries"]
         .as_array()
@@ -84,11 +51,16 @@ fn body_shape(body: &Value, media: &str) -> Option<Value> {
     };
     if media == "application/json" || media.ends_with("+json") {
         let v: Value = serde_json::from_slice(&decoded).ok()?;
-        shape(&v, 0, &mut 100000)
+        {
+            let observed = nexofolio_contracts::observe_json(&v);
+            (!observed
+                .limitations
+                .iter()
+                .any(|n| n == "STRUCTURE_EXTRACTION_LIMIT"))
+            .then_some(observed.schema)
+        }
     } else {
-        Some(
-            json!({"exact_body":Sha256::digest(&decoded).iter().map(|b|format!("{b:02x}")).collect::<String>()}),
-        )
+        None
     }
 }
 /// Must be called after machine-schema validation. Returns a non-sensitive reason code on errors.
@@ -170,7 +142,7 @@ pub fn http_projection(raw: &Value) -> Option<Value> {
     let query: std::collections::BTreeSet<_> =
         url.query_pairs().map(|(k, _)| k.to_string()).collect();
     if confident {
-        body_shape(&request["body"],&req_media).zip(body_shape(&response["body"],&res_media)).map(|(a,b)|json!({"algorithm":"http-structure-2","query_keys":query,"request_headers":header_names(&request["headers"]),"response_headers":header_names(&response["headers"]),"request_media":req_media,"request_body":a,"status":response["status"],"response_media":res_media,"response_body":b}))
+        body_shape(&request["body"],&req_media).zip(body_shape(&response["body"],&res_media)).map(|(a,b)|json!({"algorithm":nexofolio_contracts::STRUCTURE_ALGORITHM,"query_keys":query,"request_headers":header_names(&request["headers"]),"response_headers":header_names(&response["headers"]),"request_media":req_media,"request_body":a,"status":response["status"],"response_media":res_media,"response_body":b}))
     } else {
         None
     }
@@ -297,7 +269,7 @@ mod tests {
             &http_projection(&next).unwrap()
         ));
         next["payload"]["response"]["body"]["content"] = json!(r#"{"items":null}"#);
-        assert!(http_projection(&next).is_none());
+        assert!(http_projection(&next).is_some());
         next["payload"]["response"]["body"]["state"] = json!("truncated");
         assert!(http_projection(&next).is_none());
     }
@@ -349,11 +321,9 @@ mod tests {
     }
     #[test]
     fn inconclusive_content_never_gets_a_structural_hit() {
-        for content in ["null", "invalid json"] {
-            let mut b = batch();
-            b.records[0]["payload"]["response"]["body"]["content"] = json!(content);
-            assert!(prepare_http(&b, 0).unwrap().structural_hash.is_none());
-        }
+        let mut b = batch();
+        b.records[0]["payload"]["response"]["body"]["content"] = json!("invalid json");
+        assert!(prepare_http(&b, 0).unwrap().structural_hash.is_none());
         let mut b = batch();
         b.records[0]["payload"]["response"]["state"] = json!("truncated");
         assert!(prepare_http(&b, 0).unwrap().structural_hash.is_none());

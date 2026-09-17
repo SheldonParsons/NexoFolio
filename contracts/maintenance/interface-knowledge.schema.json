@@ -133,7 +133,9 @@
         "directory",
         "image",
         "summary",
-        "annotation"
+        "annotation",
+        "observation",
+        "source"
       ],
       "type": "string"
     },

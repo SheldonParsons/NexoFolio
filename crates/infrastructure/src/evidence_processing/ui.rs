@@ -6,6 +6,7 @@ pub(super) async fn correlate_ui(
     values: &[ValueOccurrence],
     start: i64,
     http_payload: &Value,
+    blobs: &dyn nexofolio_evidence::BlobStore,
 ) -> Result<()> {
     let Some(interaction) = ctx.interaction_id else {
         return Ok(());
@@ -19,15 +20,15 @@ pub(super) async fn correlate_ui(
             AND context->>'page_instance_id'=$4
             AND context->>'frame_instance_id'=$5
             AND context->>'interaction_id'=$6
-            AND kind='interaction'
+            AND kind IN ('interaction','ui_snapshot')
             AND captured_at<=to_timestamp($7::double precision/1000)
             AND captured_at>=to_timestamp(($7-120000)::double precision/1000)
             AND raw_hash IS NOT NULL
             AND actor_id=$8
             AND context->>'browser_instance_id'=$9
             AND context->>'view_id'=$10
-            ORDER BY captured_at DESC
-            LIMIT 5"#,
+            ORDER BY captured_at DESC,id
+            LIMIT 6"#,
     )
     .bind(uuid(event.project))
     .bind(uuid(event.env))
@@ -42,25 +43,34 @@ pub(super) async fn correlate_ui(
     .fetch_all(&mut **tx)
     .await
     .map_err(err)?;
-    // Interaction payloads are persisted as ui_interaction facts with actual labels and values.
+    if rows.len() > 5 {
+        return Err(Error::Unavailable {
+            component: "evidence_relation_budget",
+        });
+    }
+    // Read the event original, not a representative fact sample (which may already
+    // have been compacted after other operations observed identical controls).
     for row in rows {
-        let data:Option<Value>=sqlx::query_scalar("SELECT f.data FROM evidence_facts f JOIN evidence_samples s ON s.fact_id=f.id WHERE s.event_id=$1 AND f.kind='ui_interaction' LIMIT 1").bind(row.get::<Uuid,_>("id")).fetch_optional(&mut **tx).await.map_err(err)?;
-        if let Some(data) = data {
-            match_ui_values(
-                tx,
-                event,
-                ctx,
-                &data,
-                values,
-                Some(row.get("id")),
-                http_payload,
-            )
-            .await?;
-        }
+        let data: Value = serde_json::from_slice(
+            &blobs
+                .get(event.project, &row.get::<String, _>("raw_hash"))
+                .await?,
+        )
+        .map_err(|_| Error::Conflict)?;
+        match_ui_payload(
+            tx,
+            event,
+            ctx,
+            &data,
+            values,
+            Some(row.get("id")),
+            http_payload,
+        )
+        .await?;
     }
     Ok(())
 }
-async fn match_ui_values(
+async fn match_ui_payload(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     event: &Event,
     ctx: &CaptureContext,
@@ -69,22 +79,48 @@ async fn match_ui_values(
     other: Option<Uuid>,
     http_payload: &Value,
 ) -> Result<()> {
-    let target = &data["target"];
+    for target in nexofolio_evidence::unambiguous_ui_targets(data) {
+        match_ui_values(tx, event, ctx, target, values, other, http_payload).await?;
+    }
+    Ok(())
+}
+async fn match_ui_values(
+    tx: &mut Transaction<'_, sqlx::Postgres>,
+    event: &Event,
+    ctx: &CaptureContext,
+    target: &Value,
+    values: &[ValueOccurrence],
+    other: Option<Uuid>,
+    http_payload: &Value,
+) -> Result<()> {
+    let http_id = if matches!(event.kind, CaptureKind::HttpExchange) {
+        event.id
+    } else {
+        other.ok_or(Error::Conflict)?
+    };
+    let complete:bool=sqlx::query_scalar("SELECT coalesce((evidence_coverage->>'request_complete')::boolean,false) FROM capture_events WHERE id=$1").bind(http_id).fetch_one(&mut **tx).await.map_err(err)?;
+    if !complete {
+        return Ok(());
+    }
     let selected = &target["value"];
     let matching: Vec<_> = values
         .iter()
         .filter(|v| {
             v.direction == "request"
+                && !matches!(
+                    nexofolio_evidence::relation_exclusion(&v.field),
+                    Some("technical_field" | "protocol_header")
+                )
                 && nexofolio_evidence::value_match(&selected["value"], &v.value).is_some()
         })
         .collect();
     if matching.len() != 1 || selected["state"] != "present" {
-        record_omission(tx, event, ctx, data, values, other, http_payload).await?;
+        record_omission(tx, event, ctx, target, values, other, http_payload).await?;
         return Ok(());
     }
-    sqlx::query(r#"INSERT INTO evidence_ui_bindings(project_id,environment_id,actor_id,producer_id,browser_instance_id,page_instance_id,frame_instance_id,view_id,element_id,field_key,field_ref)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-            ON CONFLICT DO NOTHING"#).bind(uuid(event.project)).bind(uuid(event.env)).bind(event.actor).bind(event.producer).bind(ctx.browser_instance_id).bind(ctx.page_instance_id).bind(ctx.frame_instance_id).bind(ctx.view_id).bind(target["element_id"].as_str().unwrap_or("")).bind(field_key(&matching[0].field)).bind(serde_json::to_value(&matching[0].field).unwrap()).execute(&mut **tx).await.map_err(err)?;
+    sqlx::query(r#"INSERT INTO evidence_ui_bindings(project_id,environment_id,actor_id,producer_id,browser_instance_id,page_instance_id,frame_instance_id,view_id,element_id,field_key,field_ref,evidence_rule_version)
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'evidence-2')
+            ON CONFLICT(project_id,environment_id,actor_id,producer_id,browser_instance_id,page_instance_id,frame_instance_id,view_id,element_id,field_key) DO UPDATE SET evidence_rule_version='evidence-2'"#).bind(uuid(event.project)).bind(uuid(event.env)).bind(event.actor).bind(event.producer).bind(ctx.browser_instance_id).bind(ctx.page_instance_id).bind(ctx.frame_instance_id).bind(ctx.view_id).bind(target["element_id"].as_str().unwrap_or("")).bind(field_key(&matching[0].field)).bind(serde_json::to_value(&matching[0].field).unwrap()).execute(&mut **tx).await.map_err(err)?;
     let (http_event, ui_event) = if matches!(event.kind, CaptureKind::HttpExchange) {
         (event.id, other.ok_or(Error::Conflict)?)
     } else {
@@ -94,7 +130,7 @@ async fn match_ui_values(
     if duplicate {
         return Ok(());
     }
-    let binding=save_fact(tx,event,&FactDraft{kind:"ui_field_label".into(),subject:serde_json::to_value(&matching[0].field).unwrap(),data:json!({"element_id":target["element_id"],"label":target["label"],"name":target["name"],"role":target["role"],"verification":"inferred"})},other).await?;
+    let binding=save_fact(tx,event,&FactDraft{kind:"ui_field_label".into(),subject:serde_json::to_value(&matching[0].field).unwrap(),data:json!({"element_id":target["element_id"],"label":target["label"],"name":target["name"],"role":target["role"],"verification":"inferred","association":"operation_value_candidate","transform":nexofolio_evidence::value_match(&selected["value"],&matching[0].value)})},other).await?;
     sqlx::query("INSERT INTO evidence_ui_pairs(http_event,ui_event,field_key,fact_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING").bind(http_event).bind(ui_event).bind(field_key(&matching[0].field)).bind(binding).execute(&mut **tx).await.map_err(err)?;
     let labels: Vec<_> = target["options"]
         .as_array()
@@ -110,7 +146,7 @@ async fn match_ui_values(
     if labels.len() != 1 {
         return Ok(());
     }
-    save_fact(tx,event,&FactDraft{kind:"enum_label_candidate".into(),subject:serde_json::to_value(&matching[0].field).unwrap(),data:json!({"state":"present","value":matching[0].value,"label":labels[0],"source":"ui_interaction","scope":{"page_url":ctx.page_url,"element_id":target["element_id"]},"complete_enum":false,"verification":"observed_mapping"})},other).await?;
+    save_fact(tx,event,&FactDraft{kind:"enum_label_candidate".into(),subject:serde_json::to_value(&matching[0].field).unwrap(),data:json!({"state":"present","value":matching[0].value,"label":labels[0],"source":"ui_control","scope":{"page_url":ctx.page_url,"element_id":target["element_id"],"actor_id":event.actor,"request_hash":hash(&nexofolio_evidence::request_scope(http_payload)),"complete":true},"complete_enum":false,"verification":"inferred","association":"operation_value_candidate","ui_value":selected,"transform":nexofolio_evidence::value_match(&selected["value"],&matching[0].value)})},other).await?;
     Ok(())
 }
 pub(super) async fn link_late_ui(
@@ -120,7 +156,10 @@ pub(super) async fn link_late_ui(
     payload: &Value,
     blobs: &dyn nexofolio_evidence::BlobStore,
 ) -> Result<()> {
-    if !matches!(event.kind, CaptureKind::Interaction) {
+    if !matches!(
+        event.kind,
+        CaptureKind::Interaction | CaptureKind::UiSnapshot
+    ) {
         return Ok(());
     }
     let Some(interaction) = ctx.interaction_id else {
@@ -142,8 +181,8 @@ pub(super) async fn link_late_ui(
             AND raw_hash IS NOT NULL
             AND (context->>'request_started_at_ms')::bigint>=$10
             AND (context->>'request_started_at_ms')::bigint<=$10+120000
-            ORDER BY received_at
-            LIMIT 20"#,
+            ORDER BY captured_at,id
+            LIMIT 21"#,
     )
     .bind(uuid(event.project))
     .bind(uuid(event.env))
@@ -158,6 +197,11 @@ pub(super) async fn link_late_ui(
     .fetch_all(&mut **tx)
     .await
     .map_err(err)?;
+    if rows.len() > 20 {
+        return Err(Error::Unavailable {
+            component: "evidence_relation_budget",
+        });
+    }
     for row in rows {
         let http_id: Uuid = row.get("id");
         let indexed=sqlx::query("SELECT field_ref,pointer,value FROM evidence_value_index WHERE event_id=$1 AND direction='request' LIMIT 512").bind(http_id).fetch_all(&mut **tx).await.map_err(err)?;
@@ -179,7 +223,7 @@ pub(super) async fn link_late_ui(
                 .await?,
         )
         .map_err(|_| Error::Conflict)?;
-        match_ui_values(
+        match_ui_payload(
             tx,
             event,
             ctx,
@@ -196,21 +240,33 @@ pub(super) async fn record_omission(
     tx: &mut Transaction<'_, sqlx::Postgres>,
     event: &Event,
     ctx: &CaptureContext,
-    ui: &Value,
+    target: &Value,
     values: &[ValueOccurrence],
     other: Option<Uuid>,
     http: &Value,
 ) -> Result<()> {
-    let target = &ui["target"];
     if target["value"]["state"] == "unknown" {
         return Ok(());
     }
-    let fields=sqlx::query_scalar::<_,Value>("SELECT field_ref FROM evidence_ui_bindings WHERE project_id=$1 AND environment_id=$2 AND actor_id=$3 AND producer_id=$4 AND browser_instance_id=$5 AND page_instance_id=$6 AND frame_instance_id=$7 AND view_id=$8 AND element_id=$9 LIMIT 2")
+    let fields=sqlx::query_scalar::<_,Value>("SELECT field_ref FROM evidence_ui_bindings WHERE project_id=$1 AND environment_id=$2 AND actor_id=$3 AND producer_id=$4 AND browser_instance_id=$5 AND page_instance_id=$6 AND frame_instance_id=$7 AND view_id=$8 AND element_id=$9 AND evidence_rule_version='evidence-2' LIMIT 2")
  .bind(uuid(event.project)).bind(uuid(event.env)).bind(event.actor).bind(event.producer).bind(ctx.browser_instance_id).bind(ctx.page_instance_id).bind(ctx.frame_instance_id).bind(ctx.view_id).bind(target["element_id"].as_str().unwrap_or("")).fetch_all(&mut **tx).await.map_err(err)?;
     if fields.len() != 1 {
         return Ok(());
     }
-    let field: FieldRef = serde_json::from_value(fields[0].clone()).map_err(|_| Error::Conflict)?;
+    let field: EvidenceFieldRef =
+        serde_json::from_value(fields[0].clone()).map_err(|_| Error::Conflict)?;
+    let http_event = if matches!(event.kind, CaptureKind::HttpExchange) {
+        event.id
+    } else {
+        other.ok_or(Error::Conflict)?
+    };
+    let same_definition: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM capture_events e JOIN interface_observations o ON o.ingestion_id=e.ingestion_id WHERE e.id=$1 AND o.interface_id=$2 AND ((o.compared_revision_id=$3) OR (e.ingestion_id=$4)))",
+    ).bind(http_event).bind(uuid(field.interface_id)).bind(field.revision_id.map(uuid)).bind(field.observation.as_ref().map(|f|f.ingestion_id))
+        .fetch_one(&mut **tx).await.map_err(err)?;
+    if !same_definition {
+        return Ok(());
+    }
     if values
         .iter()
         .any(|v| v.field.location == field.location && v.field.path == field.path)
@@ -237,7 +293,7 @@ pub(super) async fn record_omission(
         .filter(|o| o["selected"] == true)
         .filter_map(|o| o["label"].as_str())
         .collect();
-    let fact=save_fact(tx,event,&FactDraft{kind:"enum_label_candidate".into(),subject:serde_json::to_value(&field).unwrap(),data:json!({"state":"omitted","value":null,"label":if labels.len()==1{Some(labels[0])}else{None},"ui_value":target["value"],"source":"ui_interaction","scope":{"page_url":ctx.page_url,"element_id":target["element_id"]},"complete_enum":false,"verification":"inferred","behavior":"request_omits_field"})},other).await?;
+    let fact=save_fact(tx,event,&FactDraft{kind:"enum_label_candidate".into(),subject:serde_json::to_value(&field).unwrap(),data:json!({"state":"omitted","value":null,"label":if labels.len()==1{Some(labels[0])}else{None},"ui_value":target["value"],"source":"ui_control","scope":{"page_url":ctx.page_url,"element_id":target["element_id"],"actor_id":event.actor,"request_hash":hash(&nexofolio_evidence::request_scope(http)),"complete":true},"complete_enum":false,"verification":"inferred","behavior":"request_omits_field"})},other).await?;
     sqlx::query("INSERT INTO evidence_ui_pairs(http_event,ui_event,field_key,fact_id) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING").bind(http_event).bind(ui_event).bind(field_key(&field)).bind(fact).execute(&mut **tx).await.map_err(err)?;
     Ok(())
 }
@@ -252,10 +308,15 @@ pub(super) async fn relation_counterexamples(
     let Some(interaction) = ctx.interaction_id else {
         return Ok(());
     };
-    let relations=sqlx::query("SELECT id,subject FROM evidence_facts WHERE project_id=$1 AND environment_id=$2 AND kind='parameter_link_candidate' AND subject->'target'=$3 LIMIT 64").bind(uuid(event.project)).bind(uuid(event.env)).bind(serde_json::to_value(&value.field).unwrap()).fetch_all(&mut **tx).await.map_err(err)?;
+    let relations=sqlx::query("SELECT id,subject FROM evidence_facts WHERE project_id=$1 AND environment_id=$2 AND kind='parameter_link_candidate' AND data->>'evidence_rule_version'='evidence-2' AND subject->'target'=$3 ORDER BY id LIMIT 65").bind(uuid(event.project)).bind(uuid(event.env)).bind(serde_json::to_value(&value.field).unwrap()).fetch_all(&mut **tx).await.map_err(err)?;
+    if relations.len() > 64 {
+        return Err(Error::Unavailable {
+            component: "evidence_relation_budget",
+        });
+    }
     for relation in relations {
         let subject: Value = relation.get("subject");
-        let source: FieldRef =
+        let source: EvidenceFieldRef =
             serde_json::from_value(subject["source"].clone()).map_err(|_| Error::Conflict)?;
         let rows = sqlx::query(
             r#"SELECT event_id,value
@@ -271,6 +332,7 @@ pub(super) async fn relation_counterexamples(
             AND interaction_id=$9
             AND field_key=$10
             AND direction='response'
+            AND event_id IN (SELECT id FROM capture_events WHERE evidence_coverage IS NOT NULL)
             AND available_at<=$11
             AND available_at>=$11-120000
             AND event_id<>$12
@@ -302,12 +364,20 @@ pub(super) async fn relation_counterexamples(
             continue;
         }
         let relation_id: Uuid = relation.get("id");
+        let source_event: Uuid = rows[0].get("event_id");
+        let source_key = format!("counterexample:{relation_id}:{}", field_key(&source));
+        let target_key = field_key(&value.field);
+        let exists:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM evidence_relation_pairs WHERE source_event=$1 AND target_event=$2 AND source_key=$3 AND target_key=$4)").bind(source_event).bind(event.id).bind(&source_key).bind(&target_key).fetch_one(&mut **tx).await.map_err(err)?;
+        if exists {
+            continue;
+        }
         let fact = FactDraft {
             kind: "parameter_link_counterexample".into(),
             subject: json!({"relation_id":relation_id,"source":source,"target":value.field}),
             data: json!({"source_value":source_value,"target_value":value.value,"counterexample":true,"verification":"needs_review","reason":"Same recorded interaction, but values do not match; correlation is not causation."}),
         };
         let counter = save_fact(tx, event, &fact, Some(rows[0].get("event_id"))).await?;
+        sqlx::query("INSERT INTO evidence_relation_pairs(source_event,target_event,source_key,target_key,fact_id) VALUES($1,$2,$3,$4,$5)").bind(source_event).bind(event.id).bind(source_key).bind(target_key).bind(counter).execute(&mut **tx).await.map_err(err)?;
         sqlx::query("UPDATE evidence_facts SET data=data||jsonb_build_object('conflict',true,'verification','needs_review') WHERE id=$1").bind(relation_id).execute(&mut **tx).await.map_err(err)?;
         sqlx::query("UPDATE evidence_sample_groups SET counterexample=true WHERE fact_id=$1")
             .bind(counter)

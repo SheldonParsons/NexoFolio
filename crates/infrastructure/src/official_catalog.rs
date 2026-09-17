@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use nexofolio_application::CatalogActivationStore;
 use nexofolio_contracts::*;
 use nexofolio_knowledge::OfficialCatalogReader;
-use serde_json::{Value, json};
+use serde_json::Value;
 use sqlx::{Row, Transaction};
 use uuid::Uuid;
 #[derive(Clone)]
@@ -42,16 +42,8 @@ struct State {
     current: Option<Uuid>,
     generation: i64,
 }
-async fn state(
-    tx: &mut Transaction<'_, sqlx::Postgres>,
-    project: ProjectId,
-    write: bool,
-) -> Result<State> {
-    let sql = if write {
-        "SELECT unclassified_id,current_version_id,generation FROM project_catalogs WHERE project_id=$1 FOR UPDATE"
-    } else {
-        "SELECT unclassified_id,current_version_id,generation FROM project_catalogs WHERE project_id=$1"
-    };
+async fn state(tx: &mut Transaction<'_, sqlx::Postgres>, project: ProjectId) -> Result<State> {
+    let sql = "SELECT unclassified_id,current_version_id,generation FROM project_catalogs WHERE project_id=$1";
     let r = sqlx::query(sql)
         .bind(uuid(project))
         .fetch_optional(&mut **tx)
@@ -83,7 +75,7 @@ impl PostgresOfficialCatalog {
 impl OfficialCatalogReader for PostgresOfficialCatalog {
     async fn current(&self, user: UserId, project: ProjectId) -> Result<OfficialCatalog> {
         let mut tx = self.read_tx(user, project).await?;
-        let s = state(&mut tx, project, false).await?;
+        let s = state(&mut tx, project).await?;
         let version = sqlx::query(
             "SELECT source_task_id,maintenance_run_id,candidate FROM catalog_versions WHERE id=$1 AND project_id=$2",
         )
@@ -166,7 +158,7 @@ impl OfficialCatalogReader for PostgresOfficialCatalog {
     ) -> Result<OfficialInterfacePage> {
         pagination(page, limit)?;
         let mut tx = self.read_tx(user, project).await?;
-        let s = state(&mut tx, project, false).await?;
+        let s = state(&mut tx, project).await?;
         if expected_generation.is_some_and(|g| g != s.generation) {
             return Err(Error::Conflict);
         }
@@ -237,7 +229,7 @@ impl OfficialCatalogReader for PostgresOfficialCatalog {
     ) -> Result<CatalogVersionPage> {
         pagination(page, limit)?;
         let mut tx = self.read_tx(user, project).await?;
-        let s = state(&mut tx, project, false).await?;
+        let s = state(&mut tx, project).await?;
         let total: i64 =
             sqlx::query_scalar("SELECT count(*) FROM catalog_versions WHERE project_id=$1")
                 .bind(uuid(project))
@@ -264,60 +256,6 @@ impl OfficialCatalogReader for PostgresOfficialCatalog {
         })
     }
 }
-async fn prior(
-    tx: &mut Transaction<'_, sqlx::Postgres>,
-    user: UserId,
-    project: ProjectId,
-    request: Uuid,
-    command: &Value,
-) -> Result<Option<CatalogActivation>> {
-    let row=sqlx::query("SELECT actor_id,command,result FROM catalog_activation_receipts WHERE project_id=$1 AND request_id=$2").bind(uuid(project)).bind(request).fetch_optional(&mut **tx).await.map_err(db_error)?;
-    if let Some(r) = row {
-        if r.get::<Uuid, _>("actor_id") != uuid(user) || r.get::<Value, _>("command") != *command {
-            return Err(Error::Conflict);
-        }
-        let mut result: CatalogActivation = decode(r.get("result"))?;
-        result.replayed = true;
-        return Ok(Some(result));
-    }
-    Ok(None)
-}
-async fn activate(
-    tx: &mut Transaction<'_, sqlx::Postgres>,
-    s: &State,
-    user: UserId,
-    project: ProjectId,
-    request: Uuid,
-    command: Value,
-    target: Option<Uuid>,
-) -> Result<CatalogActivation> {
-    let generation = if s.current == target {
-        s.generation
-    } else {
-        s.generation.checked_add(1).ok_or(Error::Conflict)?
-    };
-    sqlx::query(
-        "UPDATE project_catalogs SET current_version_id=$2,generation=$3 WHERE project_id=$1",
-    )
-    .bind(uuid(project))
-    .bind(target)
-    .bind(generation)
-    .execute(&mut **tx)
-    .await
-    .map_err(db_error)?;
-    if s.current != target {
-        crate::knowledge_publication::preserve_semantics_for_catalog(tx, user, project, target)
-            .await?;
-    }
-    let result = CatalogActivation {
-        request_id: request,
-        generation,
-        version_id: target.map(|v| v.to_string().parse().unwrap()),
-        replayed: false,
-    };
-    sqlx::query("INSERT INTO catalog_activation_receipts(project_id,request_id,actor_id,command,result) VALUES($1,$2,$3,$4,$5)").bind(uuid(project)).bind(request).bind(uuid(user)).bind(command).bind(serde_json::to_value(&result).expect("serializes")).execute(&mut **tx).await.map_err(db_error)?;
-    Ok(result)
-}
 #[async_trait]
 impl CatalogActivationStore for PostgresOfficialCatalog {
     async fn publish(
@@ -327,70 +265,15 @@ impl CatalogActivationStore for PostgresOfficialCatalog {
         request: &PublishCatalog,
         validated: &PreviewTask,
     ) -> Result<CatalogActivation> {
-        let command = json!({"action":"publish","request":request});
-        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        authorize(&mut tx, user, project).await?;
-        let s = state(&mut tx, project, true).await?;
-        if let Some(result) = prior(&mut tx, user, project, request.request_id, &command).await? {
-            tx.commit().await.map_err(db_error)?;
-            return Ok(result);
-        }
-        if s.generation != request.expected_generation {
-            return Err(Error::Conflict);
-        }
-        let candidate = validated.candidate.as_ref().ok_or(Error::Conflict)?;
-        let candidate_value = serde_json::to_value(candidate).expect("serializes");
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM catalog_preview_tasks WHERE id=$1 AND project_id=$2 AND status='ready' AND candidate_id=$3 AND snapshot_sha256=$4 AND candidate=$5 AND snapshot=$6)")
-   .bind(uuid(request.task_id)).bind(uuid(project)).bind(uuid(validated.candidate_id)).bind(&validated.snapshot_sha256).bind(&candidate_value).bind(serde_json::to_value(&validated.snapshot).expect("serializes")).fetch_one(&mut *tx).await.map_err(db_error)?;
-        if !valid {
-            return Err(Error::Conflict);
-        }
-        if candidate.nodes.iter().any(|n| {
-            n.name == "待分类"
-                || uuid(n.id) == s.system
-                || n.parent.is_some_and(|p| uuid(p) == s.system)
-        }) {
-            return Err(Error::invalid("system directory is immutable"));
-        }
-        let ids: Vec<_> = candidate
-            .assignments
-            .iter()
-            .map(|a| uuid(a.interface_id))
-            .collect();
-        let count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM interface_documents WHERE project_id=$1 AND id=ANY($2)",
+        decode(
+            crate::publication::execute(
+                &self.database,
+                user,
+                project,
+                crate::publication::Change::DirectoryPublish(request, validated),
+            )
+            .await?,
         )
-        .bind(uuid(project))
-        .bind(&ids)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(db_error)?;
-        if count as usize != ids.len() {
-            return Err(Error::Conflict);
-        }
-        let version = uuid(validated.candidate_id);
-        let inserted=sqlx::query("INSERT INTO catalog_versions(id,project_id,source_task_id,candidate,created_by) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO NOTHING")
-   .bind(version).bind(uuid(project)).bind(uuid(request.task_id)).bind(candidate_value).bind(uuid(user)).execute(&mut *tx).await.map_err(db_error)?.rows_affected();
-        if inserted == 1 {
-            for node in &candidate.nodes {
-                sqlx::query("INSERT INTO catalog_version_nodes(version_id,id,parent_id,name,description) VALUES($1,$2,$3,$4,$5)").bind(version).bind(uuid(node.id)).bind(node.parent.map(uuid)).bind(&node.name).bind(&node.description).execute(&mut *tx).await.map_err(db_error)?;
-            }
-            for a in &candidate.assignments {
-                sqlx::query("INSERT INTO catalog_version_assignments(version_id,interface_id,directory_id) VALUES($1,$2,$3)").bind(version).bind(uuid(a.interface_id)).bind(a.directory_id.map(uuid)).execute(&mut *tx).await.map_err(db_error)?;
-            }
-        }
-        let result = activate(
-            &mut tx,
-            &s,
-            user,
-            project,
-            request.request_id,
-            command,
-            Some(version),
-        )
-        .await?;
-        tx.commit().await.map_err(db_error)?;
-        Ok(result)
     }
     async fn restore(
         &self,
@@ -398,41 +281,14 @@ impl CatalogActivationStore for PostgresOfficialCatalog {
         project: ProjectId,
         request: &RestoreCatalog,
     ) -> Result<CatalogActivation> {
-        let command = json!({"action":"restore","request":request});
-        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        authorize(&mut tx, user, project).await?;
-        let s = state(&mut tx, project, true).await?;
-        if let Some(result) = prior(&mut tx, user, project, request.request_id, &command).await? {
-            tx.commit().await.map_err(db_error)?;
-            return Ok(result);
-        }
-        if s.generation != request.expected_generation {
-            return Err(Error::Conflict);
-        }
-        if let Some(version) = request.version_id {
-            let exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM catalog_versions WHERE id=$1 AND project_id=$2)",
+        decode(
+            crate::publication::execute(
+                &self.database,
+                user,
+                project,
+                crate::publication::Change::DirectoryRestore(request),
             )
-            .bind(uuid(version))
-            .bind(uuid(project))
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(db_error)?;
-            if !exists {
-                return Err(Error::NotFound);
-            }
-        }
-        let result = activate(
-            &mut tx,
-            &s,
-            user,
-            project,
-            request.request_id,
-            command,
-            request.version_id.map(uuid),
+            .await?,
         )
-        .await?;
-        tx.commit().await.map_err(db_error)?;
-        Ok(result)
     }
 }

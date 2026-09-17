@@ -1,13 +1,6 @@
-use async_trait::async_trait;
 use nexofolio_contracts::*;
 use std::collections::{HashMap, HashSet};
 
-#[async_trait]
-pub trait DirectoryGenerator: Send + Sync {
-    /// Must fail before claiming a task if no production model is configured.
-    fn info(&self) -> Result<GeneratorInfo>;
-    async fn generate(&self, snapshot: &CatalogSnapshot) -> Result<DirectoryCandidate>;
-}
 pub trait DirectoryReviewer: Send + Sync {
     fn review(&self, snapshot: &CatalogSnapshot, candidate: &DirectoryCandidate) -> PreviewReview;
 }

@@ -1,6 +1,9 @@
 mod capture_benchmark;
 mod capture_rollback;
+mod capture_ui;
+mod evidence_order;
 mod maintenance_fixture;
+mod snapshot_inputs;
 use nexofolio_access::{
     ExternalIdentity, ExternalProject, PlatformAccess, ProjectSnapshot, SessionPrincipal,
 };
@@ -392,7 +395,7 @@ async fn duplicate_structure_keeps_evidence_and_relation_context() {
             at + 11000,
             None,
         );
-        batch["records"] = json!([click, bridge, unrelated, early, common]);
+        batch["records"] = json!([bridge, unrelated, early, common]);
         send(&client, &url, token, &batch).await;
         while doc.process_one().await.unwrap().is_some() {}
         for _ in 0..20 {
@@ -400,6 +403,14 @@ async fn duplicate_structure_keeps_evidence_and_relation_context() {
                 break;
             }
         }
+        let before_bridge:i64=sqlx::query_scalar("SELECT count(*) FROM evidence_facts f JOIN interface_documents d ON d.id::text=f.subject->'target'->>'interface_id' WHERE f.kind='parameter_link_candidate' AND d.path='/bridge/{param1}'").fetch_one(&sql).await.unwrap();
+        assert_eq!(
+            before_bridge, 0,
+            "different views require an actual captured bridge"
+        );
+        batch["records"] = json!([click]);
+        send(&client, &url, token, &batch).await;
+        while capture.process_evidence_one().await.unwrap() {}
         let links: Vec<Value> = sqlx::query_scalar(
             "SELECT subject FROM evidence_facts WHERE kind='parameter_link_candidate'",
         )
@@ -506,6 +517,8 @@ async fn duplicate_structure_keeps_evidence_and_relation_context() {
     }
 
     if std::env::var("NEXOFOLIO_KEEP_CAPTURE_FIXTURE").is_err() {
+        capture_ui::verify(&client, &url, token, p, &sql, &doc, &capture).await;
+        capture_ui::verify_plugin_sample(&client, &url, token, p, &sql, &doc, &capture).await;
         capture_rollback::verify(&db, &sql, &principal, &replay_batch).await;
         let pending: i64 =
             sqlx::query_scalar("SELECT pending FROM capture_backlog WHERE project_id=$1")
@@ -607,7 +620,99 @@ async fn duplicate_structure_keeps_evidence_and_relation_context() {
         let lost_definitions:i64=sqlx::query_scalar("SELECT count(*) FROM interface_observed_revisions r JOIN ingestion_inbox i ON i.id=r.origin_ingestion_id WHERE i.raw_record IS NULL").fetch_one(&sql).await.unwrap();
         assert_eq!(lost_definitions, 0);
     }
+    snapshot_inputs::verify(&db, &sql, &capture, session.user.id, p).await;
+    evidence_order::verify(&client, &url, token, p, &sql, &doc, &capture).await;
     capture_benchmark::compare(&db_url, instance, &key, token, &blobs, &replay_batch).await;
+    // Ordinary values are bounded; dictionary mappings and relation indexes are not discarded.
+    let mut bounded = batch.clone();
+    bounded["batch_id"] = json!(Uuid::new_v4());
+    bounded["records"] = json!([http_record(
+        "/options/retention-fixture",
+        json!({"items":(9000..9040).map(|id|json!({"id":id,"name":format!("Option {id}")})).collect::<Vec<_>>()}),
+        None,
+        9000,
+        at + 900000,
+        at + 900100,
+        None,
+    )]);
+    let received = send(&client, &url, token, &bounded).await;
+    while doc.process_one().await.unwrap().is_some() {}
+    while capture.process_evidence_one().await.unwrap() {}
+    let event: Uuid = received["results"][0]["observation_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let owner: Uuid = sqlx::query_scalar("SELECT o.interface_id FROM capture_events e JOIN interface_observations o ON o.ingestion_id=e.ingestion_id WHERE e.id=$1").bind(event).fetch_one(&sql).await.unwrap();
+    let count = |kind: &'static str| {
+        let sql = &sql;
+        async move {
+            sqlx::query_scalar::<_,i64>("SELECT count(*) FROM evidence_facts WHERE subject->>'interface_id'=$1 AND subject->>'path'='/items/*/id' AND kind=$2").bind(owner.to_string()).bind(kind).fetch_one(sql).await.unwrap()
+        }
+    };
+    assert_eq!(
+        count("observed_value").await,
+        nexofolio_evidence::OBSERVED_VALUE_LIMIT
+    );
+    assert_eq!(count("observed_value_limit").await, 1);
+    assert_eq!(count("dictionary_mapping_candidate").await, 40);
+    let indexed: i64 = sqlx::query_scalar("SELECT count(*) FROM evidence_value_index WHERE event_id=$1 AND field_ref->>'path'='/items/*/id'").bind(event).fetch_one(&sql).await.unwrap();
+    assert_eq!(indexed, 40);
+    let before: i64 = sqlx::query_scalar("SELECT sum(observations)::bigint FROM evidence_facts")
+        .fetch_one(&sql)
+        .await
+        .unwrap();
+    let retry = send(&client, &url, token, &bounded).await;
+    assert_eq!(retry["results"][0]["replayed"], true);
+    assert!(!capture.process_evidence_one().await.unwrap());
+    let after: i64 = sqlx::query_scalar("SELECT sum(observations)::bigint FROM evidence_facts")
+        .fetch_one(&sql)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
+    bounded["batch_id"] = json!(Uuid::new_v4());
+    bounded["records"] = json!([http_record(
+        "/options/retention-fixture",
+        json!({"items":std::iter::once(9000).chain(9040..9080).map(|id|json!({"id":id,"name":format!("Option {id}")})).collect::<Vec<_>>()}),
+        None,
+        9002,
+        at + 900110,
+        at + 900150,
+        None
+    )]);
+    let more = send(&client, &url, token, &bounded).await;
+    assert_eq!(more["results"][0]["structure"], "duplicate");
+    while doc.process_one().await.unwrap().is_some() {}
+    while capture.process_evidence_one().await.unwrap() {}
+    assert_eq!(
+        count("observed_value").await,
+        nexofolio_evidence::OBSERVED_VALUE_LIMIT
+    );
+    assert_eq!(count("observed_value_limit").await, 1);
+    assert_eq!(count("dictionary_mapping_candidate").await, 80);
+    let support:i64=sqlx::query_scalar("SELECT observations FROM evidence_facts WHERE subject->>'interface_id'=$1 AND subject->>'path'='/items/*/id' AND kind='observed_value' AND data->'value'='9000'::jsonb").bind(owner.to_string()).fetch_one(&sql).await.unwrap();
+    assert_eq!(
+        support, 2,
+        "known samples keep accumulating after saturation"
+    );
+    bounded["batch_id"] = json!(Uuid::new_v4());
+    bounded["records"] = json!([http_record(
+        "/retention-detail",
+        json!({"ok":true}),
+        Some(json!({"record_id":9039})),
+        9001,
+        at + 900200,
+        at + 900300,
+        None
+    )]);
+    send(&client, &url, token, &bounded).await;
+    while doc.process_one().await.unwrap().is_some() {}
+    while capture.process_evidence_one().await.unwrap() {}
+    let related: i64=sqlx::query_scalar("SELECT count(*) FROM evidence_facts WHERE kind='parameter_link_candidate' AND subject->'source'->>'interface_id'=$1 AND subject->'target'->>'path'='/record_id'").bind(owner.to_string()).fetch_one(&sql).await.unwrap();
+    assert!(
+        related > 0,
+        "value beyond retained examples still supports a relationship"
+    );
     stop.cancel();
     server.await.unwrap().unwrap();
     sql.close().await;

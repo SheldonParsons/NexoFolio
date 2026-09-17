@@ -8,6 +8,12 @@
 
 **接口知识维护：**正式目录及固定待分类、目录候选/发布/回退；capture v3持续证据入口、结构与证据分流、关系/枚举线索；显式触发的全量分段审阅、组合知识候选和目录/语义统一发布回退。增强采集通过配置分阶段启用，真实Chrome录制需要用户验收。
 
+**阶段1结构判断：**已统一入口与后台的结构规则，保存逐字段补全、差异和信息不足结果；真实录制的隔离回放已通过。文档读取合同已升至2.0.0，本地前端已同步，API与worker已部署，详情见[部署验收](docs/verification/2026-09-16-stage1-deployment.md)。其他严格按旧schema校验的消费者仍须同步后再接入。见[阶段1交付与逐文件改动理由](docs/verification/2026-09-16-stage1-delivery.md)。
+
+**阶段2证据处理：**已部署字段来源核验、分方向读取覆盖、统一关联与反例补查、条件化枚举及超限回滚。旧证据保留并标记待重评，上传合同不变。见[阶段2交付、测试与代码增删](docs/verification/2026-09-16-stage2-delivery.md)。
+
+**阶段3快照输入：**后端已实现观测字段统一审阅、固定来源回读和明确缺口，并通过隔离验收；维护合同升至2.0，当前前端已同步、本地API与worker已部署。阶段4尚未开始，见[阶段3交付报告](docs/verification/2026-09-16-stage3-delivery.md)。
+
 **后续业务：**专用 MCP Token 签发、独立同步接口、接口结构裁决和物理合并、七个 MCP 业务工具、迁移导出。
 未配置的后续能力仍返回 `NotConfigured`。`/mcp` 仍拒绝全部凭证；内部登录 Token 不作为 MCP Token。
 
@@ -178,11 +184,11 @@ CI 运行 lint、单测/架构/HTTP 测试、真实 PostgreSQL 测试、镜像�
 构建网络受限时可用 `python3 scripts/build_offline_image.py`：依赖按Cargo.lock准备在忽略的target目录，Linux编译阶段使用离线源。可传 --rust-image、--runtime-image 指定可用镜像源。
 本轮处理结果见 [观测建档验证](docs/verification/2026-09-14-observed-documents.md)。
 
-### 手动目录候选实验
+### 唯一重构入口
 
-已提供创建项目接口快照、调用模型生成候选、结构检查与查看结果的管理命令。当前接口与目录状态不自动改变。配置、任务重试和模块边界见 [目录候选说明](docs/contracts/0006-catalog-preview.md)。模型未配置时返回明确错误；测试替身不进入生产流程。
+新重构统一通过 `POST /v1/projects/{project_id}/maintenance-runs` 创建，由worker运行 `MaintenanceEngine`。不再提供旧CLI的目录创建/生成命令。完整行为见 [现行重构说明](docs/architecture/0003-current-reconstruction.md)。
 
-候选目录现已提供项目权限控制下的只读列表/详情接口，供前端预览；生成仍通过管理命令，预览不代表发布。
+历史候选只保留读取和激活能力，用于已有资料；`catalog-show`是历史只读命令。它们不能创建或执行新重构。
 
 ### 正式目录
 
@@ -192,6 +198,8 @@ CI 运行 lint、单测/架构/HTTP 测试、真实 PostgreSQL 测试、镜像�
 ## 持续证据与统一知识维护
 
 详见 [持续采集和维护 API](docs/contracts/0009-continuous-knowledge-maintenance.md)。采集包在 `contracts/capture`，维护包在 `contracts/maintenance`；Schema、生成类型、行为和manifest一起校验。后端、网站前端、插件各自修改并同步合同，不跨仓库混改。
+
+采集包1.4.0保持wire v3不变：[Chrome最小采样](contracts/capture/chrome-sampling-profile.md)只保留页面信息、关键交互及操作时的局部表单快照，停止新增截图；其他平台可以只上传HTTP。关联结果是有来源的候选，不能当作已证明的参数因果关系。
 
 `NEXOFOLIO_CAPTURE_ENABLED=true`启用v3及文件卷证据；默认关闭，旧v1/v2可继续使用。必须先迁移，再初始化共享卷、启动API和worker，最后升级插件。API与worker共同使用`capture_data`，备份需同时保留PostgreSQL和该卷。
 
@@ -226,3 +234,11 @@ NEXOFOLIO_CAPTURE_BENCHMARK=/tmp/capture-benchmark.json cargo test -p nexofolio-
 架构图HTML和视觉检查附件可以本地重新生成，不进入业务代码提交；合同生成物仍随版本发布并由CI检查一致性。
 
 - [真实源码精简修正与行数](docs/audits/2026-09-15-source-reduction.md)
+
+### 固定录制测试数据
+
+[清空与基线快照工具](docs/verification/recording-dataset.md)支持本地Compose的inspect/reset/snapshot/restore。默认保留账号、Token、项目和环境，清空前自动备份数据库与原文卷；录制完成后保存固定基线，后续测试恢复到隔离实例，不必重新操作页面。插件待上传队列需另行清理，防止旧记录回灌。
+
+### 当前推进主线
+
+[从真实采集到重构后新文档的路线](docs/plans/0003-recording-to-rebuilt-documents.md)标明源码范围、阶段出口和最终验收。当前处于接收后的结构判断改造，后续依次推进证据质量、重构输入、真实模型重构、文档候选与发布/读取/回退；采集验收或单项测试通过不等于完成文档交付。

@@ -1,5 +1,5 @@
 {
-  "contract_version": "2.2.0",
+  "contract_version": "2.3.0",
   "schema_version": "2",
   "supported_payloads": {
     "http_exchange": [
@@ -15,7 +15,7 @@
     "environment.schema.json": "727efa9ae90a228f91713e03a7fc1d48d1daf80fd10039dee00ffe1c7ba8ea34",
     "receipt.schema.json": "88457eb68e13148909a75d980a0a2e1e49d0031f1ebe18b8f20b8b96b6ca22fc",
     "fixtures/http-batch.json": "bbf49180880a5a0e09eb88c590b5b2edd24d83d6bcd0b5a98f21643b0aa3a8b6",
-    "behavior.md": "6264298e8fa2fc8db3a0ebd1bbbec69840c53d4f5bbb84b720f3ddd3ec75983d",
+    "behavior.md": "22e0b8d8c854ebef6f593351c3e9a8da81a123b08f42d531548d342ff6c65c27",
     "legacy/v1/batch.schema.json": "749c4d13d0de098e457e832385e6d314e2a14e745722457b01207e3b600641f4",
     "legacy/v1/behavior.md": "31cbead6881e9cebb8c101eb092b820c65fdeb4785b654ad394426aedfd4e228",
     "legacy/v1/capabilities.schema.json": "f9512576b342fc70ae87d3a5922609f80195ee1147327cc25d000633cacfd86b",

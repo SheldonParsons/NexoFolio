@@ -1,6 +1,6 @@
 //! Pure relationship judgments. Storage supplies bounded candidate observations.
 use crate::{FactDraft, relation_field};
-use nexofolio_contracts::FieldRef;
+use nexofolio_contracts::EvidenceFieldRef as FieldRef;
 use serde_json::json;
 pub struct RelationSupport {
     pub alternative_sources: i64,
@@ -30,7 +30,7 @@ pub fn parameter_link_fact(
         subject: json!({"source":source,"target":target}),
         data: json!({"transform":transform,"verification":"inferred","ambiguous":support.ambiguous(),
             "search_complete":support.search_complete,"cross_view_bridge":support.cross_view_bridge,
-            "interaction_observed":support.interaction_observed,"complete":false}),
+            "interaction_observed":support.interaction_observed,"complete":false,"support_kind":"value_equality_candidate"}),
     }
 }
 #[cfg(test)]

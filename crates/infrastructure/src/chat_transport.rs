@@ -1,4 +1,4 @@
-//! Shared bounded HTTP transport for legacy catalog and knowledge maintenance providers.
+//! Bounded HTTP transport for the single knowledge maintenance provider.
 use nexofolio_contracts::{Error, Result, Secret};
 use serde_json::Value;
 use std::time::Duration;

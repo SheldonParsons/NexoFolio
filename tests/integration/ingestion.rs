@@ -666,6 +666,40 @@ async fn environment_current_structure_retries_and_downstream_handoff() {
         "accepted"
     );
     policies.set(allowed, &Default::default()).await.unwrap();
+    // An old null-containing head had no v2 fingerprint. Upgrade only the head;
+    // immutable receipts must replay their original accepted decision.
+    let mut upgrade = original.clone();
+    upgrade["environment"] = json!({"name":"fingerprint-upgrade"});
+    let mut nullable = record(&original);
+    nullable["payload"]["response"]["body"]["content"] =
+        json!(r#"{"items":[{"id":1}],"note":null}"#);
+    upgrade["records"] = json!([nullable]);
+    let old = send(&client, &url, token, &upgrade).await;
+    let environment: Uuid = old["environment"]["id"].as_str().unwrap().parse().unwrap();
+    sqlx::query("UPDATE ingestion_heads SET algorithm_version='http-structure-2',structural_hash=NULL,structural_projection=NULL WHERE environment_id=$1").bind(environment).execute(&sql).await.unwrap();
+    let mut next = upgrade.clone();
+    next["records"][0]["record_id"] = json!(Uuid::new_v4());
+    assert_eq!(
+        send(&client, &url, token, &next).await["results"][0]["status"],
+        "ignored"
+    );
+    let version: String =
+        sqlx::query_scalar("SELECT algorithm_version FROM ingestion_heads WHERE environment_id=$1")
+            .bind(environment)
+            .fetch_one(&sql)
+            .await
+            .unwrap();
+    assert_eq!(version, nexofolio_contracts::STRUCTURE_ALGORITHM);
+    let repeated = send(&client, &url, token, &upgrade).await;
+    assert_eq!(
+        repeated["results"][0]["status"],
+        old["results"][0]["status"]
+    );
+    assert_eq!(
+        repeated["results"][0]["ingestion_id"],
+        old["results"][0]["ingestion_id"]
+    );
+    assert_eq!(repeated["results"][0]["replayed"], true);
     stop.cancel();
     handle.await.unwrap().unwrap();
     // Fresh adapters / server retain receipts and heads after restart.

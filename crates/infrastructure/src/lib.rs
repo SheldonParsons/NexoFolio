@@ -24,9 +24,7 @@ pub use documents::PostgresDocuments;
 mod catalog_preview;
 pub use catalog_preview::PostgresCatalogPreviews;
 
-mod catalog_model;
 mod chat_transport;
-pub use catalog_model::ChatCatalogGenerator;
 
 mod path_policy;
 pub use path_policy::PostgresPathPolicies;
@@ -47,4 +45,5 @@ mod maintenance_store;
 pub use maintenance_store::PostgresMaintenance;
 mod knowledge_publication;
 mod maintenance_model;
+mod publication;
 pub use maintenance_model::ChatMaintenanceModel;

@@ -1,0 +1,102 @@
+{
+  "project_id": "00000001-0000-4000-8000-000000000001",
+  "interface_id": "00000002-0000-4000-8000-000000000001",
+  "environment_id": "00000003-0000-4000-8000-000000000001",
+  "ingestion_id": "00000004-0000-4000-8000-000000000001",
+  "base_revision_id": "00000005-0000-4000-8000-000000000001",
+  "extractor_version": "observed-http-2",
+  "assessment": {
+    "rule_version": "observed-comparison-1",
+    "initial": false,
+    "categories": [
+      "enrichment",
+      "difference",
+      "insufficient"
+    ],
+    "findings": [
+      {
+        "kind": "enrichment",
+        "location": "response.body",
+        "path": "/items/*",
+        "reason": "ARRAY_ITEMS_OBSERVED",
+        "before": {
+          "unknown": true
+        },
+        "observed": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "number"
+            }
+          }
+        }
+      },
+      {
+        "kind": "difference",
+        "location": "response.body",
+        "path": "/price",
+        "reason": "OBSERVED_TYPE_DIFFERS",
+        "before": {
+          "type": "number"
+        },
+        "observed": {
+          "type": "string"
+        }
+      },
+      {
+        "kind": "insufficient",
+        "location": "response.body",
+        "path": "/optional",
+        "reason": "FIELD_NOT_OBSERVED",
+        "before": {
+          "type": "boolean"
+        },
+        "observed": null
+      }
+    ]
+  },
+  "incoming_definition": {
+    "extractor_version": "observed-http-2",
+    "method": "GET",
+    "path": "/orders",
+    "request": {
+      "parameters": [],
+      "headers": [],
+      "body": {
+        "state": "none",
+        "media_type": ""
+      }
+    },
+    "response": {
+      "status": 200,
+      "capture_state": "complete",
+      "headers": [],
+      "body": {
+        "state": "complete",
+        "media_type": "application/json",
+        "observed_schema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  }
+                }
+              }
+            },
+            "price": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "limitations": [
+      "OBSERVED_ONLY_NOT_A_CONFIRMED_CONTRACT"
+    ]
+  }
+}

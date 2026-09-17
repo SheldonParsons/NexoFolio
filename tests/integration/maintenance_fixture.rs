@@ -28,12 +28,48 @@ impl MaintenanceModel for Model {
             "review" => {
                 let segment = &input["segment"];
                 Ok(
-                    json!({"type":"review","review":{"segment_id":segment["id"],"summary":"合成字段已审阅","assessments":segment["units"].as_array().unwrap().iter().map(|u|json!({"unit_id":u["id"],"field_id":u["field_id"],"disposition":"keep","note":"test observed field","evidence":[]})).collect::<Vec<_>>()}}),
+                    json!({"type":"review","review":{"segment_id":segment["id"],"summary":"合成字段已审阅","assessments":segment["units"].as_array().unwrap().iter().map(|u|json!({"unit_id":u["id"],"field_id":u["field_id"],"disposition":"keep","note":"test observed field","evidence":u["context"]["evidence_summary"]["representatives"].as_array().into_iter().flatten().filter(|r|matches!(r["fact_kind"].as_str(),Some("parameter_link_candidate"|"parameter_link_counterexample"))).map(|r|r["reference"].clone()).collect::<Vec<_>>()})).collect::<Vec<_>>()}}),
                 )
             }
             "plan" => Ok(json!({"type":"plan","plan":self.plan})),
             _ => Ok(json!({"type":"summary","summary":"合成原文已回读；不宣称真实LLM语义能力"})),
         }
+    }
+}
+struct PlanningSourceProbe {
+    inner: Model,
+    delivered: std::sync::atomic::AtomicBool,
+    readbacks: std::sync::atomic::AtomicUsize,
+}
+#[async_trait::async_trait]
+impl MaintenanceModel for PlanningSourceProbe {
+    fn identity(&self) -> Value {
+        self.inner.identity()
+    }
+    fn prepare(&self, phase: &str, input: Value, output: usize) -> Result<Value> {
+        self.inner.prepare(phase, input, output)
+    }
+    async fn invoke(&self, request: &Value) -> Result<Value> {
+        use std::sync::atomic::Ordering;
+        if request["phase"] == "readback" {
+            self.readbacks.fetch_add(1, Ordering::SeqCst);
+        }
+        if let Some(sources) = request["input"]["input"]["pending_originals"]
+            .as_array()
+            .filter(|v| !v.is_empty())
+        {
+            for source in sources {
+                assert!(!source["originals"].as_array().unwrap().is_empty());
+                if source["reference"]["kind"] == "field" {
+                    assert!(
+                        source["originals"][0]["original"].is_array(),
+                        "the actual definition pointers/values must be delivered"
+                    );
+                }
+            }
+            self.delivered.store(true, Ordering::SeqCst);
+        }
+        self.inner.invoke(request).await
     }
 }
 struct InvalidPhaseModel {
@@ -49,19 +85,18 @@ impl MaintenanceModel for InvalidPhaseModel {
         self.inner.prepare(phase, input, output)
     }
     async fn invoke(&self, request: &Value) -> Result<Value> {
-        if request["phase"] == self.phase {
+        if request["phase"] == self.phase
+            || (self.phase == "readback"
+                && request["phase"] == "plan"
+                && request["input"]["input"]["pending_originals"]
+                    .as_array()
+                    .is_some_and(|v| !v.is_empty()))
+        {
             return Ok(
                 json!({"type":"summary","summary":if self.phase=="summary"{"x".repeat(20000)}else{String::new()}}),
             );
         }
-        let mut reply = self.inner.invoke(request).await?;
-        if self.phase == "summary" && request["phase"] == "review" {
-            // Explicitly force summary compaction; do not depend on the old six-unit shard limit.
-            for assessment in reply["review"]["assessments"].as_array_mut().unwrap() {
-                assessment["note"] = json!("detailed synthetic finding ".repeat(24));
-            }
-        }
-        Ok(reply)
+        self.inner.invoke(request).await
     }
 }
 struct NavigationModel {
@@ -181,7 +216,11 @@ pub async fn verify(
     let f = snapshot
         .fields
         .iter()
-        .find(|f| f.reference.location == "request.body" && !f.reference.path.is_empty())
+        .find(|f| {
+            f.reference.adopted().is_some()
+                && f.reference.location == "request.body"
+                && !f.reference.path.is_empty()
+        })
         .unwrap();
     let node = PreviewNode {
         id: DirectoryId::new(),
@@ -196,7 +235,7 @@ pub async fn verify(
     let annotation = AnnotationDraft {
         id: Uuid::new_v4(),
         target: SemanticTarget::Field {
-            field: f.reference.clone(),
+            field: f.reference.adopted().unwrap(),
         },
         value: SemanticValue::Description {
             text: "用于订单详情查询的请求参数，含义仍需业务复核。".into(),
@@ -227,10 +266,15 @@ pub async fn verify(
             },
         ],
     };
+    let probe = Arc::new(PlanningSourceProbe {
+        inner: Model { plan: plan.clone() },
+        delivered: std::sync::atomic::AtomicBool::new(false),
+        readbacks: std::sync::atomic::AtomicUsize::new(0),
+    });
     let engine = MaintenanceEngine {
         store: store.clone(),
         sources: sources.clone(),
-        model: Arc::new(Model { plan: plan.clone() }),
+        model: probe.clone(),
         budget: MaintenanceBudget::default(),
     };
     assert!(engine.tick().await.unwrap());
@@ -244,6 +288,12 @@ pub async fn verify(
     assert!(ready.coverage.complete);
     assert_eq!(ready.coverage.reviewed_fields, snapshot.fields.len());
     assert!(ready.read_count > 0);
+    assert!(probe.delivered.load(std::sync::atomic::Ordering::SeqCst));
+    assert_eq!(
+        probe.readbacks.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "small source reads need no independent summary call"
+    );
     let points = store
         .checkpoints(user, project, run.id, 1, 100)
         .await
@@ -266,6 +316,7 @@ pub async fn verify(
         .unwrap();
     assert!(result.changed);
     assert_eq!(result.generation, 1);
+    let first_release = result.version_id;
     assert!(
         store
             .publish_knowledge(user, project, run.id, &publish)
@@ -474,7 +525,7 @@ pub async fn verify(
             .as_deref(),
         Some("ISOLATED_FENCE_CHECK")
     );
-    for phase in ["summary", "readback"] {
+    for phase in ["review", "readback"] {
         let pending = store
             .start(
                 user,
@@ -512,10 +563,10 @@ pub async fn verify(
                 .await,
             Err(Error::InvalidInput { .. })
         ));
-        if phase == "summary" {
+        if phase == "review" {
             assert!(
-                failed.model_calls <= failed.coverage.total_segments as u32 + 3,
-                "summary must not repeat indefinitely"
+                failed.model_calls <= failed.coverage.total_segments.min(4) as u32 * 3,
+                "invalid first batch must stop within its per-call retry limit"
             );
         }
         if phase == "readback" {
@@ -563,7 +614,7 @@ pub async fn verify(
         .checkpoints(user, project, pending.id, 1, 100)
         .await
         .unwrap();
-    assert!(points.items.iter().any(|p| p.phase == "index_read"));
+    assert!(points.items.iter().any(|p| p.phase == "index_delivered"));
     assert!(
         !points
             .items
@@ -643,19 +694,27 @@ pub async fn verify(
         )
         .await
         .unwrap();
+    let model = Arc::new(Model {
+        plan: MaintenancePlan {
+            strategy: MaintenanceStrategy::Keep,
+            reason: "budget preflight".into(),
+            expected_benefit: "no wasted calls".into(),
+            actions: vec![],
+        },
+    });
+    let snapshot = store.snapshot(user, project, pending.id).await.unwrap();
+    let (_, estimate) = nexofolio_application::prepare_maintenance_review(
+        &snapshot,
+        model.as_ref(),
+        &MaintenanceBudget::default(),
+    )
+    .unwrap();
     let engine = MaintenanceEngine {
         store: store.clone(),
         sources: sources.clone(),
-        model: Arc::new(Model {
-            plan: MaintenancePlan {
-                strategy: MaintenanceStrategy::Keep,
-                reason: "budget preflight".into(),
-                expected_benefit: "no wasted calls".into(),
-                actions: vec![],
-            },
-        }),
+        model,
         budget: MaintenanceBudget {
-            max_calls: 1,
+            max_calls: (estimate.review_calls + 1) as u32,
             ..MaintenanceBudget::default()
         },
     };
@@ -667,4 +726,78 @@ pub async fn verify(
         failed.error_code.as_deref(),
         Some("MODEL_BUDGET_INSUFFICIENT_FOR_REVIEW")
     );
+    // Mechanism proof: the two public write paths compete for the same project generation.
+    let current_generation = store
+        .knowledge_versions(user, project, 1, 20)
+        .await
+        .unwrap()
+        .generation;
+    let restored = store
+        .restore_knowledge(
+            user,
+            project,
+            &RestoreKnowledge {
+                request_id: Uuid::new_v4(),
+                expected_generation: current_generation,
+                version_id: first_release,
+            },
+        )
+        .await
+        .unwrap();
+    let directory = PostgresOfficialCatalog::new(db.clone());
+    let old = RestoreCatalog {
+        request_id: Uuid::new_v4(),
+        expected_generation: restored.generation,
+        version_id: None,
+    };
+    let unified = RestoreKnowledge {
+        request_id: Uuid::new_v4(),
+        expected_generation: restored.generation,
+        version_id: None,
+    };
+    let (old_result, new_result) = tokio::join!(
+        directory.restore(user, project, &old),
+        store.restore_knowledge(user, project, &unified)
+    );
+    assert_ne!(
+        old_result.is_ok(),
+        new_result.is_ok(),
+        "only one path may consume the generation"
+    );
+    let visible = store
+        .interface_knowledge(
+            user,
+            project,
+            f.reference.interface_id,
+            f.reference.environment_id,
+        )
+        .await
+        .unwrap();
+    if old_result.is_ok() {
+        assert!(matches!(new_result, Err(Error::Conflict)));
+        assert!(
+            !visible.annotations.is_empty(),
+            "directory-only restore must retain semantics"
+        );
+        assert!(
+            directory
+                .restore(user, project, &old)
+                .await
+                .unwrap()
+                .replayed
+        );
+    } else {
+        assert!(matches!(old_result, Err(Error::Conflict)));
+        assert!(
+            visible.annotations.is_empty(),
+            "whole restore to initial state restores both layers"
+        );
+        assert!(
+            store
+                .restore_knowledge(user, project, &unified)
+                .await
+                .unwrap()
+                .replayed
+        );
+    }
 }

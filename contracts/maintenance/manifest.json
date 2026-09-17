@@ -1,20 +1,20 @@
 {
-  "contract_version": "1.5.0",
+  "contract_version": "2.0.0",
   "files": {
     "activation.schema.json": "6faaf6a0bbf5c99df16c5ba9e45e4a7c7c444b41b9c951fcda5d9d641e8b1354",
-    "candidate.schema.json": "669efc97204876dc58279228dc97438e290f6dc863a57404bd10a467b331e1cd",
-    "checkpoints.schema.json": "480e2aeb70c5ae22b5c692bc02bc660095acebcaa4ff05c76c0ee5bb284dd41d",
-    "interface-knowledge.schema.json": "e5932bb27e975eae6796e48ebcfecf7b1561c4b17eca53820223407b4506449f",
+    "candidate.schema.json": "72a4fb4d947267bba00c156dd33cb889ace5acba9db1a30c222c75b7bcc9369f",
+    "checkpoints.schema.json": "a58d77a05fb4cda88be781b2db892a8890d79fca5c17e95d3d7a2c82444eb424",
+    "interface-knowledge.schema.json": "a3c5f7a5b1976ae1b1289d4d5668fa248613ebc59c13096b607ce373aa18efa8",
     "page.schema.json": "1a365cd7ca767b279806ba5ec6583c997c5a5d26c5f2c3c889952293b0a92050",
-    "plan.schema.json": "037fe6818673c05e7336359c6e9ec680207c383763cc7e1966cd32aac70eef80",
+    "plan.schema.json": "87d52254a451089167051d7fc10a3c323ca54666ad842b06323a579384bb6fba",
     "publish.schema.json": "2f55daa3ad3f09e77b63f37d02461d8aa93a3547c2b67f9143fea99d4a665fd3",
-    "reply.schema.json": "76c1906c9569af77ff8b2b6b2519a9c3f4797b1fb3bd307d5b7bc5ac6ca1a750",
+    "reply.schema.json": "f8318024481c0b5ca85d56d310273e9c5e486ce27cb4aa51c260ef6064946a96",
     "restore.schema.json": "1991ccf9df27855d08a6787bcba7749f8a62b0106596342091ee37b029d78e00",
-    "run.schema.json": "b510a00693b361f9ca70340ed60602db67da9b8c4408b4cb7620560e15461e8c",
-    "snapshot.schema.json": "ea43a45d309ed237bcd22baf1ea3f6697e96778e585b0d14ca534a987da6aa63",
+    "run.schema.json": "a93f0ed60208ee09efbe8e1a00b00411ee33a0ce4a3136760b475c322b5a4a5e",
+    "snapshot.schema.json": "3cd18e159778b85568a437ee150377e67e66e330a7bf00178dbe3b6321d39687",
     "start.schema.json": "d1613937133f6782d99a9deb5f99ba33419ddce7d487b512a64e6d583056471d",
     "versions.schema.json": "1c75217a5f96bb3df42a414f4860568313bd1724f812469052aafc09c39e984e",
-    "types.generated.ts": "f7266c46bee72eea001e0c857bcb8977152a3223dd96851c6793ffcd6bf46f91",
-    "behavior.md": "e502cdb9f2164c803172cfc36c952b36eefd7fb411c7ac2d71bc2e79a502bb17"
+    "types.generated.ts": "2c958318ac166a6b973bfcc5f81ba83ee13cdc5da0688dbb8cca1fb59586ddf5",
+    "behavior.md": "00ff7724d3a5e077432618d5d6024119596aad3ce35b2b932f14c9ea3cb32ad8"
   }
 }

@@ -182,13 +182,14 @@ impl PostgresCaptureStore {
         }
         let mut tx = self.database.pool.begin().await.map_err(err)?;
         authorize(&mut tx, user, project).await?;
-        let total:i64=sqlx::query_scalar("SELECT count(*) FROM evidence_facts WHERE project_id=$1 AND ($2::uuid IS NULL OR environment_id=$2)").bind(uuid(project)).bind(environment.map(uuid)).fetch_one(&mut *tx).await.map_err(err)?;
+        let total:i64=sqlx::query_scalar("SELECT count(*) FROM evidence_facts WHERE project_id=$1 AND data->>'superseded' IS DISTINCT FROM 'true' AND ($2::uuid IS NULL OR environment_id=$2)").bind(uuid(project)).bind(environment.map(uuid)).fetch_one(&mut *tx).await.map_err(err)?;
         let rows=sqlx::query(r#"SELECT jsonb_build_object('id',f.id,'project_id',f.project_id,'environment_id',f.environment_id,'kind',f.kind,'subject',f.subject,'data',f.data,'observations',f.observations,'first_seen',f.first_seen,'last_seen',f.last_seen,'samples',(SELECT coalesce(jsonb_agg(event_id
             ORDER BY event_id),'[]'::jsonb)
             FROM evidence_samples s
             WHERE s.fact_id=f.id)) AS value
             FROM evidence_facts f
             WHERE f.project_id=$1
+            AND f.data->>'superseded' IS DISTINCT FROM 'true'
             AND ($2::uuid IS NULL
             OR environment_id=$2)
             ORDER BY f.last_seen DESC,f.id

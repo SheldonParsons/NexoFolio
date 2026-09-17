@@ -90,7 +90,8 @@ fn violations(metadata: &Value) -> Vec<String> {
                 let intake_pure = ["intake", "knowledge", "evidence", "rebuild", "application"]
                     .contains(&short)
                     && ["sha2", "url", "base64"].contains(&dep);
-                if !basic.contains(&dep) && !test_runtime && !intake_pure {
+                let async_composition = short == "application" && dep == "futures-util";
+                if !basic.contains(&dep) && !test_runtime && !intake_pure && !async_composition {
                     errors.push(format!(
                         "{name} -> {dep}: infrastructure dependency in core"
                     ));
@@ -157,4 +158,13 @@ fn declared_ports_and_test_runtime_are_allowed() {
     assert!(violations(&fixture("nexofolio-intake", "tokio", json!("dev"))).is_empty());
     assert!(!violations(&fixture("nexofolio-intake", "tokio", Value::Null)).is_empty());
     assert!(!violations(&fixture("nexofolio-surprise", "serde", Value::Null)).is_empty());
+    assert!(
+        violations(&fixture(
+            "nexofolio-application",
+            "futures-util",
+            Value::Null
+        ))
+        .is_empty()
+    );
+    assert!(!violations(&fixture("nexofolio-intake", "futures-util", Value::Null)).is_empty());
 }

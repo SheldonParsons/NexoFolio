@@ -1,23 +1,6 @@
+//! Read-only compatibility for persisted historical directory candidates.
 use async_trait::async_trait;
-use nexofolio_contracts::{
-    DirectoryCandidate, GeneratorInfo, JobId, PreviewReview, PreviewTask, ProjectId, Result,
-};
-
-/// Administrative-only preview storage. No method here can publish or change interface definitions.
-#[async_trait]
-pub trait CatalogPreviewStore: Send + Sync {
-    async fn create(&self, project: ProjectId) -> Result<PreviewTask>;
-    async fn read(&self, task: JobId) -> Result<PreviewTask>;
-    /// Claims pending, failed, or expired running tasks with a new fenced generation.
-    async fn claim(&self, task: JobId, generator: &GeneratorInfo) -> Result<PreviewTask>;
-    async fn complete(
-        &self,
-        task: &PreviewTask,
-        candidate: &DirectoryCandidate,
-        review: &PreviewReview,
-    ) -> Result<()>;
-    async fn fail(&self, task: &PreviewTask, code: &'static str) -> Result<()>;
-}
+use nexofolio_contracts::{JobId, ProjectId, Result};
 
 /// Authenticated project readers are separate from privileged administrative commands.
 #[async_trait]

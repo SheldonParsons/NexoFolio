@@ -6,7 +6,11 @@
       "additionalProperties": false,
       "properties": {
         "extractor_version": {
-          "const": "observed-http-1"
+          "enum": [
+            "observed-http-1",
+            "observed-http-2",
+            "observed-http-3"
+          ]
         },
         "method": {
           "type": "string"
@@ -218,6 +222,13 @@
           "items": {
             "type": "string"
           }
+        },
+        "schema_view": {
+          "type": "string",
+          "enum": [
+            "http-structure-4"
+          ],
+          "description": "Mechanical field-structure read projection. Revision identity and stored original definition remain unchanged."
         }
       },
       "required": [

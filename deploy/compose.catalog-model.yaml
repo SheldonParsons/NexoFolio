@@ -12,19 +12,3 @@ services:
     environment: *maintenance_model
     volumes:
       - "${NEXOFOLIO_CATALOG_MODEL_KEY_HOST_FILE:?Set private model key file path}:/run/secrets/catalog-model-key:ro"
-  catalog:
-    image: nexofolio-backend:foundation
-    profiles: [tools]
-    entrypoint: [nexofolio-admin]
-    user: "${NEXOFOLIO_CATALOG_MODEL_UID:-10001}:${NEXOFOLIO_CATALOG_MODEL_GID:-10001}"
-    environment:
-      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
-      NEXOFOLIO_LOG: ${NEXOFOLIO_LOG:-info}
-      NEXOFOLIO_CATALOG_MODEL_BASE_URL: ${NEXOFOLIO_CATALOG_MODEL_BASE_URL:?Set catalog model base URL}
-      NEXOFOLIO_CATALOG_MODEL: ${NEXOFOLIO_CATALOG_MODEL:?Set catalog model name}
-      NEXOFOLIO_CATALOG_MODEL_API_KEY_FILE: /run/secrets/catalog-model-key
-    volumes:
-      - "${NEXOFOLIO_CATALOG_MODEL_KEY_HOST_FILE:?Set private model key file path}:/run/secrets/catalog-model-key:ro"
-    depends_on:
-      db:
-        condition: service_healthy

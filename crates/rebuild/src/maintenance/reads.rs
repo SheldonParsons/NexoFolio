@@ -16,15 +16,32 @@ pub fn snapshot_contains_reference(snapshot: &KnowledgeSnapshot, r: &KnowledgeEv
             .facts
             .iter()
             .any(|f| f.kind == "page_image" && f.data["asset_id"].as_str() == Some(r.id.as_str())),
+        "observation" => snapshot.inputs.as_ref().is_some_and(|i| {
+            i.observations.iter().any(|m| {
+                m.record.ingestion_id.to_string() == r.id
+                    && m.record.project_id == snapshot.project_id
+            })
+        }),
+        "source" => snapshot.inputs.as_ref().is_some_and(|i| {
+            i.sources
+                .iter()
+                .any(|s| s.event_id.to_string() == r.id && s.project_id == snapshot.project_id)
+        }),
         "summary" => false,
         _ => false,
     }
 }
 pub(super) fn refs_valid(snapshot: &KnowledgeSnapshot, refs: &[KnowledgeEvidenceRef]) -> bool {
     !refs.is_empty()
-        && refs
-            .iter()
-            .all(|r| snapshot_contains_reference(snapshot, r))
+        && refs.iter().all(|r| {
+            snapshot_contains_reference(snapshot, r)
+                && (r.kind != "fact"
+                    || snapshot
+                        .facts
+                        .iter()
+                        .find(|f| f.id.to_string() == r.id)
+                        .is_some_and(|f| f.data["needs_reassessment"] != true))
+        })
 }
 pub(super) fn target_interface(target: &SemanticTarget) -> InterfaceId {
     match target {

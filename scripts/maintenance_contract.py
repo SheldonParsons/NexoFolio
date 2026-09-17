@@ -2,10 +2,12 @@ from pathlib import Path
 import subprocess,json,hashlib,argparse
 from catalog_preview_contract import ts
 from ingestion_contract import require_version_change
-ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT/'contracts/maintenance';VERSION='1.5.0'
+from capture_contract import evidence_field_schema
+ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT/'contracts/maintenance';VERSION='2.0.0'
 def outputs():
  p=subprocess.run(['cargo','run','--quiet','--locked','-p','nexofolio-contracts','--example','maintenance_schema'],cwd=ROOT,capture_output=True,text=True,check=True);schemas=json.loads(p.stdout);defs={}
  for s in schemas.values():
+  if 'EvidenceFieldRef' in s.get('$defs',{}):evidence_field_schema(s['$defs']['EvidenceFieldRef'])
   for name,value in s.get('$defs',{}).items():
    if name in defs and defs[name]!=value:raise ValueError('conflicting definition '+name)
    defs[name]=value

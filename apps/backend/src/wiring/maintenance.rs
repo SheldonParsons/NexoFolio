@@ -1,38 +1,8 @@
+//! Single reconstruction engine: fixed-snapshot knowledge maintenance.
 use crate::wiring::Config;
-use nexofolio_application::CatalogPreviewService;
 use nexofolio_contracts::{Error, Result, Secret};
-use nexofolio_infrastructure::{
-    ChatCatalogGenerator, Postgres, PostgresCatalogPreviews, Unconfigured,
-};
+use nexofolio_infrastructure::Postgres;
 use std::sync::Arc;
-
-pub fn build_catalog_previews(
-    config: &Config,
-    database: Postgres,
-) -> Result<CatalogPreviewService> {
-    let store = Arc::new(PostgresCatalogPreviews::new(database));
-    match &config.catalog_model {
-        None => Ok(CatalogPreviewService::standard(
-            store,
-            Arc::new(Unconfigured),
-        )),
-        Some(model) => {
-            let key =
-                std::fs::read_to_string(&model.api_key_file).map_err(|_| Error::NotConfigured {
-                    capability: "catalog_model_key_file",
-                })?;
-            let key = Secret::new(key.trim());
-            Ok(CatalogPreviewService::standard(
-                store,
-                Arc::new(ChatCatalogGenerator::new(
-                    &model.base_url,
-                    key,
-                    model.model.clone(),
-                )?),
-            ))
-        }
-    }
-}
 
 pub fn build_maintenance(
     config: &Config,

@@ -1,11 +1,12 @@
 {
-  "contract_version": "1.2.0",
+  "contract_version": "1.7.0",
   "schema_version": "3",
   "files": {
     "asset.schema.json": "b189a81dc4a5d155a6368ddb7bd12df676a905f8ed07e91f371085afe510de3d",
     "batch.schema.json": "6a056ff3e35480c65ceef1d1353f9ba5c4474904a553b2e2cf6ccdf70bc1be76",
     "capabilities.schema.json": "c880f2d08a9de4a4bdca670bc643c67ce67665182e5ba30f2b0c508b357c9a7b",
     "context.schema.json": "faa68dd2b3b3df16539de4cfb399f19504574f3a9dd903f022c5483514350923",
+    "evidence-field.schema.json": "76d7a1977252f232fe3c7368ba8cb2c6390c1ce4f0f64ab833e1a7e715496085",
     "evidence-page.schema.json": "bb354de2938b4db2b9791db1d9997af54aa31e72ea79cb4cc0823f230e34f1e2",
     "evidence.schema.json": "462a0223dd54bb1596de047a7170f74857c9f8dceadae3cad23659ce13c1a0be",
     "image-reference.schema.json": "67583be2db2c7036c89203b030634a5e87e587a3aa9366e6d8a8c89b06a39a8d",
@@ -15,7 +16,11 @@
     "receipt.schema.json": "bfe69db45ca408e4a297049d10d6cd21f1260a3759d8172f05dcf9abf816458c",
     "record.schema.json": "96b64aa98d6a63bdec1725b204811c87094e3cfdad6e39fc0c2f6ea2c3762bae",
     "ui-snapshot.schema.json": "501e1f7f5355e166ec227d2986e60c65e15b3beed7bcfb023e4a736a264102e9",
-    "types.generated.ts": "64458572c8c8b8f7af91bfead800e016c8ef317058874ac67cfe63d0926c35df",
-    "behavior.md": "80f133fa2e06fa5dadece87d79d57295917f7be6d6b07ab431095c5e63a1b407"
+    "types.generated.ts": "6becf8ebd46f88960e90b351d49ff2d75af8bfe1a64891af0eb78b07f5350645",
+    "behavior.md": "4081b35221284d7acb53f159b809edb6b5fc602413d701dcf3e42c229b9dfb73",
+    "chrome-sampling-profile.md": "d9cfb60fcc0b2b02870f6a99222961e50c1a76d7baaa347a3843343dcdddd2c3",
+    "fixtures/http-only.json": "597c533b2354ab008caccef95407dadd8d2529b6355a218fe09d3eba19e29b81",
+    "fixtures/interleaved-use.json": "b62e28b7b89398b7da43489bf6fd62b792d6d7973c21e25b39a1a0b102b6e94f",
+    "fixtures/query-form.json": "e3d85f50aca9e9f1bd6d15fd0c4196d7ead955632a741581b6a0471806b62c9f"
   }
 }

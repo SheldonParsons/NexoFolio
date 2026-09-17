@@ -4,7 +4,7 @@ use nexofolio_infrastructure::Postgres;
 use nexofolio_intake::ProjectPathPolicies;
 
 #[derive(Parser)]
-#[command(about = "NexoFolio foundation administration")]
+#[command(about = "NexoFolio administration; reconstruction uses the maintenance HTTP API")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -27,24 +27,18 @@ enum Command {
         #[arg(long)]
         literal_prefix: Vec<String>,
     },
-    CatalogCreate {
-        #[arg(long)]
-        project_id: nexofolio_contracts::ProjectId,
-    },
-    CatalogRun {
-        #[arg(long)]
-        task_id: nexofolio_contracts::JobId,
-    },
+    /// Inspect a historical directory candidate; this never generates one.
     CatalogShow {
         #[arg(long)]
         task_id: nexofolio_contracts::JobId,
     },
-    CatalogPreview {
+    Migrate,
+    ProcessOne,
+    /// Upgrade legacy evidence offline, keeping historical IDs and original recordings.
+    RefreshEvidence {
         #[arg(long)]
         project_id: nexofolio_contracts::ProjectId,
     },
-    Migrate,
-    ProcessOne,
     RetryObservation {
         ingestion_id: uuid::Uuid,
     },
@@ -88,43 +82,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .await?;
             println!("Path policy saved for future observations.");
         }
-        Command::CatalogCreate { project_id } => {
-            use nexofolio_knowledge::CatalogPreviewStore;
-            let task = nexofolio_infrastructure::PostgresCatalogPreviews::new(database.clone())
-                .create(project_id)
-                .await?;
-            println!(
-                "{}",
-                serde_json::json!({"task_id":task.task_id,"candidate_id":task.candidate_id,"status":task.status,"snapshot_interfaces":task.snapshot.interfaces.len(),"snapshot_sha256":task.snapshot_sha256})
-            );
-        }
         Command::CatalogShow { task_id } => {
-            use nexofolio_knowledge::CatalogPreviewStore;
             let task = nexofolio_infrastructure::PostgresCatalogPreviews::new(database.clone())
                 .read(task_id)
                 .await?;
             println!("{}", serde_json::to_string_pretty(&task)?);
         }
-        Command::CatalogRun { task_id } => {
-            let task =
-                nexofolio_backend::wiring::build_catalog_previews(&config, database.clone())?
-                    .run(task_id)
-                    .await?;
+        Command::RefreshEvidence { project_id } => {
+            let store = nexofolio_infrastructure::PostgresCaptureStore::new(
+                database.clone(),
+                std::sync::Arc::new(nexofolio_infrastructure::FileBlobStore::new(
+                    config.blob_root.clone(),
+                )),
+            );
+            let queued = store.refresh_legacy_evidence(project_id).await?;
+            let mut processed = 0;
+            for _ in 0..queued {
+                if !store.process_evidence_one().await? {
+                    break;
+                }
+                processed += 1;
+            }
+            let remaining = store.refresh_legacy_evidence(project_id).await?;
             println!(
                 "{}",
-                serde_json::json!({"task_id":task.task_id,"candidate_id":task.candidate_id,"status":task.status,"review":task.review})
+                serde_json::json!({"queued":queued,"processed":processed,"remaining":remaining})
             );
-        }
-        Command::CatalogPreview { project_id } => {
-            let service =
-                nexofolio_backend::wiring::build_catalog_previews(&config, database.clone())?;
-            let task = service.create(project_id).await?;
-            eprintln!("Catalog preview task: {}", task.task_id);
-            let task = service.run(task.task_id).await?;
-            println!(
-                "{}",
-                serde_json::json!({"task_id":task.task_id,"candidate_id":task.candidate_id,"status":task.status,"review":task.review})
-            );
+            if remaining != 0 {
+                return Err(
+                    "Evidence refresh incomplete; pending work is preserved for retry".into(),
+                );
+            }
         }
         Command::ProcessOne => {
             let service = nexofolio_application::ProcessingService::new(std::sync::Arc::new(

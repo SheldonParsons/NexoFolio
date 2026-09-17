@@ -1,4 +1,5 @@
 mod snapshot;
+mod snapshot_inputs;
 use crate::Postgres;
 use async_trait::async_trait;
 use nexofolio_application::{MaintenanceLease, MaintenanceStore};
@@ -336,16 +337,18 @@ pub(crate) fn mark_stale(annotations: &mut [SemanticAnnotation], interfaces: &[C
 
 #[async_trait]
 impl nexofolio_application::MaintenanceSources for crate::PostgresCaptureStore {
-    async fn observation(&self, project: ProjectId, event: Uuid) -> Result<Value> {
-        let row=sqlx::query("SELECT context,kind,captured_at,raw_hash FROM capture_events WHERE project_id=$1 AND id=$2").bind(id(project)).bind(event).fetch_optional(&self.database.pool).await.map_err(db)?.ok_or(Error::NotFound)?;
-        let hash: Option<String> = row.get("raw_hash");
-        let hash = hash.ok_or(Error::Unavailable {
+    async fn observation(&self, source: &SnapshotSource) -> Result<Value> {
+        let hash = source.raw_hash.as_ref().ok_or(Error::Unavailable {
             component: "pinned_evidence_original",
         })?;
-        let original: Value = serde_json::from_slice(&self.blobs.get(project, &hash).await?)
-            .map_err(|_| invalid("invalid original evidence"))?;
+        let bytes = self.blobs.get(source.project_id, hash).await?;
+        if format!("{:x}", Sha256::digest(&bytes)) != *hash {
+            return Err(invalid("FROZEN_SOURCE_HASH_MISMATCH"));
+        }
+        let original: Value =
+            serde_json::from_slice(&bytes).map_err(|_| invalid("invalid original evidence"))?;
         Ok(
-            serde_json::json!({"event_id":event,"context":row.get::<Option<Value>,_>("context"),"kind":row.get::<String,_>("kind"),"original":original}),
+            serde_json::json!({"event_id":source.event_id,"project_id":source.project_id,"environment_id":source.environment_id,"actor_id":source.actor_id,"producer_id":source.producer_id,"record_id":source.record_id,"captured_at":source.captured_at,"raw_hash":hash,"context":source.context,"kind":source.kind,"evidence_status":source.evidence_status,"evidence_coverage":source.evidence_coverage,"original":original}),
         )
     }
     async fn image(&self, project: ProjectId, asset: Uuid) -> Result<Value> {

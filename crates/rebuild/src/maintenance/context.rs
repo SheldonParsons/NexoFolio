@@ -1,15 +1,11 @@
 use super::*;
-pub(super) fn field_evidence_profiles(snapshot: &KnowledgeSnapshot) -> HashMap<FieldRef, Value> {
-    let mut grouped: HashMap<FieldRef, BTreeMap<String, Vec<&EvidenceFact>>> = HashMap::new();
+pub(super) fn field_evidence_profiles(
+    snapshot: &KnowledgeSnapshot,
+) -> HashMap<EvidenceFieldRef, Value> {
+    let mut grouped: HashMap<EvidenceFieldRef, BTreeMap<String, Vec<&EvidenceFact>>> =
+        HashMap::new();
     for fact in &snapshot.facts {
-        let refs: HashSet<_> = [
-            &fact.subject,
-            &fact.subject["source"],
-            &fact.subject["target"],
-        ]
-        .into_iter()
-        .filter_map(|v| serde_json::from_value::<FieldRef>(v.clone()).ok())
-        .collect();
+        let refs = evidence_field_refs(&fact.subject);
         for reference in refs {
             grouped
                 .entry(reference)
@@ -22,7 +18,7 @@ pub(super) fn field_evidence_profiles(snapshot: &KnowledgeSnapshot) -> HashMap<F
     grouped.into_iter().map(|(reference,kinds)|{
   let mut counts=BTreeMap::new();let mut representatives=vec![];let mut total=0;
   for (kind,mut facts) in kinds {counts.insert(kind.clone(),facts.len());total+=facts.len();facts.sort_by(|a,b|{let uncertain=|f:&EvidenceFact|f.data["conflict"]==true||f.data["counterexample"]==true;(uncertain(b),&b.last_seen,&b.id).cmp(&(uncertain(a),&a.last_seen,&a.id))});
-   for fact in facts.into_iter().take(3){let mut detail=json!({"conflict":fact.data["conflict"],"ambiguous":fact.data["ambiguous"],"distinct_values_lower_bound":fact.data["distinct_values_lower_bound"]});for key in ["value","label","state","verification"]{if let Some(v)=fact.data.get(key)&&serde_json::to_vec(v).unwrap().len()<=160{detail[key]=v.clone();}}representatives.push(json!({"reference":{"kind":"fact","id":fact.id},"fact_kind":kind,"summary":detail}));}
+   for fact in facts.into_iter().take(3){let mut omitted=vec![];let mut detail=json!({"conflict":fact.data["conflict"],"ambiguous":fact.data["ambiguous"],"distinct_values_lower_bound":fact.data["distinct_values_lower_bound"]});for key in ["value","label","state","verification","scope","transform","search_complete","support_kind","evidence_rule_version","needs_reassessment","relation_exclusion","retained_value_limit","complete_enum","reason","policy_version"]{if let Some(v)=fact.data.get(key){if serde_json::to_vec(v).unwrap().len()<=160{detail[key]=v.clone();}else{omitted.push(key);}}}detail["omitted_fields"]=json!(omitted);representatives.push(json!({"reference":{"kind":"fact","id":fact.id},"fact_kind":kind,"summary":detail}));}
   }
   (reference,json!({"fact_count":total,"kinds":counts,"sampled":representatives.len()<total,"representatives":representatives,"meaning":"Evidence navigation, not complete enum constraints. Read referenced originals before changing knowledge."}))
  }).collect()
@@ -70,10 +66,18 @@ pub fn review_field_context(snapshot: &KnowledgeSnapshot, field: &KnowledgeField
             .iter()
             .find(|e| e.environment_id == field.reference.environment_id)
     });
+    let material = field.reference.observation.as_ref().and_then(|r| {
+        snapshot
+            .inputs
+            .as_ref()?
+            .observations
+            .iter()
+            .find(|m| m.record.ingestion_id == r.ingestion_id)
+    });
     let side = field.reference.location.split('.').next().unwrap_or("");
-    let body = environment
-        .map(|e| {
-            let mut value = e.definition[side]["body"].clone();
+    let body = field_definition(snapshot, &field.reference)
+        .map(|d| {
+            let mut value = d[side]["body"].clone();
             if let Some(o) = value.as_object_mut() {
                 o.remove("observed_schema");
             }
@@ -101,5 +105,5 @@ pub fn review_field_context(snapshot: &KnowledgeSnapshot, field: &KnowledgeField
             json!({"id":f.id,"reference":f.reference,"schema":schema})
         })
         .collect();
-    json!({"method":interface.map(|i|&i.method),"path":interface.map(|i|&i.path),"environment_name":environment.map(|e|&e.environment_name),"body_capture":body,"schema_not_observed":field.schema.is_null(),"definition_limitations":environment.map(|e|&e.definition["limitations"]),"ancestor_structure":ancestors})
+    json!({"method":interface.map(|i|&i.method),"path":interface.map(|i|&i.path),"environment_name":environment.map(|e|&e.environment_name),"body_capture":body,"schema_view":field_definition(snapshot,&field.reference).map(|d|&d["schema_view"]),"schema_not_observed":field.schema.is_null(),"definition_origin":if field.reference.adopted().is_some(){"adopted_revision"}else if material.is_some_and(|m|m.reconstructed_definition.is_some()){"raw_reextracted"}else{"stored_observation"},"assessment_categories":material.and_then(|m|m.record.assessment.as_ref()).map(|a|&a.categories),"writable":field.reference.adopted().is_some(),"observation_source":field.reference.observation,"definition_limitations":field_definition(snapshot,&field.reference).map(|d|&d["limitations"]),"ancestor_structure":ancestors})
 }

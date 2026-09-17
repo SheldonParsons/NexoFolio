@@ -1,0 +1,113 @@
+{
+  "scope": "current worktree convergence; no frontend edits or live deployment",
+  "generation_paths": 1,
+  "entry": "POST /v1/projects/{project_id}/maintenance-runs",
+  "engine": "MaintenanceEngine",
+  "strategies": [
+    "keep",
+    "insert",
+    "partial",
+    "full"
+  ],
+  "retired": [
+    "catalog-create",
+    "catalog-run",
+    "catalog-preview",
+    "CatalogPreviewService",
+    "CatalogPreviewStore",
+    "DirectoryGenerator",
+    "ChatCatalogGenerator"
+  ],
+  "historical_read_activation_retained": true,
+  "retirement_migration": "202609150006_retire_directory_generation.sql",
+  "maintenance_contract_version": "1.6.0",
+  "wire_shapes_changed": false,
+  "checks": [
+    {
+      "check": "fmt",
+      "exit_code": 0,
+      "seconds": 0.28
+    },
+    {
+      "check": "ingestion-contract",
+      "exit_code": 0,
+      "seconds": 0.04
+    },
+    {
+      "check": "capture-contract",
+      "exit_code": 0,
+      "seconds": 0.47
+    },
+    {
+      "check": "document-contract",
+      "exit_code": 0,
+      "seconds": 0.04
+    },
+    {
+      "check": "catalog_preview-contract",
+      "exit_code": 0,
+      "seconds": 0.4
+    },
+    {
+      "check": "maintenance-contract",
+      "exit_code": 0,
+      "seconds": 0.42
+    },
+    {
+      "check": "contract-governance",
+      "exit_code": 0,
+      "seconds": 0.07
+    },
+    {
+      "check": "clippy",
+      "exit_code": 0,
+      "seconds": 3.94
+    },
+    {
+      "check": "workspace-tests",
+      "exit_code": 0,
+      "seconds": 23.11
+    },
+    {
+      "check": "database-tests",
+      "exit_code": 0,
+      "seconds": 25.55
+    }
+  ],
+  "workspace_tests": {
+    "passed": 74,
+    "failed": 0,
+    "ignored": 8
+  },
+  "isolated_database_tests": {
+    "passed": 7,
+    "failed": 0
+  },
+  "linux_cli_retirement_checked": true,
+  "container": {
+    "project": "nexofolio-check-1e3f8ec4",
+    "checks": [
+      "real_postgres_probe_and_repeatable_migrations",
+      "linux_http_health_and_unauthorized_mcp",
+      "container_admin_and_access_schema",
+      "database_outage_and_recovery",
+      "shared_evidence_volume_survives_restart",
+      "api_and_worker_graceful_stop_and_restart",
+      "api_worker_match_selected_image"
+    ],
+    "runtime_libraries": [
+      "linux-vdso.so.1 (0x0000ffff8e969000)",
+      "\tlibgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffff8e8f0000)",
+      "\tlibm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffff8e840000)",
+      "\tlibc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffff8d450000)",
+      "\t/lib/ld-linux-aarch64.so.1 (0x0000ffff8e92c000)"
+    ],
+    "image": {
+      "Id": "sha256:a4e219ecb751767d108b96d7c68d0ee07d431a8ce3bd82d612c4b0167e9e7b15",
+      "Os": "linux",
+      "Architecture": "arm64"
+    }
+  },
+  "live_service_restarted": false,
+  "committed": false
+}

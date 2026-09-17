@@ -115,6 +115,6 @@ impl KnowledgePublicationPolicy for ManualKnowledgePublication {
 
 #[async_trait]
 pub trait MaintenanceSources: Send + Sync {
-    async fn observation(&self, project: ProjectId, id: Uuid) -> Result<Value>;
+    async fn observation(&self, source: &SnapshotSource) -> Result<Value>;
     async fn image(&self, project: ProjectId, asset: Uuid) -> Result<Value>;
 }

@@ -13,7 +13,11 @@ mod environment;
 pub use environment::*;
 
 mod observed_comparison;
-pub use observed_comparison::observed_schema_covers;
+pub use observed_comparison::{compare_observed_schemas, observed_schema_covers};
+mod observed_shape;
+pub use observed_shape::*;
+mod assessment;
+pub use assessment::*;
 
 mod catalog_preview;
 pub use catalog_preview::*;

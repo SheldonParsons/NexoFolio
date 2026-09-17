@@ -3,7 +3,7 @@ use super::*;
 pub struct ReviewUnit {
     pub id: String,
     pub field_id: String,
-    pub reference: FieldRef,
+    pub reference: EvidenceFieldRef,
     pub ancestors: Vec<String>,
     pub context: Value,
     pub schema_entries: Vec<Value>,
@@ -15,6 +15,183 @@ pub struct ReviewUnit {
 pub struct ReviewSegment {
     pub id: String,
     pub units: Vec<ReviewUnit>,
+}
+impl ReviewSegment {
+    /// Transport-only normalization. Original units remain the coverage authority.
+    pub fn model_input(&self) -> Value {
+        let mut contexts = Vec::<Value>::new();
+        let mut ancestors = BTreeMap::new();
+        let mut references = Vec::<Value>::new();
+        let units: Vec<_> = self
+            .units
+            .iter()
+            .map(|unit| {
+                let mut value = serde_json::to_value(unit).expect("unit");
+                let mut context = value["context"].take();
+                for mut ancestor in context
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("ancestor_structure")
+                    .and_then(|v| v.as_array().cloned())
+                    .unwrap_or_default()
+                {
+                    ancestor["reference"] =
+                        pack_reference(ancestor["reference"].take(), &mut references);
+                    ancestors.insert(ancestor["id"].as_str().unwrap().to_owned(), ancestor);
+                }
+                let mut details = serde_json::Map::new();
+                for name in [
+                    "schema_not_observed",
+                    "evidence_summary",
+                    "stale_annotation_refs",
+                ] {
+                    if let Some(v) = context.as_object_mut().unwrap().remove(name) {
+                        details.insert(name.into(), v);
+                    }
+                }
+                let reference = value.as_object_mut().unwrap().remove("reference").unwrap();
+                let packed_reference = pack_reference(reference, &mut references);
+                value["path"] = packed_reference["path"].clone();
+                if let Some(source) = context["observation_source"].as_object_mut()
+                    && source.get("path") == Some(&value["path"])
+                {
+                    source.remove("path");
+                }
+                let shared =
+                    json!({"reference_ref":packed_reference["reference_ref"],"context":context});
+                let index = contexts
+                    .iter()
+                    .position(|v| v == &shared)
+                    .unwrap_or_else(|| {
+                        contexts.push(shared);
+                        contexts.len() - 1
+                    });
+                value["context_ref"] = json!(index);
+                value["context"] = Value::Object(details);
+                value
+            })
+            .collect();
+        json!({"id":self.id,"contexts":contexts,"references":references,"ancestor_definitions":ancestors,"units":units})
+    }
+
+    /// Lossless inverse, also used when validating replies against the transmitted manifest.
+    pub fn from_model_input(mut input: Value) -> Result<Self> {
+        let contexts = input
+            .get("contexts")
+            .cloned()
+            .ok_or_else(|| Error::invalid("REVIEW_CONTEXT_MISSING"))?;
+        let references = input
+            .get("references")
+            .cloned()
+            .ok_or_else(|| Error::invalid("REVIEW_REFERENCE_MISSING"))?;
+        let mut ancestors = input
+            .get("ancestor_definitions")
+            .cloned()
+            .ok_or_else(|| Error::invalid("REVIEW_ANCESTOR_MISSING"))?;
+        for ancestor in ancestors
+            .as_object_mut()
+            .ok_or_else(|| Error::invalid("REVIEW_ANCESTOR_MISSING"))?
+            .values_mut()
+        {
+            ancestor["reference"] = unpack_reference(&ancestor["reference"], &references)?;
+        }
+        let units = input["units"]
+            .as_array_mut()
+            .ok_or_else(|| Error::invalid("REVIEW_UNITS_MISSING"))?;
+        for unit in units {
+            let index = unit["context_ref"]
+                .as_u64()
+                .ok_or_else(|| Error::invalid("REVIEW_CONTEXT_MISSING"))?
+                as usize;
+            let shared = contexts
+                .get(index)
+                .ok_or_else(|| Error::invalid("REVIEW_CONTEXT_MISSING"))?;
+            let mut context = shared["context"]
+                .as_object()
+                .cloned()
+                .ok_or_else(|| Error::invalid("REVIEW_CONTEXT_MISSING"))?;
+            context.extend(
+                unit["context"]
+                    .as_object()
+                    .cloned()
+                    .ok_or_else(|| Error::invalid("REVIEW_CONTEXT_MISSING"))?,
+            );
+            let parents = unit["ancestors"]
+                .as_array()
+                .ok_or_else(|| Error::invalid("REVIEW_ANCESTOR_MISSING"))?
+                .iter()
+                .map(|id| {
+                    id.as_str()
+                        .and_then(|id| ancestors.get(id))
+                        .cloned()
+                        .ok_or_else(|| Error::invalid("REVIEW_ANCESTOR_MISSING"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            context.insert("ancestor_structure".into(), json!(parents));
+            unit["context"] = Value::Object(context);
+            unit["reference"] = unpack_reference(
+                &json!({"reference_ref":shared["reference_ref"],"path":unit["path"]}),
+                &references,
+            )?;
+            let path = unit["path"].clone();
+            if let Some(source) = unit["context"]["observation_source"].as_object_mut() {
+                source.entry("path").or_insert(path);
+            }
+        }
+        serde_json::from_value(input).map_err(|_| Error::invalid("REVIEW_INPUT_INVALID"))
+    }
+}
+fn pack_reference(mut reference: Value, references: &mut Vec<Value>) -> Value {
+    let path = reference
+        .as_object_mut()
+        .expect("typed field reference")
+        .remove("path")
+        .unwrap();
+    if let Some(observation) = reference
+        .get_mut("observation")
+        .and_then(Value::as_object_mut)
+        && observation.get("path") == Some(&path)
+    {
+        observation.remove("path");
+    }
+    let index = references
+        .iter()
+        .position(|v| v == &reference)
+        .unwrap_or_else(|| {
+            references.push(reference);
+            references.len() - 1
+        });
+    json!({"reference_ref":index,"path":path})
+}
+fn unpack_reference(packed: &Value, references: &Value) -> Result<Value> {
+    let mut reference = packed["reference_ref"]
+        .as_u64()
+        .and_then(|n| references.get(n as usize))
+        .cloned()
+        .ok_or_else(|| Error::invalid("REVIEW_REFERENCE_MISSING"))?;
+    let path = packed
+        .get("path")
+        .cloned()
+        .ok_or_else(|| Error::invalid("REVIEW_PATH_MISSING"))?;
+    reference["path"] = path.clone();
+    if let Some(observation) = reference
+        .get_mut("observation")
+        .and_then(Value::as_object_mut)
+    {
+        observation.entry("path").or_insert(path);
+    }
+    Ok(reference)
+}
+fn packed_bytes(units: &[ReviewUnit]) -> usize {
+    serde_json::to_vec(
+        &ReviewSegment {
+            id: "segment-999999".into(),
+            units: units.to_vec(),
+        }
+        .model_input(),
+    )
+    .unwrap()
+    .len()
 }
 fn atoms(value: &Value, path: &str, out: &mut Vec<Value>) {
     match value {
@@ -77,17 +254,23 @@ pub fn review_segments(
         };
         let mut fragments = Vec::new();
         let mut next = Vec::new();
+        // Entries are independent JSON atoms; count each once rather than serializing
+        // the growing field and its repeated context for every atom (quadratic work).
+        let overhead = packed_bytes(&[make(Vec::new(), 0)]) + 32;
+        let mut size = overhead;
         for entry in entries {
-            let mut trial = next.clone();
-            trial.push(entry.clone());
-            if serde_json::to_vec(&make(trial.clone(), 0)).unwrap().len()
-                > max_bytes.saturating_sub(512)
-            {
+            let entry_bytes = serde_json::to_vec(&entry).unwrap().len() + 1;
+            if size + entry_bytes > max_bytes {
                 if next.is_empty() {
                     return Err(Error::invalid("FIELD_EXCEEDS_MODEL_BUDGET"));
                 }
                 fragments.push(make(std::mem::take(&mut next), fragments.len() as u32));
+                size = overhead;
             }
+            if size + entry_bytes > max_bytes {
+                return Err(Error::invalid("FIELD_EXCEEDS_MODEL_BUDGET"));
+            }
+            size += entry_bytes;
             next.push(entry);
         }
         if !next.is_empty() {
@@ -111,7 +294,7 @@ pub fn review_segments(
         let group = &units[cursor..end];
         let mut trial = pending.clone();
         trial.extend_from_slice(group);
-        if serde_json::to_vec(&trial).unwrap().len() <= max_bytes {
+        if packed_bytes(&trial) <= max_bytes && trial.len() <= 48 {
             pending = trial;
         } else {
             if !pending.is_empty() {
@@ -123,7 +306,7 @@ pub fn review_segments(
             for unit in group {
                 let mut trial = pending.clone();
                 trial.push(unit.clone());
-                if serde_json::to_vec(&trial).unwrap().len() > max_bytes {
+                if packed_bytes(&trial) > max_bytes || trial.len() > 48 {
                     if pending.is_empty() {
                         return Err(Error::invalid("REVIEW_UNIT_EXCEEDS_MODEL_BUDGET"));
                     }
@@ -145,7 +328,13 @@ pub fn review_segments(
     }
     Ok(result)
 }
+pub const REVIEW_SUMMARY_BYTES: usize = 512;
 pub fn validate_segment(segment: &ReviewSegment, review: &SegmentReview) -> Result<()> {
+    if review.summary.trim().is_empty()
+        || serde_json::to_vec(&review.summary).unwrap().len() > REVIEW_SUMMARY_BYTES
+    {
+        return Err(Error::invalid("REVIEW_SUMMARY_BUDGET_EXCEEDED"));
+    }
     let expected: HashMap<_, _> = segment
         .units
         .iter()
@@ -162,6 +351,30 @@ pub fn validate_segment(segment: &ReviewSegment, review: &SegmentReview) -> Resu
             || !["keep", "change", "conflict", "needs_evidence"].contains(&a.disposition.as_str())
         {
             return Err(Error::invalid("REVIEW_COVERAGE_INVALID"));
+        }
+    }
+    for unit in &segment.units {
+        let assessment = review
+            .assessments
+            .iter()
+            .find(|a| a.unit_id == unit.id)
+            .ok_or_else(|| Error::invalid("REVIEW_COVERAGE_INCOMPLETE"))?;
+        for representative in unit.context["evidence_summary"]["representatives"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            if matches!(
+                representative["fact_kind"].as_str(),
+                Some("parameter_link_candidate" | "parameter_link_counterexample")
+            ) {
+                let reference: KnowledgeEvidenceRef =
+                    serde_json::from_value(representative["reference"].clone())
+                        .map_err(|_| Error::invalid("REVIEW_RELATION_REFERENCE_INVALID"))?;
+                if !assessment.evidence.contains(&reference) {
+                    return Err(Error::invalid("REVIEW_RELATION_EVIDENCE_UNACKNOWLEDGED"));
+                }
+            }
         }
     }
     if seen.len() != expected.len() {

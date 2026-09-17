@@ -1,4 +1,4 @@
-//! Shared, versioned contract between knowledge storage and directory generation.
+//! Shared directory structure and immutable historical candidate response contracts.
 use crate::{
     CatalogVersion, DirectoryId, EnvironmentId, InterfaceId, JobId, ProjectId, RevisionId,
 };
@@ -7,9 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const CATALOG_PREVIEW_VERSION: &str = "catalog-preview-1";
-pub const MAX_PREVIEW_INTERFACES: usize = 200;
-pub const MAX_PREVIEW_BYTES: usize = 1_048_576;
-pub const MAX_CANDIDATE_BYTES: usize = 524_288;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

@@ -2,7 +2,7 @@ use nexofolio_contracts::*;
 use serde_json::{Value, json};
 #[derive(Debug, Clone)]
 pub struct ValueOccurrence {
-    pub field: FieldRef,
+    pub field: EvidenceFieldRef,
     pub pointer: String,
     pub value: Value,
     pub direction: &'static str,
@@ -13,17 +13,35 @@ pub struct FactDraft {
     pub subject: Value,
     pub data: Value,
 }
+/// A bounded set of observed values, never an inferred complete enum.
+/// Full occurrences still feed short-lived relation/UI indexes independently.
+pub const OBSERVED_VALUE_LIMIT: i64 = 16;
+pub fn observed_value_limit(subject: Value) -> FactDraft {
+    FactDraft {
+        kind: "observed_value_limit".into(),
+        subject,
+        data: json!({"retained_value_limit":OBSERVED_VALUE_LIMIT,"complete_enum":false,"reason":"VALUE_SAMPLE_LIMIT","policy_version":"value-samples-1"}),
+    }
+}
 #[derive(Debug, Default)]
 pub struct Extraction {
     pub values: Vec<ValueOccurrence>,
     pub facts: Vec<FactDraft>,
     pub limitations: Vec<String>,
+    pub request_complete: bool,
+    pub response_complete: bool,
 }
 /// Field paths escape JSON Pointer tokens; '*' marks array item schema paths only.
 fn escape(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
 }
-fn walk(v: &Value, field: &FieldRef, pointer: &str, out: &mut Extraction, budget: &mut usize) {
+fn walk(
+    v: &Value,
+    field: &EvidenceFieldRef,
+    pointer: &str,
+    out: &mut Extraction,
+    budget: &mut usize,
+) {
     if *budget == 0 {
         if !out
             .limitations
@@ -87,7 +105,12 @@ fn decode_body(body: &Value) -> Option<Value> {
     }
 }
 pub fn extract_http(payload: &Value, base: FieldRef, path: Option<&PathIdentity>) -> Extraction {
-    let mut out = Extraction::default();
+    let mut out = Extraction {
+        request_complete: payload["request"]["url_truncated"] != true,
+        response_complete: true,
+        ..Extraction::default()
+    };
+    let base: EvidenceFieldRef = base.into();
     let mut budget = 512;
     if let Some(url) = payload["request"]["url"]
         .as_str()
@@ -125,19 +148,26 @@ pub fn extract_http(payload: &Value, base: FieldRef, path: Option<&PathIdentity>
         }
     }
     for side in ["request", "response"] {
+        if side == "response" {
+            budget = 512;
+        }
+        let mut complete = if side == "request" {
+            out.request_complete
+        } else {
+            true
+        };
         if let Some(body) = decode_body(&payload[side]["body"]) {
             let mut f = base.clone();
             f.location = format!("{side}.body");
-            f.path = "".into();
+            f.path.clear();
             walk(&body, &f, "", &mut out, &mut budget);
         } else if payload[side]["body"]["state"] != "none" {
+            complete = false;
             out.limitations.push(format!(
                 "{}_BODY_NOT_JSON_OR_INCOMPLETE",
                 side.to_uppercase()
             ));
         }
-    }
-    for side in ["request", "response"] {
         for (index, entry) in payload[side]["headers"]["entries"]
             .as_array()
             .into_iter()
@@ -145,17 +175,23 @@ pub fn extract_http(payload: &Value, base: FieldRef, path: Option<&PathIdentity>
             .enumerate()
         {
             if let (Some(name), Some(value)) = (entry[0].as_str(), entry[1].as_str()) {
-                let mut field = base.clone();
-                field.location = format!("{side}.header");
-                field.path = format!("/{}", escape(&name.to_ascii_lowercase()));
+                let mut f = base.clone();
+                f.location = format!("{side}.header");
+                f.path = format!("/{}", escape(&name.to_ascii_lowercase()));
                 walk(
                     &Value::String(value.into()),
-                    &field,
+                    &f,
                     &format!("/headers/entries/{index}/1"),
                     &mut out,
                     &mut budget,
                 );
             }
+        }
+        complete &= budget > 0;
+        if side == "request" {
+            out.request_complete = complete;
+        } else {
+            out.response_complete = complete;
         }
     }
     out
@@ -164,8 +200,9 @@ pub fn extract_http(payload: &Value, base: FieldRef, path: Option<&PathIdentity>
 pub fn dictionary_facts(payload: &Value, values: &[ValueOccurrence]) -> Vec<FactDraft> {
     let url = payload["request"]["url"]
         .as_str()
-        .unwrap_or("")
-        .to_ascii_lowercase();
+        .and_then(|s| url::Url::parse(s).ok())
+        .map(|u| u.path().to_ascii_lowercase())
+        .unwrap_or_default();
     if !["dict", "enum", "option"]
         .iter()
         .any(|part| url.contains(part))
@@ -189,7 +226,7 @@ pub fn dictionary_facts(payload: &Value, values: &[ValueOccurrence]) -> Vec<Fact
                     && v.pointer == format!("{parent}/{label}")
                     && v.value.is_string()
             }) {
-                out.push(FactDraft{kind:"dictionary_mapping_candidate".into(),subject:serde_json::to_value(&value.field).unwrap(),data:json!({"state":"present","value":value.value,"label":other.value,"complete_enum":false,"request_url":payload["request"]["url"],"verification":"observed_mapping"})});
+                out.push(FactDraft{kind:"dictionary_mapping_candidate".into(),subject:serde_json::to_value(&value.field).unwrap(),data:json!({"state":"present","value":value.value,"label":other.value,"complete_enum":false,"request_url":payload["request"]["url"],"scope":request_scope(payload),"verification":"observed_mapping"})});
                 break;
             }
         }
@@ -249,7 +286,7 @@ pub fn informative(value: &Value) -> bool {
 }
 
 /// Technical credentials remain stored as raw evidence but never create value-equality relations.
-pub fn relation_field(field: &FieldRef) -> bool {
+pub fn relation_exclusion(field: &EvidenceFieldRef) -> Option<&'static str> {
     let leaf: String = field
         .path
         .rsplit('/')
@@ -280,9 +317,29 @@ pub fn relation_field(field: &FieldRef) -> bool {
         ]
         .contains(&leaf.as_str())
     {
-        return false;
+        return Some("protocol_header");
     }
-    ![
+    if [
+        "sort",
+        "size",
+        "pagesize",
+        "pageno",
+        "pageindex",
+        "page",
+        "offset",
+        "limit",
+        "width",
+        "height",
+        "templateimagewidth",
+        "templateimageheight",
+        "x",
+        "y",
+    ]
+    .contains(&leaf.as_str())
+    {
+        return Some("low_information_field");
+    }
+    if [
         "token",
         "authorization",
         "password",
@@ -296,11 +353,19 @@ pub fn relation_field(field: &FieldRef) -> bool {
         "apikey",
     ]
     .iter()
-    .any(|key| leaf == *key || leaf.ends_with(key))
+    .any(|key| leaf == *key || leaf.ends_with(key) || leaf == format!("{key}value"))
+    {
+        Some("technical_field")
+    } else {
+        None
+    }
+}
+pub fn relation_field(field: &EvidenceFieldRef) -> bool {
+    relation_exclusion(field).is_none()
 }
 
 /// Absence requires a complete readable request. Missing/truncated capture never proves omission.
-pub fn field_absent(payload: &Value, field: &FieldRef) -> bool {
+pub fn field_absent(payload: &Value, field: &EvidenceFieldRef) -> bool {
     match field.location.as_str() {
         "request.query" => payload["request"]["url"]
             .as_str()
@@ -352,16 +417,25 @@ mod tests {
     fn complete_request_is_required_to_claim_field_omission() {
         let f = field();
         let payload = |state: &str, body: &str| json!({"request":{"body":{"state":state,"encoding":"text","content":body}}});
-        assert!(field_absent(&payload("complete", "{}"), &f));
-        assert!(!field_absent(&payload("complete", "{\"status\":null}"), &f));
-        assert!(!field_absent(&payload("truncated", "{}"), &f));
-        assert!(!field_absent(&payload("complete", "not json"), &f));
+        assert!(field_absent(&payload("complete", "{}"), &f.clone().into()));
+        assert!(!field_absent(
+            &payload("complete", "{\"status\":null}"),
+            &f.clone().into()
+        ));
+        assert!(!field_absent(
+            &payload("truncated", "{}"),
+            &f.clone().into()
+        ));
+        assert!(!field_absent(
+            &payload("complete", "not json"),
+            &f.clone().into()
+        ));
     }
     #[test]
     fn credentials_are_excluded_from_correlations_without_redaction() {
         let mut f = field();
         f.path = "/access_token".into();
-        assert!(!relation_field(&f));
+        assert!(!relation_field(&f.clone().into()));
         let payload = json!({"request":{"body":{"state":"complete","encoding":"text","content":"{\"access_token\":\"sample-token\"}"}},"response":{"body":{"state":"none"}}});
         let out = extract_http(&payload, f, None);
         assert!(out.values.iter().any(|v| v.value == "sample-token"));
@@ -394,5 +468,165 @@ mod tests {
                 .all(|v| !relation_field(&v.field))
         );
         assert!(extracted.values.iter().any(|v| v.value == "Bearer sample"));
+    }
+}
+
+/// Exact observed request conditions. The adapter stores a digest plus sample references,
+/// not a copy of the request in every mapping. Incomplete conditions cannot establish a conflict.
+pub fn request_scope(payload: &Value) -> Value {
+    let url = payload["request"]["url"]
+        .as_str()
+        .and_then(|s| url::Url::parse(s).ok());
+    let body = &payload["request"]["body"];
+    let parsed = decode_body(body);
+    json!({"complete":url.is_some() && payload["request"]["url_truncated"] != true && (body["state"]=="none" || parsed.is_some()),
+        "method":payload["request"]["method"],"url":url.map(|u|u.to_string()),"body":parsed,
+        "body_state":body["state"],"headers":payload["request"]["headers"]})
+}
+impl Extraction {
+    /// The compared revision is a possible basis, never automatic ownership of every observed field.
+    pub fn bind_source(&mut self, project: ProjectId, ingestion: uuid::Uuid, definition: &Value) {
+        for (value, fact) in self.values.iter_mut().zip(&mut self.facts) {
+            let f = &mut value.field;
+            if !field_covered(definition, f, &value.value) {
+                f.revision_id = None;
+                f.observation = Some(ObservationFieldRef {
+                    project_id: project,
+                    interface_id: f.interface_id,
+                    environment_id: f.environment_id,
+                    ingestion_id: ingestion,
+                    location: f.location.clone(),
+                    path: f.path.clone(),
+                });
+            }
+            fact.subject = serde_json::to_value(&f).unwrap();
+            if let Some(reason) = relation_exclusion(f) {
+                fact.data["relation_exclusion"] = json!(reason);
+            }
+        }
+    }
+}
+fn field_covered(definition: &Value, field: &EvidenceFieldRef, value: &Value) -> bool {
+    let Some((side, location)) = field.location.split_once('.') else {
+        return false;
+    };
+    let shape = observe_json(value).schema;
+    if location == "body" {
+        let tokens: Vec<_> = field
+            .path
+            .split('/')
+            .skip(1)
+            .map(|s| s.replace("~1", "/").replace("~0", "~"))
+            .collect();
+        schema_covers_at(
+            &definition[side]["body"]["observed_schema"],
+            &tokens,
+            &shape,
+        )
+    } else {
+        let (list, key) = if location == "header" {
+            ("headers", "name")
+        } else {
+            ("parameters", "name")
+        };
+        definition[side][list]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|f| {
+                (location == "header" || f["in"] == location)
+                    && f[key]
+                        .as_str()
+                        .is_some_and(|name| format!("/{}", escape(name)) == field.path)
+                    && observed_schema_covers(&f["observed_schema"], &shape)
+            })
+    }
+}
+fn schema_covers_at(schema: &Value, path: &[String], shape: &Value) -> bool {
+    if let Some(variants) = schema["anyOf"].as_array() {
+        return variants.iter().any(|v| schema_covers_at(v, path, shape));
+    }
+    if path.is_empty() {
+        return observed_schema_covers(schema, shape);
+    }
+    if schema["type"] == "array" && path[0] == "*" {
+        schema_covers_at(&schema["items"], &path[1..], shape)
+    } else if let Some(child) = schema["properties"].get(&path[0]) {
+        schema_covers_at(child, &path[1..], shape)
+    } else {
+        false
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    fn base() -> FieldRef {
+        FieldRef {
+            interface_id: InterfaceId::new(),
+            environment_id: EnvironmentId::new(),
+            revision_id: RevisionId::new(),
+            location: String::new(),
+            path: String::new(),
+        }
+    }
+    fn body(value: Value) -> Value {
+        json!({"state":"complete","encoding":"text","content":value.to_string()})
+    }
+    #[test]
+    fn unadopted_fields_reference_observation_and_keep_typed_values() {
+        let basis = base();
+        let revision = basis.revision_id;
+        let ingestion = uuid::Uuid::new_v4();
+        let payload = json!({"request":{"body":body(json!({"known":1,"new":"1","null":null}))},"response":{"body":{"state":"none"}}});
+        let definition = json!({"request":{"body":{"observed_schema":{"type":"object","properties":{"known":{"type":"number"},"null":{"type":"null"}}}}}});
+        let mut out = extract_http(&payload, basis, None);
+        out.bind_source(ProjectId::new(), ingestion, &definition);
+        let new = out.values.iter().find(|v| v.field.path == "/new").unwrap();
+        assert!(new.field.revision_id.is_none());
+        assert_eq!(
+            new.field.observation.as_ref().unwrap().ingestion_id,
+            ingestion
+        );
+        assert_eq!(new.value, json!("1"));
+        let known = out
+            .values
+            .iter()
+            .find(|v| v.field.path == "/known")
+            .unwrap();
+        assert_eq!(known.field.revision_id, Some(revision));
+        assert!(known.field.observation.is_none());
+        assert!(
+            out.facts
+                .iter()
+                .any(|f| f.subject["observation"]["ingestion_id"] == ingestion.to_string())
+        );
+    }
+    #[test]
+    fn coverage_is_directional_and_conditions_preserve_types() {
+        let payload = json!({"request":{"body":body(json!({"status":1}))},"response":{"body":body(json!({"items":vec![1;600]}))}});
+        let out = extract_http(&payload, base(), None);
+        assert!(out.request_complete);
+        assert!(!out.response_complete);
+        let reversed = json!({"request":payload["response"],"response":payload["request"]});
+        let out = extract_http(&reversed, base(), None);
+        assert!(!out.request_complete);
+        assert!(out.response_complete);
+        let mut north = payload.clone();
+        north["request"]["url"] = json!("https://test.invalid/dict");
+        let mut south = north.clone();
+        south["request"]["body"] = body(json!({"status":"1"}));
+        assert_ne!(request_scope(&north), request_scope(&south));
+        south["request"]["body"]["state"] = json!("truncated");
+        assert_eq!(request_scope(&south)["complete"], false);
+    }
+    #[test]
+    fn technical_and_low_information_values_stay_observed_but_not_correlated() {
+        let payload = json!({"request":{"body":body(json!({"tokenValue":"unredacted","size":23,"record_id":23}))},"response":{"body":{"state":"none"}}});
+        let out = extract_http(&payload, base(), None);
+        for v in &out.values {
+            assert_eq!(relation_field(&v.field), v.field.path == "/record_id");
+        }
+        assert!(out.values.iter().any(|v| v.value == "unredacted"));
     }
 }

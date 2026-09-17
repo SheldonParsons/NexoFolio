@@ -3,7 +3,7 @@ Schema is authoritative; generated TypeScript and hashes are checked into both c
 """
 from pathlib import Path
 import argparse,hashlib,json,subprocess
-CONTRACT_VERSION='2.2.0'
+CONTRACT_VERSION='2.3.0'
 ROOT=Path(__file__).resolve().parents[1]/'contracts/ingestion'
 
 def ts(s):

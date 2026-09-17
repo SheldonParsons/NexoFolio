@@ -36,6 +36,77 @@
       ],
       "type": "object"
     },
+    "AssessmentKind": {
+      "enum": [
+        "duplicate",
+        "enrichment",
+        "difference",
+        "insufficient"
+      ],
+      "type": "string"
+    },
+    "CaptureContext": {
+      "additionalProperties": false,
+      "properties": {
+        "browser_instance_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "event_seq": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "frame_instance_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "interaction_id": {
+          "default": null,
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "page_instance_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "page_url": {
+          "type": "string"
+        },
+        "request_started_at_ms": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "response_completed_at_ms": {
+          "default": null,
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "view_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "browser_instance_id",
+        "page_instance_id",
+        "frame_instance_id",
+        "view_id",
+        "event_seq",
+        "page_url"
+      ],
+      "type": "object"
+    },
     "CatalogEnvironment": {
       "additionalProperties": false,
       "properties": {
@@ -237,6 +308,73 @@
       ],
       "type": "object"
     },
+    "EvidenceFieldRef": {
+      "description": "Evidence may describe an unadopted field. Exactly one basis is populated by the extractor.\nAdopted references serialize as the existing FieldRef; observation references never claim a revision.",
+      "type": "object",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "environment_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "interface_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "revision_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "required": [
+            "interface_id",
+            "environment_id",
+            "location",
+            "path",
+            "revision_id"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "environment_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "interface_id": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "observation": {
+              "$ref": "#/$defs/ObservationFieldRef"
+            }
+          },
+          "required": [
+            "interface_id",
+            "environment_id",
+            "location",
+            "path",
+            "observation"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
     "FieldRef": {
       "additionalProperties": false,
       "properties": {
@@ -332,7 +470,7 @@
           "type": "string"
         },
         "reference": {
-          "$ref": "#/$defs/FieldRef"
+          "$ref": "#/$defs/EvidenceFieldRef"
         },
         "schema": true,
         "schema_pointers": {
@@ -360,9 +498,102 @@
         "directory",
         "image",
         "summary",
-        "annotation"
+        "annotation",
+        "observation",
+        "source"
       ],
       "type": "string"
+    },
+    "ObservationAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StructuralAssessment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "None means historical data not assessed by this rule; it never means duplicate."
+        },
+        "base_revision_id": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "extractor_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "incoming_definition": true,
+        "ingestion_id": {
+          "description": "Source of the incoming structure, not a claim that new fields belong to base_revision_id.",
+          "format": "uuid",
+          "type": "string"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "interface_id",
+        "environment_id",
+        "ingestion_id"
+      ],
+      "type": "object"
+    },
+    "ObservationFieldRef": {
+      "additionalProperties": false,
+      "description": "Field observed in an input, deliberately without an adopted revision ID.",
+      "properties": {
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "ingestion_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "interface_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "interface_id",
+        "environment_id",
+        "ingestion_id",
+        "location",
+        "path"
+      ],
+      "type": "object"
     },
     "PathIdentity": {
       "properties": {
@@ -666,6 +897,179 @@
         }
       ]
     },
+    "SnapshotInputs": {
+      "properties": {
+        "gaps": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Explicit, version-independent diagnostic counts, never a claim that a model has read anything.",
+          "type": "object"
+        },
+        "observations": {
+          "items": {
+            "$ref": "#/$defs/SnapshotObservation"
+          },
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/SnapshotSource"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "observations",
+        "sources",
+        "gaps"
+      ],
+      "type": "object"
+    },
+    "SnapshotObservation": {
+      "description": "Stored comparison is preserved; historical raw re-extraction is separate, read-only material.",
+      "properties": {
+        "reconstructed_definition": true,
+        "record": {
+          "$ref": "#/$defs/ObservationAssessment"
+        }
+      },
+      "required": [
+        "record"
+      ],
+      "type": "object"
+    },
+    "SnapshotSource": {
+      "properties": {
+        "actor_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "captured_at": {
+          "type": "string"
+        },
+        "context": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptureContext"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environment_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "event_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "evidence_coverage": true,
+        "evidence_status": {
+          "type": "string"
+        },
+        "ingestion_id": {
+          "format": "uuid",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "producer_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "raw_hash": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "record_id": {
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "project_id",
+        "environment_id",
+        "actor_id",
+        "producer_id",
+        "record_id",
+        "kind",
+        "captured_at",
+        "evidence_status"
+      ],
+      "type": "object"
+    },
+    "StructuralAssessment": {
+      "additionalProperties": false,
+      "properties": {
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/AssessmentKind"
+          },
+          "type": "array"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/StructuralFinding"
+          },
+          "type": "array"
+        },
+        "initial": {
+          "type": "boolean"
+        },
+        "rule_version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_version",
+        "initial",
+        "categories",
+        "findings"
+      ],
+      "type": "object"
+    },
+    "StructuralFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "before": true,
+        "kind": {
+          "$ref": "#/$defs/AssessmentKind"
+        },
+        "location": {
+          "type": "string"
+        },
+        "observed": true,
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "location",
+        "path",
+        "reason"
+      ],
+      "type": "object"
+    },
     "UiValueState": {
       "enum": [
         "present",
@@ -737,6 +1141,18 @@
     "id": {
       "format": "uuid",
       "type": "string"
+    },
+    "inputs": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SnapshotInputs"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "None identifies a historical snapshot without the frozen-input contract."
     },
     "interfaces": {
       "items": {

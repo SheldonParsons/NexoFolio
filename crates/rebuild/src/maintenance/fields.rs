@@ -5,7 +5,7 @@ pub(super) fn key(value: &Value) -> String {
         .map(|b| format!("{b:02x}"))
         .collect()
 }
-pub fn field_id(reference: &FieldRef) -> String {
+pub fn field_id(reference: &impl Serialize) -> String {
     format!(
         "f_{}",
         &key(&serde_json::to_value(reference).unwrap())[..32]
@@ -14,12 +14,10 @@ pub fn field_id(reference: &FieldRef) -> String {
 pub(super) fn esc(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
 }
-fn child_ref(base: &FieldRef, path: String) -> FieldRef {
-    let mut f = base.clone();
-    f.path = path;
-    f
+fn child_ref(base: &EvidenceFieldRef, path: String) -> EvidenceFieldRef {
+    base.at(base.location.clone(), path)
 }
-fn local_schema(schema: &Value, reference: &FieldRef) -> Value {
+fn local_schema(schema: &Value, reference: &EvidenceFieldRef) -> Value {
     let Some(map) = schema.as_object() else {
         return schema.clone();
     };
@@ -56,7 +54,7 @@ fn local_schema(schema: &Value, reference: &FieldRef) -> Value {
 }
 fn collect_schema(
     schema: &Value,
-    reference: FieldRef,
+    reference: EvidenceFieldRef,
     pointer: String,
     ancestors: Vec<String>,
     out: &mut BTreeMap<String, KnowledgeField>,
@@ -122,73 +120,72 @@ fn collect_schema(
         }
     }
 }
+fn definition_fields(
+    base: EvidenceFieldRef,
+    d: &Value,
+    fields: &mut BTreeMap<String, KnowledgeField>,
+) {
+    for side in ["request", "response"] {
+        collect_schema(
+            &d[side]["body"]["observed_schema"],
+            base.at(format!("{side}.body"), String::new()),
+            format!("/{side}/body/observed_schema"),
+            vec![],
+            fields,
+        );
+        for (index, header) in d[side]["headers"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            if let Some(name) = header["name"].as_str() {
+                collect_schema(
+                    &header["observed_schema"],
+                    base.at(format!("{side}.header"), format!("/{}", esc(name))),
+                    format!("/{side}/headers/{index}/observed_schema"),
+                    vec![],
+                    fields,
+                );
+            }
+        }
+    }
+    for (index, p) in d["request"]["parameters"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+    {
+        if let (Some(name), Some(location)) = (p["name"].as_str(), p["in"].as_str()) {
+            collect_schema(
+                &p["observed_schema"],
+                base.at(format!("request.{location}"), format!("/{}", esc(name))),
+                format!("/request/parameters/{index}/observed_schema"),
+                vec![],
+                fields,
+            );
+        }
+    }
+}
 pub fn snapshot_fields(
     interfaces: &[CatalogInterface],
     annotations: &[SemanticAnnotation],
 ) -> Vec<KnowledgeField> {
     let mut fields = BTreeMap::new();
-    for interface in interfaces {
-        for env in &interface.environments {
-            let base = FieldRef {
-                interface_id: interface.interface_id,
-                environment_id: env.environment_id,
-                revision_id: env.revision_id,
-                location: String::new(),
-                path: String::new(),
-            };
-            let d = &env.definition;
-            for side in ["request", "response"] {
-                let mut body = base.clone();
-                body.location = format!("{side}.body");
-                let schema = &d[side]["body"]["observed_schema"];
-                collect_schema(
-                    schema,
-                    body,
-                    format!("/{side}/body/observed_schema"),
-                    vec![],
-                    &mut fields,
-                );
-                for (index, header) in d[side]["headers"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .enumerate()
-                {
-                    if let Some(name) = header["name"].as_str() {
-                        let mut f = base.clone();
-                        f.location = format!("{side}.header");
-                        f.path = format!("/{}", esc(name));
-                        collect_schema(
-                            &header["observed_schema"],
-                            f,
-                            format!("/{side}/headers/{index}/observed_schema"),
-                            vec![],
-                            &mut fields,
-                        );
-                    }
+    for i in interfaces {
+        for e in &i.environments {
+            definition_fields(
+                FieldRef {
+                    interface_id: i.interface_id,
+                    environment_id: e.environment_id,
+                    revision_id: e.revision_id,
+                    location: String::new(),
+                    path: String::new(),
                 }
-            }
-            for (index, parameter) in d["request"]["parameters"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                if let (Some(name), Some(location)) =
-                    (parameter["name"].as_str(), parameter["in"].as_str())
-                {
-                    let mut f = base.clone();
-                    f.location = format!("request.{location}");
-                    f.path = format!("/{}", esc(name));
-                    collect_schema(
-                        &parameter["observed_schema"],
-                        f,
-                        format!("/request/parameters/{index}/observed_schema"),
-                        vec![],
-                        &mut fields,
-                    );
-                }
-            }
+                .into(),
+                &e.definition,
+                &mut fields,
+            );
         }
     }
     for annotation in annotations {
@@ -199,4 +196,134 @@ pub fn snapshot_fields(
         }
     }
     fields.into_values().collect()
+}
+/// One field parser for profile navigation, unresolved detection and snapshot assembly.
+pub fn evidence_field_refs(value: &Value) -> HashSet<EvidenceFieldRef> {
+    fn walk(v: &Value, out: &mut HashSet<EvidenceFieldRef>) {
+        if let Ok(f) = serde_json::from_value::<EvidenceFieldRef>(v.clone()) {
+            let valid = f.adopted().is_some()
+                || (f.revision_id.is_none()
+                    && f.observation.as_ref().is_some_and(|s| {
+                        s.interface_id == f.interface_id
+                            && s.environment_id == f.environment_id
+                            && s.location == f.location
+                            && s.path == f.path
+                    }));
+            if valid {
+                out.insert(f);
+                return;
+            }
+        }
+        match v {
+            Value::Object(o) => {
+                for v in o.values() {
+                    walk(v, out);
+                }
+            }
+            Value::Array(a) => {
+                for v in a {
+                    walk(v, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = HashSet::new();
+    walk(value, &mut out);
+    out
+}
+pub fn complete_snapshot_fields(snapshot: &KnowledgeSnapshot) -> Vec<KnowledgeField> {
+    let mut fields: BTreeMap<_, _> = snapshot_fields(&snapshot.interfaces, &snapshot.annotations)
+        .into_iter()
+        .map(|f| (f.id.clone(), f))
+        .collect();
+    if let Some(inputs) = &snapshot.inputs {
+        for material in &inputs.observations {
+            if material.record.base_revision_id.is_none()
+                && material.reconstructed_definition.is_none()
+            {
+                continue;
+            }
+            if let Some(definition) = material.definition() {
+                let m = &material.record;
+                let source = ObservationFieldRef {
+                    project_id: m.project_id,
+                    interface_id: m.interface_id,
+                    environment_id: m.environment_id,
+                    ingestion_id: m.ingestion_id,
+                    location: String::new(),
+                    path: String::new(),
+                };
+                definition_fields(
+                    EvidenceFieldRef {
+                        interface_id: m.interface_id,
+                        environment_id: m.environment_id,
+                        location: String::new(),
+                        path: String::new(),
+                        revision_id: None,
+                        observation: Some(source),
+                    },
+                    definition,
+                    &mut fields,
+                );
+            }
+        }
+    }
+    for fact in &snapshot.facts {
+        for reference in evidence_field_refs(&fact.subject) {
+            if reference
+                .observation
+                .as_ref()
+                .is_some_and(|s| s.project_id == snapshot.project_id)
+                && snapshot.interfaces.iter().any(|i| {
+                    i.interface_id == reference.interface_id
+                        && i.environments
+                            .iter()
+                            .any(|e| e.environment_id == reference.environment_id)
+                })
+            {
+                let id = field_id(&reference);
+                fields.entry(id.clone()).or_insert(KnowledgeField {
+                    id,
+                    reference,
+                    schema: Value::Null,
+                    schema_pointers: vec![],
+                    ancestors: vec![],
+                    existing_annotations: vec![],
+                });
+            }
+        }
+    }
+    fields.into_values().collect()
+}
+pub fn field_definition<'a>(
+    snapshot: &'a KnowledgeSnapshot,
+    reference: &EvidenceFieldRef,
+) -> Option<&'a Value> {
+    if let Some(source) = &reference.observation {
+        snapshot
+            .inputs
+            .as_ref()?
+            .observations
+            .iter()
+            .find(|m| {
+                m.record.ingestion_id == source.ingestion_id
+                    && m.record.project_id == source.project_id
+                    && m.record.interface_id == source.interface_id
+                    && m.record.environment_id == source.environment_id
+            })?
+            .definition()
+    } else {
+        snapshot
+            .interfaces
+            .iter()
+            .find(|i| i.interface_id == reference.interface_id)?
+            .environments
+            .iter()
+            .find(|e| {
+                e.environment_id == reference.environment_id
+                    && Some(e.revision_id) == reference.revision_id
+            })
+            .map(|e| &e.definition)
+    }
 }

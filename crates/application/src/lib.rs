@@ -13,9 +13,6 @@ pub use ingestion::*;
 mod processing;
 pub use processing::*;
 
-mod catalog_preview;
-pub use catalog_preview::*;
-
 mod catalog_publication;
 pub use catalog_publication::*;
 mod knowledge_publication;
@@ -27,3 +24,9 @@ pub use maintenance_engine::*;
 
 mod capture;
 pub use capture::*;
+
+/// Removed generation APIs cannot reappear unnoticed alongside MaintenanceEngine.
+/// ```compile_fail
+/// use nexofolio_application::CatalogPreviewService;
+/// ```
+const _: () = ();

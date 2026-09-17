@@ -7,3 +7,6 @@ pub use observed::*;
 
 mod catalog_preview;
 pub use catalog_preview::*;
+
+mod assessment;
+pub use assessment::{AssessmentReader, assess_definition};

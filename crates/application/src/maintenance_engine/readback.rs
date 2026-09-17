@@ -1,14 +1,16 @@
 use super::*;
 impl MaintenanceEngine {
-    pub(super) async fn readback_batch(
+    /// Load originals once. Small sources are delivered by the next planning call;
+    /// oversized sources and images retain the specialized bounded reader.
+    pub(super) async fn prepare_readbacks(
         &self,
         lease: &MaintenanceLease,
         references: Vec<KnowledgeEvidenceRef>,
         coverage: &ReviewCoverage,
         saved: &mut HashMap<String, MaintenanceCheckpoint>,
-    ) -> Result<Vec<(KnowledgeEvidenceRef, String)>> {
-        let mut results = Vec::new();
+    ) -> Result<(Vec<Value>, Vec<KnowledgeEvidenceRef>)> {
         let mut pending = Vec::new();
+        let mut completed = Vec::new();
         let mut seen = HashSet::new();
         for reference in references {
             if !seen.insert(reference.clone()) {
@@ -16,67 +18,91 @@ impl MaintenanceEngine {
             }
             let primary = resource(&lease.snapshot, &reference, saved)?;
             let mut originals = vec![primary.clone()];
-            if reference.kind == "fact" {
-                let fact = lease
+            let inputs = lease
+                .snapshot
+                .inputs
+                .as_ref()
+                .ok_or_else(|| invalid("SNAPSHOT_INPUTS_UNAVAILABLE_RECREATE"))?;
+            let event_ids: Vec<_> = match reference.kind.as_str() {
+                "fact" => lease
                     .snapshot
                     .facts
                     .iter()
                     .find(|f| f.id.to_string() == reference.id)
-                    .ok_or(Error::NotFound)?;
-                for event in &fact.samples {
-                    originals.push(
-                        self.sources
-                            .observation(lease.snapshot.project_id, *event)
-                            .await?,
-                    );
+                    .ok_or(Error::NotFound)?
+                    .samples
+                    .clone(),
+                "source" => vec![reference.id.parse().map_err(|_| Error::NotFound)?],
+                "observation" => inputs
+                    .sources
+                    .iter()
+                    .filter(|s| {
+                        s.ingestion_id
+                            .is_some_and(|id| id.to_string() == reference.id)
+                    })
+                    .map(|s| s.event_id)
+                    .collect(),
+                _ => vec![],
+            };
+            for event in event_ids {
+                let source = inputs
+                    .sources
+                    .iter()
+                    .find(|s| s.event_id == event && s.project_id == lease.snapshot.project_id)
+                    .ok_or_else(|| invalid("SOURCE_OUTSIDE_SNAPSHOT"))?;
+                let original = self.sources.observation(source).await?;
+                if reference.kind == "fact" {
+                    // Verify pinned bytes, but do not attach every full capture body to a fact read.
+                    // The model must explicitly request source to read those bodies.
+                    originals.push(json!({"reference":{"kind":"source","id":source.event_id},"captured_at":source.captured_at,"raw_hash":source.raw_hash,"coverage":source.evidence_coverage,"contents_provided":false,"raw_hash_verified":true}));
+                } else {
+                    originals.push(original);
                 }
             }
-            let item = json!({"reference":reference,"source":primary,"originals":originals});
+            let item = json!({"reference":reference,"originals":originals});
             if reference.kind == "image" || bytes(&item) > self.data_limit() {
-                let summary = self
-                    .readback(lease, &reference, (primary, originals), coverage, saved)
+                self.readback(lease, &reference, (primary, originals), coverage, saved)
                     .await?;
-                results.push((reference, summary));
+                completed.push(reference);
             } else {
                 pending.push(item);
             }
         }
-        for group in groups(pending, self.data_limit())? {
-            let MaintenanceReply::Summary { summary } = self.ask(lease, "readback", json!({
-                "original_sources":group,
-                "instruction":"Read every original source and reference in this batch. Preserve support, counterexamples and uncertainty. These are source records, not summaries."
-            })).await? else { return Err(invalid("READBACK_CONTRACT_INVALID")); };
-            let references = group
-                .iter()
-                .map(|item| {
-                    serde_json::from_value(item["reference"].clone())
-                        .map_err(|_| invalid("READBACK_CONTRACT_INVALID"))
-                })
-                .collect::<Result<Vec<KnowledgeEvidenceRef>>>()?;
-            let batch_checkpoint = MaintenanceCheckpoint {
-                id: format!("read-batch:{}", digest(&json!(group))),
-                phase: "readback".into(),
-                references,
-                review: None,
-                summary: Some(summary.clone()),
-                data: json!({"batched":true,"source_count":group.len()}),
-            };
-            self.store
-                .checkpoint(lease, &batch_checkpoint, coverage)
-                .await?;
-            saved.insert(batch_checkpoint.id.clone(), batch_checkpoint);
-            // Mark each reference read only after the call containing all its original data succeeds.
-            for item in group {
-                let reference: KnowledgeEvidenceRef =
-                    serde_json::from_value(item["reference"].clone())
-                        .map_err(|_| invalid("READBACK_CONTRACT_INVALID"))?;
-                self.complete_read(lease, &reference, &summary,
-                    json!({"source":item["source"],"original_sources":item["originals"].as_array().map(Vec::len),"batched":true}),
-                    coverage, saved).await?;
-                results.push((reference, summary.clone()));
-            }
+        Ok((pending, completed))
+    }
+    /// Called only after a valid response to the plan request containing these originals.
+    pub(super) async fn confirm_planning_reads(
+        &self,
+        lease: &MaintenanceLease,
+        originals: &[Value],
+        coverage: &ReviewCoverage,
+        saved: &mut HashMap<String, MaintenanceCheckpoint>,
+    ) -> Result<Vec<KnowledgeEvidenceRef>> {
+        if originals.is_empty() {
+            return Ok(vec![]);
         }
-        Ok(results)
+        let references = originals
+            .iter()
+            .map(|item| {
+                serde_json::from_value(item["reference"].clone())
+                    .map_err(|_| invalid("READBACK_CONTRACT_INVALID"))
+            })
+            .collect::<Result<Vec<KnowledgeEvidenceRef>>>()?;
+        let checkpoint = MaintenanceCheckpoint {
+            id: format!("planning-read:{}", digest(&json!(originals))),
+            phase: "readback".into(),
+            references: references.clone(),
+            review: None,
+            summary: None,
+            data: json!({"via":"successful_planning_call","source_count":originals.len()}),
+        };
+        self.store.checkpoint(lease, &checkpoint, coverage).await?;
+        saved.insert(checkpoint.id.clone(), checkpoint);
+        for (reference, item) in references.iter().zip(originals) {
+            self.complete_read(lease,reference,"Original delivered in a successful planning call",
+                json!({"source":item["originals"][0],"provided_objects":item["originals"].as_array().map(Vec::len),"full_captures_provided":item["originals"].as_array().into_iter().flatten().filter(|v|v.get("event_id").is_some()&&v.get("original").is_some()).count(),"via":"planning"}),coverage,saved).await?;
+        }
+        Ok(references)
     }
     async fn readback(
         &self,
@@ -157,7 +183,7 @@ impl MaintenanceEngine {
             lease,
             r,
             &summary,
-            json!({"source":primary,"original_sources":originals.len()}),
+            json!({"source":primary,"provided_objects":originals.len(),"full_captures_provided":originals.iter().filter(|v|v.get("event_id").is_some()&&v.get("original").is_some()).count()}),
             coverage,
             saved,
         )

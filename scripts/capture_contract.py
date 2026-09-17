@@ -3,10 +3,17 @@ from pathlib import Path
 import json,subprocess,hashlib,argparse
 from catalog_preview_contract import ts
 from ingestion_contract import require_version_change
-ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT/'contracts/capture';VERSION='1.2.0'
+ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT/'contracts/capture';VERSION='1.7.0'
+def evidence_field_schema(field):
+ # Public evidence bases are exclusive; observed fields cannot claim adoption.
+ props=field.pop('properties');required=field.pop('required');field.pop('additionalProperties',None)
+ common={k:v for k,v in props.items() if k not in ('revision_id','observation')}
+ field['oneOf']=[{'type':'object','properties':{**common,key:value},'required':required+[key],'additionalProperties':False} for key,value in [('revision_id',{'type':'string','format':'uuid'}),('observation',{'$ref':'#/$defs/ObservationFieldRef'})]]
 def outputs():
  raw=subprocess.run(['cargo','run','--quiet','--locked','-p','nexofolio-contracts','--example','capture_schema'],cwd=ROOT,capture_output=True,text=True,check=True)
- schemas=json.loads(raw.stdout);old=json.loads((ROOT/'contracts/ingestion/batch.schema.json').read_text())
+ schemas=json.loads(raw.stdout)
+ evidence_field_schema(schemas['evidence-field.schema.json'])
+ old=json.loads((ROOT/'contracts/ingestion/batch.schema.json').read_text())
  b=schemas['batch.schema.json'];b['properties']['schema_version']={'const':'3'};b['properties']['records'].update(minItems=1,maxItems=50);b['properties'].pop('service_key',None);b.get('required',[]).remove('service_key') if 'service_key' in b.get('required',[]) else None
  record=schemas['record.schema.json'];record['properties']['payload_version']={'const':'1'};record['properties']['captured_at']['format']='date-time'
  kinds={'http_exchange':'HttpExchange','page_context':'PageContextPayload','interaction':'InteractionPayload','ui_snapshot':'UiSnapshotPayload','image_reference':'ImageReferencePayload'}
@@ -28,7 +35,7 @@ def outputs():
   title=schema['title']
   if title not in defs_all:types+='export type '+title+' = '+ts(schema)+';\n'
  result={name:json.dumps(value,ensure_ascii=False,indent=2)+'\n' for name,value in schemas.items()};result['types.generated.ts']=types
- hashes={name:hashlib.sha256(value.encode()).hexdigest() for name,value in result.items()};hashes['behavior.md']=hashlib.sha256((BUNDLE/'behavior.md').read_bytes()).hexdigest()
+ hashes={name:hashlib.sha256(value.encode()).hexdigest() for name,value in result.items()};hashes.update({str(path.relative_to(BUNDLE)):hashlib.sha256(path.read_bytes()).hexdigest() for path in [BUNDLE/'behavior.md',BUNDLE/'chrome-sampling-profile.md',*sorted((BUNDLE/'fixtures').glob('*.json'))]})
  result['manifest.json']=json.dumps({'contract_version':VERSION,'schema_version':'3','files':hashes},indent=2)+'\n';return result
 if __name__=='__main__':
  p=argparse.ArgumentParser();p.add_argument('--check',action='store_true');p.add_argument('--base-ref');a=p.parse_args();generated=outputs()

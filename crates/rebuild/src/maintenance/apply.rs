@@ -6,6 +6,9 @@ pub fn materialize_maintenance(
     coverage: ReviewCoverage,
 ) -> Result<MaintenanceCandidate> {
     let invalid = |s: &str| Error::InvalidInput { message: s.into() };
+    if snapshot.inputs.is_none() {
+        return Err(invalid("SNAPSHOT_INPUTS_UNAVAILABLE_RECREATE"));
+    }
     let mut catalog = snapshot.catalog.clone();
     let mut annotations: HashMap<_, _> = snapshot
         .annotations
@@ -225,6 +228,19 @@ pub fn materialize_maintenance(
                                     .any(|r| r.kind == "fact" && r.id == f.id.to_string())
                             })
                             .collect();
+                        if field.location.ends_with(".header")
+                            && !evidence.iter().any(|f| {
+                                f.subject == subject
+                                    && matches!(
+                                        f.kind.as_str(),
+                                        "declared_enum"
+                                            | "dictionary_mapping_candidate"
+                                            | "enum_label_candidate"
+                                    )
+                            })
+                        {
+                            return Err(invalid("PROTOCOL_ENUM_REQUIRES_SEMANTIC_EVIDENCE"));
+                        }
                         if let Some(old) = annotations.get(&annotation.id)
                             && let SemanticValue::Enum { entries: prior, .. } =
                                 &old.annotation.value
@@ -320,11 +336,12 @@ pub fn materialize_maintenance(
                 for r in &annotation.evidence {
                     if r.kind == "field"
                         && let Some(f) = snapshot.fields.iter().find(|f| f.id == r.id)
+                        && let Some(reference) = f.reference.adopted()
                     {
                         basis.push(DefinitionBasis {
-                            interface_id: f.reference.interface_id,
-                            environment_id: f.reference.environment_id,
-                            revision_id: f.reference.revision_id,
+                            interface_id: reference.interface_id,
+                            environment_id: reference.environment_id,
+                            revision_id: reference.revision_id,
                         });
                     }
                 }
@@ -399,6 +416,35 @@ pub fn materialize_maintenance(
                     return Err(invalid("INVALID_ANNOTATION_RETRACTION"));
                 }
             }
+        }
+    }
+    if matches!(plan.strategy, MaintenanceStrategy::Insert) {
+        let preserves_nodes = snapshot.catalog.nodes.iter().all(|old| {
+            catalog.nodes.iter().any(|new| {
+                new.id == old.id
+                    && new.parent == old.parent
+                    && new.name == old.name
+                    && new.description == old.description
+            })
+        });
+        let preserves_assignments = snapshot
+            .catalog
+            .assignments
+            .iter()
+            .filter(|a| a.directory_id.is_some())
+            .all(|old| {
+                catalog.assignments.iter().any(|new| {
+                    new.interface_id == old.interface_id && new.directory_id == old.directory_id
+                })
+            });
+        let preserves_groups = snapshot.catalog.merge_groups.iter().all(|old| {
+            catalog
+                .merge_groups
+                .iter()
+                .any(|new| serde_json::to_value(new).unwrap() == serde_json::to_value(old).unwrap())
+        });
+        if !preserves_nodes || !preserves_assignments || !preserves_groups {
+            return Err(invalid("INSERT_STRATEGY_CHANGED_EXISTING_CATALOG"));
         }
     }
     if matches!(plan.strategy, MaintenanceStrategy::Keep)

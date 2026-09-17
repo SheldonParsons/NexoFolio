@@ -28,10 +28,12 @@ pub(super) fn build_services(
             store.clone(),
         )?);
     }
+    let document_store = Arc::new(nexofolio_infrastructure::PostgresDocuments::new(
+        database.clone(),
+    ));
     let documents = crate::http::documents::DocumentsHttp {
-        reader: Arc::new(nexofolio_infrastructure::PostgresDocuments::new(
-            database.clone(),
-        )),
+        reader: document_store.clone(),
+        assessments: document_store,
         access: store.clone(),
     };
     let previews = crate::http::catalog_preview::CatalogPreviewHttp {

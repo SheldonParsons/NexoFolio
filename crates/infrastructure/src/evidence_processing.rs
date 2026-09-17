@@ -3,7 +3,7 @@ mod links;
 mod ui;
 use crate::capture_store::{PostgresCaptureStore, authorize, err, uuid};
 use facts::save_fact;
-use links::link_values;
+use links::link_event;
 use nexofolio_contracts::*;
 use nexofolio_evidence::{FactDraft, ValueOccurrence};
 use serde_json::{Value, json};
@@ -24,7 +24,7 @@ fn match_key(v: &Value) -> String {
         _ => String::new(),
     }
 }
-fn field_key(f: &FieldRef) -> String {
+fn field_key(f: &EvidenceFieldRef) -> String {
     hash(&serde_json::to_value(f).unwrap())
 }
 struct Event {
@@ -40,24 +40,9 @@ struct Event {
     generation: i64,
     at: chrono::DateTime<chrono::Utc>,
 }
-impl PostgresCaptureStore {
-    pub async fn process_evidence_one(&self) -> Result<bool> {
-        let row=sqlx::query(r#"WITH picked AS (SELECT id
-            FROM capture_events
-            WHERE (evidence_status='pending'
-            AND retry_at<=clock_timestamp())
-            OR (evidence_status='processing'
-            AND lease_until<clock_timestamp())
-            ORDER BY received_at,id FOR UPDATE SKIP LOCKED
-            LIMIT 1) UPDATE capture_events e
-            SET evidence_status='processing',generation=generation+1,attempts=attempts+1,lease_until=clock_timestamp()+interval '120 seconds'
-            FROM picked p
-            WHERE e.id=p.id
-            RETURNING e.*"#).fetch_optional(&self.database.pool).await.map_err(err)?;
-        let Some(row) = row else {
-            return Ok(false);
-        };
-        let event = Event {
+impl Event {
+    fn from_row(row: &sqlx::postgres::PgRow) -> Result<Self> {
+        Ok(Self {
             id: row.get("id"),
             project: row
                 .get::<Uuid, _>("project_id")
@@ -91,7 +76,86 @@ impl PostgresCaptureStore {
                 })?,
             generation: row.get("generation"),
             at: row.get("captured_at"),
+        })
+    }
+}
+impl PostgresCaptureStore {
+    /// Offline upgrade of legacy derived evidence. Original facts remain addressable;
+    /// a retry resumes pending events instead of counting completed events twice.
+    pub async fn refresh_legacy_evidence(&self, project: ProjectId) -> Result<u64> {
+        let mut tx = self.database.pool.begin().await.map_err(err)?;
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+            .bind(format!("evidence-project:{project}"))
+            .execute(&mut *tx)
+            .await
+            .map_err(err)?;
+        let legacy:i64=sqlx::query_scalar("SELECT count(*) FROM evidence_facts WHERE project_id=$1 AND data->>'evidence_rule_version'='legacy' AND data->>'superseded' IS DISTINCT FROM 'true'").bind(uuid(project)).fetch_one(&mut *tx).await.map_err(err)?;
+        if legacy > 0 {
+            let unsafe_state: bool = sqlx::query_scalar(
+                r#"SELECT
+              EXISTS(SELECT 1 FROM evidence_facts WHERE project_id=$1
+                AND data->>'superseded' IS DISTINCT FROM 'true'
+                AND data->>'evidence_rule_version' IS DISTINCT FROM 'legacy')
+              OR EXISTS(SELECT 1 FROM capture_events WHERE project_id=$1
+                AND (raw_hash IS NULL OR evidence_status<>'completed'))"#,
+            )
+            .bind(uuid(project))
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(err)?;
+            if unsafe_state {
+                return Err(Error::invalid(
+                    "LEGACY_REFRESH_REQUIRES_COMPLETE_RAW_AND_OFFLINE_LEGACY_STATE",
+                ));
+            }
+            // Only disposable correlation indexes are rebuilt. Facts, samples, pins,
+            // receipts, original definitions and recorded payloads remain intact.
+            for table in [
+                "evidence_relation_pairs",
+                "evidence_relation_values",
+                "evidence_ui_pairs",
+            ] {
+                sqlx::query(sqlx::AssertSqlSafe(format!("DELETE FROM {table} WHERE fact_id IN (SELECT id FROM evidence_facts WHERE project_id=$1)")))
+                    .bind(uuid(project)).execute(&mut *tx).await.map_err(err)?;
+            }
+            for table in ["evidence_value_index", "evidence_ui_bindings"] {
+                sqlx::query(sqlx::AssertSqlSafe(format!(
+                    "DELETE FROM {table} WHERE project_id=$1"
+                )))
+                .bind(uuid(project))
+                .execute(&mut *tx)
+                .await
+                .map_err(err)?;
+            }
+            sqlx::query("UPDATE evidence_facts SET data=data||'{\"superseded\":true}'::jsonb,key_hash='superseded:'||id::text WHERE project_id=$1 AND data->>'evidence_rule_version'='legacy'")
+                .bind(uuid(project)).execute(&mut *tx).await.map_err(err)?;
+            sqlx::query("UPDATE capture_events SET evidence_status='pending',evidence_coverage=NULL,attempts=0,retry_at=clock_timestamp(),lease_until=NULL,generation=generation+1,error_code=NULL WHERE project_id=$1")
+                .bind(uuid(project)).execute(&mut *tx).await.map_err(err)?;
+            sqlx::query("UPDATE capture_backlog SET pending=(SELECT count(*) FROM capture_events WHERE project_id=$1 AND evidence_status<>'completed') WHERE project_id=$1")
+                .bind(uuid(project)).execute(&mut *tx).await.map_err(err)?;
+        }
+        let pending:i64=sqlx::query_scalar("SELECT count(*) FROM capture_events WHERE project_id=$1 AND evidence_status<>'completed'")
+            .bind(uuid(project)).fetch_one(&mut *tx).await.map_err(err)?;
+        tx.commit().await.map_err(err)?;
+        Ok(pending as u64)
+    }
+    pub async fn process_evidence_one(&self) -> Result<bool> {
+        let row=sqlx::query(r#"WITH picked AS (SELECT id
+            FROM capture_events
+            WHERE (evidence_status='pending'
+            AND retry_at<=clock_timestamp())
+            OR (evidence_status='processing'
+            AND lease_until<clock_timestamp())
+            ORDER BY received_at,id FOR UPDATE SKIP LOCKED
+            LIMIT 1) UPDATE capture_events e
+            SET evidence_status='processing',generation=generation+1,attempts=attempts+1,lease_until=clock_timestamp()+interval '120 seconds'
+            FROM picked p
+            WHERE e.id=p.id
+            RETURNING e.*"#).fetch_optional(&self.database.pool).await.map_err(err)?;
+        let Some(row) = row else {
+            return Ok(false);
         };
+        let event = Event::from_row(&row)?;
         let result = self.extract_event(&event).await;
         if let Err(error) = result {
             let waiting = matches!(error, Error::NotConfigured { .. });
@@ -100,7 +164,7 @@ impl PostgresCaptureStore {
             OR attempts<5 THEN 'pending' ELSE 'failed' END,retry_at=clock_timestamp()+interval '2 seconds',lease_until=NULL,error_code=$4
             WHERE id=$1
             AND generation=$2
-            AND evidence_status='processing'"#).bind(event.id).bind(event.generation).bind(waiting).bind(if waiting{"WAITING_DEPENDENCY"}else{"EVIDENCE_PROCESSING_FAILED"}).execute(&self.database.pool).await.map_err(err)?;
+            AND evidence_status='processing'"#).bind(event.id).bind(event.generation).bind(waiting).bind(if waiting{"WAITING_DEPENDENCY"}else if matches!(error,Error::Unavailable{component:"evidence_relation_budget"}) {"RELATION_SEARCH_LIMIT"} else {"EVIDENCE_PROCESSING_FAILED"}).execute(&self.database.pool).await.map_err(err)?;
             if !waiting {
                 return Err(error);
             }
@@ -115,8 +179,9 @@ impl PostgresCaptureStore {
                 })?;
         let mut facts = Vec::new();
         let mut values = Vec::new();
+        let mut coverage = json!({"request_complete":false,"response_complete":false});
         if let Some(ingestion) = event.ingestion {
-            let binding=sqlx::query("SELECT o.interface_id,o.compared_revision_id,i.path_identity FROM interface_observations o JOIN ingestion_inbox i ON i.id=o.ingestion_id WHERE o.ingestion_id=$1").bind(ingestion).fetch_optional(&self.database.pool).await.map_err(err)?.ok_or(Error::NotConfigured{capability:"parent_observation"})?;
+            let binding=sqlx::query("SELECT o.interface_id,o.compared_revision_id,i.path_identity,r.definition FROM interface_observations o JOIN ingestion_inbox i ON i.id=o.ingestion_id JOIN interface_observed_revisions r ON r.id=o.compared_revision_id WHERE o.ingestion_id=$1").bind(ingestion).fetch_optional(&self.database.pool).await.map_err(err)?.ok_or(Error::NotConfigured{capability:"parent_observation"})?;
             let reference = FieldRef {
                 interface_id: binding
                     .get::<Uuid, _>("interface_id")
@@ -139,7 +204,14 @@ impl PostgresCaptureStore {
                 .map_err(|_| Error::Unavailable {
                     component: "path_identity",
                 })?;
-            let extraction = nexofolio_evidence::extract_http(&payload, reference, path.as_ref());
+            let mut extraction =
+                nexofolio_evidence::extract_http(&payload, reference, path.as_ref());
+            extraction.bind_source(
+                event.project,
+                ingestion,
+                &binding.get::<Value, _>("definition"),
+            );
+            coverage = json!({"request_complete":extraction.request_complete,"response_complete":extraction.response_complete});
             facts = extraction.facts;
             values = extraction.values;
             facts.extend(nexofolio_evidence::dictionary_facts(&payload, &values));
@@ -185,8 +257,19 @@ impl PostgresCaptureStore {
             .execute(&mut *tx)
             .await
             .map_err(err)?;
+        sqlx::query("UPDATE capture_events SET evidence_coverage=$2 WHERE id=$1")
+            .bind(event.id)
+            .bind(&coverage)
+            .execute(&mut *tx)
+            .await
+            .map_err(err)?;
+        facts::retain_values(&mut tx, event, &mut facts).await?;
         let mut unique = std::collections::HashSet::new();
-        for fact in facts {
+        for mut fact in facts {
+            if fact.kind == "dictionary_mapping_candidate" {
+                let conditions = fact.data["scope"].take();
+                fact.data["scope"] = json!({"request_hash":hash(&conditions),"actor_id":event.actor,"complete":conditions["complete"]});
+            }
             let key = hash(&json!([fact.kind, fact.subject, fact.data]));
             if unique.insert(key) {
                 save_fact(&mut tx, event, &fact, None).await?;
@@ -203,15 +286,23 @@ impl PostgresCaptureStore {
                         sqlx::query(r#"INSERT INTO evidence_value_index(event_id,project_id,environment_id,producer_id,page_instance_id,frame_instance_id,view_id,interaction_id,field_key,field_ref,pointer,value,match_key,direction,started_at,available_at,actor_id,browser_instance_id)
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
             ON CONFLICT DO NOTHING"#)
-      .bind(event.id).bind(uuid(event.project)).bind(uuid(event.env)).bind(event.producer).bind(ctx.page_instance_id).bind(ctx.frame_instance_id).bind(ctx.view_id).bind(ctx.interaction_id).bind(field_key(&value.field)).bind(serde_json::to_value(&value.field).unwrap()).bind(&value.pointer).bind(&value.value).bind(match_key(&value.value)).bind(value.direction).bind(start).bind(end).bind(event.actor).bind(ctx.browser_instance_id).execute(&mut *tx).await.map_err(err)?;
-                        if nexofolio_evidence::informative(&value.value)
-                            && nexofolio_evidence::relation_field(&value.field)
-                        {
-                            link_values(&mut tx, event, ctx, value, start, end).await?;
-                        }
+      .bind(event.id).bind(uuid(event.project)).bind(uuid(event.env)).bind(event.producer).bind(ctx.page_instance_id).bind(ctx.frame_instance_id).bind(ctx.view_id).bind(ctx.interaction_id).bind(field_key(&value.field)).bind(serde_json::to_value(&value.field).unwrap()).bind(&value.pointer).bind(&value.value).bind(if nexofolio_evidence::informative(&value.value) && nexofolio_evidence::relation_field(&value.field) {match_key(&value.value)} else {String::new()}).bind(value.direction).bind(start).bind(end).bind(event.actor).bind(ctx.browser_instance_id).execute(&mut *tx).await.map_err(err)?;
                     }
                 }
-                correlate_ui(&mut tx, event, ctx, &values, start, &payload).await?;
+                link_event(&mut tx, event).await?;
+                correlate_ui(
+                    &mut tx,
+                    event,
+                    ctx,
+                    &values,
+                    start,
+                    &payload,
+                    self.blobs.as_ref(),
+                )
+                .await?;
+            }
+            if matches!(event.kind, CaptureKind::Interaction) {
+                links::late_interaction(&mut tx, event, ctx).await?;
             }
             if matches!(
                 event.kind,

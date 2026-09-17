@@ -9,6 +9,8 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObservedDefinition {
     pub extractor_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schema_view: Option<String>,
     pub method: String,
     pub path: String,
     pub request: Value,
@@ -85,7 +87,6 @@ pub fn extract_observed(raw: &Value) -> Result<ObservedDefinition> {
     let url = Url::parse(req["url"].as_str().ok_or_else(invalid)?).map_err(|_| invalid())?;
     let method = req["method"].as_str().ok_or_else(invalid)?.to_owned();
     let mut limitations = vec!["OBSERVED_ONLY_NOT_A_CONFIRMED_CONTRACT".into()];
-    let mut budget = 10000usize;
     let query: std::collections::BTreeSet<_> = url
         .query_pairs()
         .map(|(name, _)| name.to_string())
@@ -94,8 +95,8 @@ pub fn extract_observed(raw: &Value) -> Result<ObservedDefinition> {
         .into_iter()
         .map(|name| json!({"name":name,"in":"query","observed_schema":{"type":"string"}}))
         .collect();
-    let request = json!({"parameters":params,"headers":headers(&req["headers"]),"body":body(&req["body"],&req["headers"],"request",&mut budget,&mut limitations)});
-    let response = json!({"status":res["status"],"capture_state":res["state"],"headers":headers(&res["headers"]),"body":body(&res["body"],&res["headers"],"response",&mut budget,&mut limitations)});
+    let request = json!({"parameters":params,"headers":headers(&req["headers"]),"body":body(&req["body"],&req["headers"],"request",&mut limitations)});
+    let response = json!({"status":res["status"],"capture_state":res["state"],"headers":headers(&res["headers"]),"body":body(&res["body"],&res["headers"],"response",&mut limitations)});
     if req["url_truncated"] == true {
         limitations.push("REQUEST_URL_TRUNCATED".into());
     }
@@ -110,13 +111,29 @@ pub fn extract_observed(raw: &Value) -> Result<ObservedDefinition> {
     limitations.sort();
     limitations.dedup();
     Ok(ObservedDefinition {
-        extractor_version: "observed-http-1".into(),
+        extractor_version: "observed-http-3".into(),
+        schema_view: None,
         method,
         path: url.path().into(),
         request,
         response,
         limitations,
     })
+}
+/// A marked read projection; persisted revision bytes and identities stay unchanged.
+pub fn compact_definition(mut definition: Value) -> Value {
+    let mut changed = false;
+    for side in ["request", "response"] {
+        if let Some(schema) = definition.pointer_mut(&format!("/{side}/body/observed_schema")) {
+            let compact = nexofolio_contracts::compact_observed_schema(schema);
+            changed |= compact != *schema;
+            *schema = compact;
+        }
+    }
+    if changed {
+        definition["schema_view"] = json!(nexofolio_contracts::STRUCTURE_ALGORITHM);
+    }
+    definition
 }
 fn media(headers: &Value) -> String {
     headers["entries"]
@@ -148,7 +165,7 @@ fn headers(h: &Value) -> Vec<Value> {
         .map(|name| json!({"name":name,"observed_schema":{"type":"string"}}))
         .collect()
 }
-fn body(b: &Value, h: &Value, side: &str, budget: &mut usize, notes: &mut Vec<String>) -> Value {
+fn body(b: &Value, h: &Value, side: &str, notes: &mut Vec<String>) -> Value {
     let state = b["state"].as_str().unwrap_or("unknown");
     let media = media(h);
     if state == "none" {
@@ -173,7 +190,11 @@ fn body(b: &Value, h: &Value, side: &str, budget: &mut usize, notes: &mut Vec<St
     };
     let schema = if media == "application/json" || media.ends_with("+json") {
         match decoded.and_then(|v| serde_json::from_slice::<Value>(&v).ok()) {
-            Some(v) => shape(&v, 0, budget, notes),
+            Some(v) => {
+                let observed = nexofolio_contracts::observe_json(&v);
+                notes.extend(observed.limitations);
+                observed.schema
+            }
             None => {
                 notes.push(format!("{}_JSON_UNREADABLE", side.to_uppercase()));
                 Value::Null
@@ -188,121 +209,9 @@ fn body(b: &Value, h: &Value, side: &str, budget: &mut usize, notes: &mut Vec<St
     };
     json!({"state":state,"media_type":media,"observed_schema":schema})
 }
-fn shape(v: &Value, depth: usize, budget: &mut usize, notes: &mut Vec<String>) -> Value {
-    if *budget == 0 || depth > 64 {
-        notes.push("STRUCTURE_EXTRACTION_LIMIT".into());
-        return json!({"unknown":true});
-    }
-    *budget -= 1;
-    match v {
-        Value::Null => {
-            notes.push("NULL_DOES_NOT_ESTABLISH_FIELD_TYPE".into());
-            json!({"type":"null"})
-        }
-        Value::Bool(_) => json!({"type":"boolean"}),
-        Value::Number(_) => json!({"type":"number"}),
-        Value::String(_) => json!({"type":"string"}),
-        Value::Object(map) => {
-            let mut props = serde_json::Map::new();
-            for (k, v) in map {
-                if *budget == 0 {
-                    notes.push("STRUCTURE_EXTRACTION_LIMIT".into());
-                    break;
-                }
-                props.insert(k.clone(), shape(v, depth + 1, budget, notes));
-            }
-            json!({"type":"object","properties":props})
-        }
-        Value::Array(items) => {
-            let mut shapes = std::collections::BTreeMap::new();
-            if items.is_empty() {
-                notes.push("EMPTY_ARRAY_ITEM_TYPE_UNKNOWN".into());
-            }
-            for item in items {
-                if *budget == 0 {
-                    notes.push("STRUCTURE_EXTRACTION_LIMIT".into());
-                    break;
-                }
-                let s = shape(item, depth + 1, budget, notes);
-                shapes.insert(serde_json::to_string(&s).unwrap(), s);
-            }
-            let distinct: Vec<Value> = shapes.into_values().collect();
-            json!({"type":"array","items":if distinct.len()==1{distinct[0].clone()}else if distinct.is_empty(){json!({"unknown":true})}else{json!({"anyOf":distinct})}})
-        }
-    }
-}
-
-/// Ignore only loss of array item information; all other metadata and fields are checked.
+/// Compatibility helper delegates to the one detailed assessment policy.
 pub fn definition_covers(known: &Value, incoming: &Value) -> bool {
-    if known == incoming {
-        return true;
-    }
-    // Budget exhaustion also emits unknown markers. It must never act as empty-array evidence.
-    if [known, incoming].iter().any(|definition| {
-        definition["limitations"].as_array().is_some_and(|notes| {
-            notes
-                .iter()
-                .any(|note| note == "STRUCTURE_EXTRACTION_LIMIT")
-        })
-    }) {
-        return false;
-    }
-    let (Some(a), Some(b)) = (known.as_object(), incoming.as_object()) else {
-        return false;
-    };
-    if !a.keys().eq(b.keys()) {
-        return false;
-    }
-    for (key, value) in a {
-        if key == "limitations" {
-            let filtered = |v: &Value| -> Option<Vec<String>> {
-                v.as_array().map(|values| {
-                    values
-                        .iter()
-                        .filter_map(Value::as_str)
-                        .filter(|s| *s != "EMPTY_ARRAY_ITEM_TYPE_UNKNOWN")
-                        .map(str::to_owned)
-                        .collect()
-                })
-            };
-            if filtered(value) != filtered(&b[key]) {
-                return false;
-            }
-        } else if key == "request" || key == "response" {
-            let (Some(x), Some(y)) = (value.as_object(), b[key].as_object()) else {
-                return false;
-            };
-            if !x.keys().eq(y.keys()) {
-                return false;
-            }
-            for (field, v) in x {
-                if field != "body" {
-                    if Some(v) != y.get(field) {
-                        return false;
-                    }
-                    continue;
-                }
-                let (Some(xb), Some(yb)) = (v.as_object(), y[field].as_object()) else {
-                    return false;
-                };
-                if !xb.keys().eq(yb.keys()) {
-                    return false;
-                }
-                for (f, v) in xb {
-                    if f == "observed_schema" {
-                        if !nexofolio_contracts::observed_schema_covers(v, &yb[f]) {
-                            return false;
-                        }
-                    } else if Some(v) != yb.get(f) {
-                        return false;
-                    }
-                }
-            }
-        } else if Some(value) != b.get(key) {
-            return false;
-        }
-    }
-    true
+    crate::assess_definition(Some(known), incoming).is_duplicate()
 }
 
 /// The pinned decision belongs to admission, not to whichever policy is current at processing time.
@@ -336,6 +245,27 @@ mod tests {
         ))
         .unwrap();
         b["records"][0].clone()
+    }
+    #[test]
+    fn compact_read_view_marks_representation_and_preserves_original() {
+        let mut original = serde_json::to_value(extract_observed(&raw()).unwrap()).unwrap();
+        original["extractor_version"] = json!("observed-http-2");
+        original["response"]["body"]["observed_schema"] = json!({"type":"array","items":{"anyOf":[{"type":"object","properties":{"id":{"type":"number"},"name":{"type":"null"}}},{"type":"object","properties":{"id":{"type":"number"},"name":{"type":"string"}}}]}});
+        let view = compact_definition(original.clone());
+        assert_eq!(view["schema_view"], "http-structure-4");
+        assert_eq!(view["extractor_version"], original["extractor_version"]);
+        assert_eq!(
+            view["response"]["body"]["observed_schema"]["items"]["type"],
+            "object"
+        );
+        assert!(original.get("schema_view").is_none());
+        assert!(
+            original["response"]["body"]["observed_schema"]["items"]
+                .get("anyOf")
+                .is_some()
+        );
+        assert_eq!(compact_definition(view.clone()), view);
+        assert!(definition_covers(&original, &view));
     }
     #[test]
     fn empty_array_is_weaker_evidence_not_a_removed_element_schema() {

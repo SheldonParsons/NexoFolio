@@ -406,12 +406,9 @@ Token、密码、会话、后台任务和缓存不属于接口文档导出内容
 项目＋环境是去重范围，方法/路径标识具体接口，接口结构决定是否重复。本文早期提到的service_key作为外部分区已取消。
 后端当前v2上传契约删除service_key，v1仅为原始持久队列兼容保留字段，不再参与实际判重。原观测和回执保留，迁移只合并当前比较投影。
 
-## 手动目录候选路径
+## 现行重构路径
 
-管理 CLI → application::CatalogPreviewService → knowledge::CatalogPreviewStore / rebuild::DirectoryGenerator / rebuild::DirectoryReviewer。PostgresCatalogPreviews、ChatCatalogGenerator 在 infrastructure 实现端口。contracts/catalog-preview 的 Rust 类型与生成 Schema 固定跨模块输入输出；入站采集不依赖这条路径。
-
-本轮执行的是第一版全项目目录候选。原 CatalogBuilder/CatalogPublisher 等骨架接口仍是未来重构与发布的扩展边界，当前手动流程不调用发布器或自动触发器。ready 只表示候选结构检查通过，不代表业务分类正确或已经生效。
-
+新任务统一由维护HTTP入口创建固定快照，worker执行MaintenanceEngine。旧CLI生成、CatalogPreviewService、CatalogPreviewStore和DirectoryGenerator已经移除；历史候选仅保留读取及激活。详见 [现行重构说明](0003-current-reconstruction.md)。
 
 ### 持续证据与维护扩展
 
@@ -428,6 +425,6 @@ Token、密码、会话、后台任务和缓存不属于接口文档导出内容
 
 维护执行的分片上下文、执行阶段和原文回读分别组织在`application/maintenance_engine/`；字段引用、阅读覆盖、回读要求、候选动作和上下文提示分别在`rebuild/maintenance/`。证据纯判断在`evidence/relations.rs`，事实/关系/UI持久化在`infrastructure/evidence_processing/`。没有为拆文件新增crate或微服务。
 
-旧目录与统一维护保留不同的业务合同，共用有界模型HTTP传输。当前迁移策略是复用共同规则并冻结旧入口扩展，不在缺乏旧队列/调用方退役依据时删除兼容能力。
+历史目录与统一知识保留不同的激活语义，共用一个版本激活事务。旧目录生成器已退役，不再是另一条模型执行路径。
 
-早期未接入业务的采集/通用任务/旧重构草图已删除；以当前batch、DocumentReader、MaintenanceStore、DirectoryGenerator等实际使用的端口为模块边界。公共HTTP合同和数据库版本保持兼容。
+早期未接入业务的采集/通用任务/旧重构草图已删除；以当前batch、DocumentReader、MaintenanceStore、MaintenanceModel等实际使用的端口为模块边界。公共HTTP合同和数据库版本保持兼容。

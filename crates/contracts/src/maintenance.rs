@@ -75,7 +75,7 @@ pub struct SemanticAnnotation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct KnowledgeField {
     pub id: String,
-    pub reference: FieldRef,
+    pub reference: EvidenceFieldRef,
     pub schema: Value,
     pub schema_pointers: Vec<String>,
     pub ancestors: Vec<String>,
@@ -98,6 +98,9 @@ pub struct KnowledgeSnapshot {
     pub directory_metrics: Option<PreviewMetrics>,
     /// Last published maintenance result, informational only; never independent evidence.
     pub previous_maintenance: Option<serde_json::Value>,
+    /// None identifies a historical snapshot without the frozen-input contract.
+    #[serde(default)]
+    pub inputs: Option<SnapshotInputs>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -369,4 +372,43 @@ pub enum KnowledgeReferenceKind {
     Image,
     Summary,
     Annotation,
+    Observation,
+    Source,
+}
+
+/// Stored comparison is preserved; historical raw re-extraction is separate, read-only material.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotObservation {
+    pub record: ObservationAssessment,
+    pub reconstructed_definition: Option<Value>,
+}
+impl SnapshotObservation {
+    pub fn definition(&self) -> Option<&Value> {
+        self.reconstructed_definition
+            .as_ref()
+            .or(self.record.incoming_definition.as_ref())
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotSource {
+    pub event_id: Uuid,
+    pub project_id: ProjectId,
+    pub environment_id: EnvironmentId,
+    pub actor_id: UserId,
+    pub producer_id: Uuid,
+    pub record_id: Uuid,
+    pub ingestion_id: Option<Uuid>,
+    pub kind: String,
+    pub captured_at: String,
+    pub context: Option<CaptureContext>,
+    pub raw_hash: Option<String>,
+    pub evidence_status: String,
+    pub evidence_coverage: Option<Value>,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotInputs {
+    pub observations: Vec<SnapshotObservation>,
+    pub sources: Vec<SnapshotSource>,
+    /// Explicit, version-independent diagnostic counts, never a claim that a model has read anything.
+    pub gaps: std::collections::BTreeMap<String, u64>,
 }

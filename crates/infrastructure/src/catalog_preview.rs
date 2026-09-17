@@ -1,9 +1,8 @@
+//! Historical candidate reader only: no creation, model calls, leases or execution writes.
 use crate::Postgres;
 use async_trait::async_trait;
 use nexofolio_contracts::*;
-use nexofolio_knowledge::CatalogPreviewStore;
-use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
+use serde_json::Value;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -24,9 +23,6 @@ fn db_error(_: sqlx::Error) -> Error {
         component: "catalog_previews",
     }
 }
-fn invalid() -> Error {
-    Error::invalid("catalog snapshot or candidate exceeds preview limits")
-}
 fn decode(row: sqlx::postgres::PgRow) -> Result<PreviewTask> {
     serde_json::from_value(row.get::<Value, _>("value")).map_err(|_| Error::Unavailable {
         component: "catalog_preview_contract",
@@ -34,89 +30,8 @@ fn decode(row: sqlx::postgres::PgRow) -> Result<PreviewTask> {
 }
 const READ: &str = "SELECT jsonb_build_object('task_id',id,'candidate_id',candidate_id,'contract_version',contract_version,'status',status,'snapshot_at',snapshot_at,'snapshot_sha256',snapshot_sha256,'snapshot',snapshot,'generation',generation,'generator',generator,'error_code',error_code,'candidate',candidate,'review',review) AS value FROM catalog_preview_tasks WHERE id=$1";
 const READ_PROJECT: &str = "SELECT jsonb_build_object('task_id',id,'candidate_id',candidate_id,'contract_version',contract_version,'status',status,'snapshot_at',snapshot_at,'snapshot_sha256',snapshot_sha256,'snapshot',snapshot,'generation',generation,'generator',generator,'error_code',error_code,'candidate',candidate,'review',review) AS value FROM catalog_preview_tasks WHERE id=$1 AND project_id=$2";
-#[async_trait]
-impl CatalogPreviewStore for PostgresCatalogPreviews {
-    async fn create(&self, project: ProjectId) -> Result<PreviewTask> {
-        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            .execute(&mut *tx)
-            .await
-            .map_err(db_error)?;
-        let name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id=$1")
-            .bind(uuid(project))
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(db_error)?
-            .ok_or(Error::NotFound)?;
-        let size=sqlx::query(r#"SELECT count(DISTINCT d.id) AS interfaces,coalesce(sum(octet_length(r.definition::text)),0)::bigint AS bytes
-            FROM interface_documents d
-            JOIN interface_environment_current c ON c.interface_id=d.id
-            JOIN interface_observed_revisions r ON r.id=c.current_revision_id
-            WHERE d.project_id=$1"#)
-            .bind(uuid(project)).fetch_one(&mut *tx).await.map_err(db_error)?;
-        if size.get::<i64, _>("interfaces") == 0 {
-            return Err(Error::invalid("project has no observed interfaces"));
-        }
-        if size.get::<i64, _>("interfaces") > MAX_PREVIEW_INTERFACES as i64
-            || size.get::<i64, _>("bytes") > MAX_PREVIEW_BYTES as i64
-        {
-            return Err(invalid());
-        }
-        let rows=sqlx::query(r#"SELECT d.id,d.method,d.path,jsonb_agg(jsonb_build_object('environment_id',e.id,'environment_name',e.name,'revision_id',r.id,'definition',r.definition)
-            ORDER BY e.id) AS environments
-            FROM interface_documents d
-            JOIN interface_environment_current c ON c.interface_id=d.id
-            JOIN interface_observed_revisions r ON r.id=c.current_revision_id
-            JOIN environments e ON e.id=c.environment_id
-            WHERE d.project_id=$1
-            GROUP BY d.id,d.method,d.path
-            ORDER BY d.method,d.path,d.id"#)
-            .bind(uuid(project)).fetch_all(&mut *tx).await.map_err(db_error)?;
-        let values:Vec<_>=rows.iter().map(|r|json!({"interface_id":r.get::<Uuid,_>("id"),"method":r.get::<String,_>("method"),"path":r.get::<String,_>("path"),"environments":r.get::<Value,_>("environments")})).collect();
-        let mut snapshot: CatalogSnapshot = serde_json::from_value(
-            json!({"project_id":project,"project_name":name,"interfaces":values}),
-        )
-        .map_err(|_| invalid())?;
-        let policy: Value = sqlx::query_scalar("SELECT path_policy FROM projects WHERE id=$1")
-            .bind(uuid(project))
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(db_error)?;
-        let policy: PathPolicy =
-            serde_json::from_value(policy).map_err(|_| Error::Unavailable {
-                component: "path_policy",
-            })?;
-        if !policy.valid() {
-            return Err(Error::Unavailable {
-                component: "path_policy",
-            });
-        }
-        for interface in &mut snapshot.interfaces {
-            interface.recognized_path = Some(identify_path(&interface.path, &policy));
-        }
-        let encoded = serde_json::to_vec(&snapshot).expect("serializes");
-        if encoded.len() > MAX_PREVIEW_BYTES {
-            return Err(invalid());
-        }
-        let hash = Sha256::digest(&encoded)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>();
-        let task = JobId::new();
-        let candidate = CatalogVersion::new();
-        sqlx::query("INSERT INTO catalog_preview_tasks(id,project_id,candidate_id,contract_version,snapshot_at,snapshot,snapshot_sha256) VALUES($1,$2,$3,$4,transaction_timestamp(),$5,$6)")
-            .bind(uuid(task)).bind(uuid(project)).bind(uuid(candidate)).bind(CATALOG_PREVIEW_VERSION).bind(serde_json::to_value(snapshot).expect("serializes")).bind(hash).execute(&mut *tx).await.map_err(db_error)?;
-        let result = decode(
-            sqlx::query(READ)
-                .bind(uuid(task))
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(db_error)?,
-        )?;
-        tx.commit().await.map_err(db_error)?;
-        Ok(result)
-    }
-    async fn read(&self, task: JobId) -> Result<PreviewTask> {
+impl PostgresCatalogPreviews {
+    pub async fn read(&self, task: JobId) -> Result<PreviewTask> {
         decode(
             sqlx::query(READ)
                 .bind(uuid(task))
@@ -126,110 +41,7 @@ impl CatalogPreviewStore for PostgresCatalogPreviews {
                 .ok_or(Error::NotFound)?,
         )
     }
-    async fn claim(&self, task: JobId, generator: &GeneratorInfo) -> Result<PreviewTask> {
-        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        let row=sqlx::query(r#"UPDATE catalog_preview_tasks
-            SET status='running',generation=generation+1,lease_until=clock_timestamp()+interval '5 minutes',generator=$2,error_code=NULL,finished_at=NULL
-            WHERE id=$1
-            AND contract_version=$3
-            AND (status IN ('pending','failed')
-            OR (status='running'
-            AND lease_until<=clock_timestamp()))
-            RETURNING id"#)
-            .bind(uuid(task)).bind(serde_json::to_value(generator).expect("serializes")).bind(CATALOG_PREVIEW_VERSION).fetch_optional(&mut *tx).await.map_err(db_error)?;
-        if row.is_none() {
-            return Err(Error::Conflict);
-        }
-        let result = decode(
-            sqlx::query(READ)
-                .bind(uuid(task))
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(db_error)?,
-        )?;
-        tx.commit().await.map_err(db_error)?;
-        Ok(result)
-    }
-    async fn complete(
-        &self,
-        task: &PreviewTask,
-        candidate: &DirectoryCandidate,
-        review: &PreviewReview,
-    ) -> Result<()> {
-        let encoded = serde_json::to_value(candidate).expect("serializes");
-        if serde_json::to_vec(&encoded).expect("serializes").len() > MAX_CANDIDATE_BYTES {
-            return Err(invalid());
-        }
-        let mut tx = self.database.pool.begin().await.map_err(db_error)?;
-        let changed = sqlx::query(
-            r#"UPDATE catalog_preview_tasks
-            SET status=$3,candidate=$4,review=$5,lease_until=NULL,finished_at=clock_timestamp()
-            WHERE id=$1
-            AND generation=$2
-            AND status='running'
-            AND lease_until>clock_timestamp()
-            AND candidate_id=$6
-            RETURNING snapshot"#,
-        )
-        .bind(uuid(task.task_id))
-        .bind(task.generation)
-        .bind(if review.structurally_valid {
-            "ready"
-        } else {
-            "rejected"
-        })
-        .bind(encoded)
-        .bind(serde_json::to_value(review).expect("serializes"))
-        .bind(uuid(task.candidate_id))
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db_error)?
-        .ok_or(Error::Conflict)?;
-        let canonical: CatalogSnapshot =
-            serde_json::from_value(changed.get("snapshot")).map_err(|_| Error::Conflict)?;
-        // Invalid results are retained for inspection, never materialized as a usable directory.
-        if review.structurally_valid {
-            for node in &candidate.nodes {
-                sqlx::query("INSERT INTO catalog_preview_nodes(candidate_id,id,parent_id,name,description) VALUES($1,$2,$3,$4,$5)")
-                    .bind(uuid(task.candidate_id)).bind(uuid(node.id)).bind(node.parent.map(uuid)).bind(&node.name).bind(&node.description).execute(&mut *tx).await.map_err(db_error)?;
-            }
-            for item in &candidate.assignments {
-                if !canonical
-                    .interfaces
-                    .iter()
-                    .any(|i| i.interface_id == item.interface_id)
-                {
-                    return Err(Error::Conflict);
-                }
-                sqlx::query("INSERT INTO catalog_preview_assignments(candidate_id,interface_id,directory_id,reason) VALUES($1,$2,$3,$4)")
-                    .bind(uuid(task.candidate_id)).bind(uuid(item.interface_id)).bind(item.directory_id.map(uuid)).bind(&item.reason).execute(&mut *tx).await.map_err(db_error)?;
-            }
-        }
-        tx.commit().await.map_err(db_error)?;
-        Ok(())
-    }
-    async fn fail(&self, task: &PreviewTask, code: &'static str) -> Result<()> {
-        let result = sqlx::query(
-            r#"UPDATE catalog_preview_tasks
-            SET status='failed',error_code=$3,lease_until=NULL,finished_at=clock_timestamp()
-            WHERE id=$1
-            AND generation=$2
-            AND status='running'
-            AND lease_until>clock_timestamp()"#,
-        )
-        .bind(uuid(task.task_id))
-        .bind(task.generation)
-        .bind(code)
-        .execute(&self.database.pool)
-        .await
-        .map_err(db_error)?;
-        if result.rows_affected() != 1 {
-            return Err(Error::Conflict);
-        }
-        Ok(())
-    }
 }
-
 impl PostgresCatalogPreviews {
     async fn authorized_read(
         &self,
@@ -241,35 +53,7 @@ impl PostgresCatalogPreviews {
             .execute(&mut *tx)
             .await
             .map_err(db_error)?;
-        // Same user-row lock used by permission snapshot replacement: grants cannot change
-        // between authorization and returning a candidate belonging to this project.
-        let row = sqlx::query(
-            r#"SELECT u.enabled,u.grants_synced,EXISTS(SELECT 1
-            FROM user_project_access a
-            WHERE a.user_id=u.id
-            AND a.project_id=$2) AS allowed
-            FROM users u
-            JOIN projects p ON p.instance=u.instance
-            WHERE u.id=$1
-            AND p.id=$2 FOR SHARE OF u"#,
-        )
-        .bind(uuid(user))
-        .bind(uuid(project))
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(db_error)?
-        .ok_or(Error::NotFound)?;
-        if !row.get::<bool, _>("enabled") {
-            return Err(Error::Unauthenticated);
-        }
-        if !row.get::<bool, _>("grants_synced") {
-            return Err(Error::Unavailable {
-                component: "project_access",
-            });
-        }
-        if !row.get::<bool, _>("allowed") {
-            return Err(Error::Forbidden);
-        }
+        crate::project_access::authorize_project(&mut tx, user, project).await?;
         Ok(tx)
     }
 }

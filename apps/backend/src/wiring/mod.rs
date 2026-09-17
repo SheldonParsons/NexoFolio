@@ -25,7 +25,6 @@ mod access;
 mod services;
 pub use access::build_access;
 
-mod catalog;
-pub use catalog::build_maintenance;
-pub use catalog::*;
+mod maintenance;
 pub use lifecycle::run_maintenance_worker;
+pub use maintenance::build_maintenance;

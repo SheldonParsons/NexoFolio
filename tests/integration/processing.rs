@@ -8,7 +8,9 @@ use nexofolio_backend::{
 };
 use nexofolio_contracts::{InterfaceId, Secret};
 use nexofolio_infrastructure::{Postgres, PostgresAccess, PostgresDocuments, Unconfigured};
-use nexofolio_knowledge::{DocumentQuery, DocumentReader, ObservationProcessor, extract_observed};
+use nexofolio_knowledge::{
+    AssessmentReader, DocumentQuery, DocumentReader, ObservationProcessor, extract_observed,
+};
 use serde_json::{Value, json};
 use sqlx::Row;
 use std::{sync::Arc, time::Duration};
@@ -645,6 +647,95 @@ async fn documents_are_idempotent_environment_scoped_fenced_and_queryable() {
             if outcome == "unchanged" {
                 assert_eq!(detail["pending_difference_count"], 0);
             }
+            let material = processor
+                .assessment(session.user.id, project, id)
+                .await
+                .unwrap();
+            assert_eq!(
+                material.assessment.as_ref().unwrap().initial,
+                outcome == "created"
+            );
+            assert_eq!(material.base_revision_id.is_none(), outcome == "created");
+            if path == "/array-empty-first" && outcome != "created" {
+                assert_eq!(
+                    material.assessment.as_ref().unwrap().categories,
+                    [nexofolio_contracts::AssessmentKind::Enrichment]
+                );
+                assert!(material.incoming_definition.is_some());
+            }
+            let endpoint = format!("{base}/v1/projects/{project}/observations/{id}/assessment");
+            assert_eq!(client.get(&endpoint).send().await.unwrap().status(), 401);
+            let response = client
+                .get(&endpoint)
+                .bearer_auth(session.token.expose())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), 200);
+            let value: Value = response.json().await.unwrap();
+            let schema: Value = serde_json::from_str(include_str!(
+                "../../contracts/documents/assessment.schema.json"
+            ))
+            .unwrap();
+            assert!(
+                jsonschema::options()
+                    .should_validate_formats(true)
+                    .build(&schema)
+                    .unwrap()
+                    .is_valid(&value)
+            );
+            assert_eq!(
+                client
+                    .get(format!(
+                        "{base}/v1/projects/{denied}/observations/{id}/assessment"
+                    ))
+                    .bearer_auth(session.token.expose())
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                403
+            );
+            let page = processor
+                .assessments(
+                    session.user.id,
+                    project,
+                    processed.interface_id,
+                    DocumentQuery {
+                        environment_id: dev.id,
+                        page: 1,
+                        limit: 20,
+                        query: None,
+                    },
+                )
+                .await
+                .unwrap();
+            assert!(page.items.iter().any(|r| r.ingestion_id == id));
+            let page_response=client.get(format!("{base}/v1/projects/{project}/interfaces/{}/assessments?environment_id={}&page=1&limit=20",processed.interface_id,dev.id)).bearer_auth(session.token.expose()).send().await.unwrap();
+            assert_eq!(page_response.status(), 200);
+            let page_value: Value = page_response.json().await.unwrap();
+            let page_schema: Value = serde_json::from_str(include_str!(
+                "../../contracts/documents/assessment-page.schema.json"
+            ))
+            .unwrap();
+            assert!(
+                jsonschema::options()
+                    .should_validate_formats(true)
+                    .build(&page_schema)
+                    .unwrap()
+                    .is_valid(&page_value)
+            );
+
+            // The read API distinguishes historical/unassessed from a newly computed duplicate.
+            sqlx::query("UPDATE interface_observations SET assessment=NULL,extractor_version=NULL WHERE ingestion_id=$1").bind(id).execute(&sql).await.unwrap();
+            assert!(
+                processor
+                    .assessment(session.user.id, project, id)
+                    .await
+                    .unwrap()
+                    .assessment
+                    .is_none()
+            );
         }
     }
     stop.cancel();
