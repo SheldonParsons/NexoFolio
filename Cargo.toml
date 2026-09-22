@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/*"]
+members = ["apps/backend", "crates/common", "modules/access/contracts", "modules/access/core", "modules/access/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -27,15 +27,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
-nexofolio-contracts = { path = "crates/contracts" }
-nexofolio-evidence = { path = "crates/evidence" }
-nexofolio-access = { path = "crates/access" }
-nexofolio-knowledge = { path = "crates/knowledge" }
-nexofolio-intake = { path = "crates/intake" }
-nexofolio-triggers = { path = "crates/triggers" }
-nexofolio-rebuild = { path = "crates/rebuild" }
-nexofolio-application = { path = "crates/application" }
-nexofolio-infrastructure = { path = "crates/infrastructure" }
+nexofolio-common = { path = "crates/common" }
+nexofolio-access-contracts = { path = "modules/access/contracts" }
+nexofolio-access = { path = "modules/access/core" }
+nexofolio-access-adapter = { path = "modules/access/adapter" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

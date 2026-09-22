@@ -1,11 +1,9 @@
 mod config;
 mod lifecycle;
 pub use config::Config;
-pub use lifecycle::{
-    install_shutdown_handler, run_evidence_worker, run_processing_worker, run_worker,
-};
+pub use lifecycle::{install_shutdown_handler, run_worker};
 
-use nexofolio_contracts::{Error, Result};
+use nexofolio_common::{Error, Result};
 use tracing_subscriber::EnvFilter;
 
 pub fn init_logging(filter: &str) -> Result<()> {
@@ -22,9 +20,4 @@ pub fn init_logging(filter: &str) -> Result<()> {
 }
 
 mod access;
-mod services;
 pub use access::build_access;
-
-mod maintenance;
-pub use lifecycle::run_maintenance_worker;
-pub use maintenance::build_maintenance;

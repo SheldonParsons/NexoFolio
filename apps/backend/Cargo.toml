@@ -37,34 +37,11 @@ path = "../../tests/integration/lifecycle.rs"
 name = "access_flow"
 path = "../../tests/integration/access_flow.rs"
 
-[[test]]
-name = "ingestion"
-path = "../../tests/integration/ingestion.rs"
-
-[[test]]
-name = "processing"
-path = "../../tests/integration/processing.rs"
-
-[[test]]
-name = "catalog_preview"
-path = "../../tests/integration/catalog_preview.rs"
-
-[[test]]
-name = "replay"
-path = "../../tests/integration/replay.rs"
-
-[[test]]
-name = "capture_evidence"
-path = "../../tests/integration/capture_evidence.rs"
-
 [dependencies]
-nexofolio-contracts.workspace = true
+nexofolio-common.workspace = true
+nexofolio-access-contracts.workspace = true
 nexofolio-access.workspace = true
-nexofolio-intake.workspace = true
-nexofolio-knowledge.workspace = true
-jsonschema = { version = "0.33", default-features = false }
-nexofolio-application.workspace = true
-nexofolio-infrastructure.workspace = true
+nexofolio-access-adapter.workspace = true
 axum.workspace = true
 clap.workspace = true
 rmcp.workspace = true
@@ -82,8 +59,6 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-nexofolio-evidence.workspace = true
-nexofolio-rebuild.workspace = true
 sqlx.workspace = true
 argon2 = "0.5"
 async-trait.workspace = true

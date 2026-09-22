@@ -6,9 +6,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use nexofolio_access::{LoginCredentials, PlatformAccess, SessionPrincipal};
-use nexofolio_application::LoginService;
-use nexofolio_contracts::{Error, ProjectId, Secret};
+use nexofolio_access::LoginService;
+use nexofolio_access_contracts::{LoginCredentials, PlatformAccess, SessionPrincipal};
+use nexofolio_common::{Error, ProjectId, Secret};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -75,18 +75,6 @@ impl IntoResponse for AccessError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "PROJECT_ACCESS_UNAVAILABLE",
                 "暂时无法确认项目权限",
-            ),
-            Error::Unavailable {
-                component: "capture_backpressure" | "asset_backpressure",
-            } => (
-                StatusCode::TOO_MANY_REQUESTS,
-                "CAPTURE_BUSY",
-                "采集队列或存储繁忙，请保留原记录稍后重试",
-            ),
-            Error::InvalidInput { ref message } if message == "SNAPSHOT_TOO_LARGE" => (
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "SNAPSHOT_TOO_LARGE",
-                "本轮资料超过快照容量，尚未创建候选；请调整容量配置或资料保留策略",
             ),
             Error::InvalidInput { .. } => (
                 StatusCode::BAD_REQUEST,
@@ -216,14 +204,14 @@ async fn projects(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
     Query(q): Query<Pagination>,
-) -> Result<Json<nexofolio_access::ProjectPage>, AccessError> {
+) -> Result<Json<nexofolio_access_contracts::ProjectPage>, AccessError> {
     Ok(Json(s.store.list_projects(&p, q.page, q.limit).await?))
 }
 async fn project(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
     Path(id): Path<ProjectId>,
-) -> Result<Json<nexofolio_access::ProjectCard>, AccessError> {
+) -> Result<Json<nexofolio_access_contracts::ProjectCard>, AccessError> {
     Ok(Json(s.store.require_project(&p, id).await?))
 }
 
@@ -237,7 +225,7 @@ async fn environments(
     Extension(p): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
     Query(q): Query<Pagination>,
-) -> Result<Json<nexofolio_access::EnvironmentPage>, AccessError> {
+) -> Result<Json<nexofolio_access_contracts::EnvironmentPage>, AccessError> {
     Ok(Json(
         s.store
             .list_environments(&p, project, q.page, q.limit)
@@ -249,7 +237,7 @@ async fn create_environment(
     Extension(p): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
     Json(body): Json<EnvironmentName>,
-) -> Result<Json<nexofolio_contracts::Environment>, AccessError> {
+) -> Result<Json<nexofolio_access_contracts::Environment>, AccessError> {
     Ok(Json(
         s.store.create_environment(&p, project, &body.name).await?,
     ))
@@ -257,9 +245,9 @@ async fn create_environment(
 async fn rename_environment(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
-    Path((project, id)): Path<(ProjectId, nexofolio_contracts::EnvironmentId)>,
+    Path((project, id)): Path<(ProjectId, nexofolio_common::EnvironmentId)>,
     Json(body): Json<EnvironmentName>,
-) -> Result<Json<nexofolio_contracts::Environment>, AccessError> {
+) -> Result<Json<nexofolio_access_contracts::Environment>, AccessError> {
     Ok(Json(
         s.store
             .rename_environment(&p, project, id, &body.name)

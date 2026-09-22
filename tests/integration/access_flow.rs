@@ -9,13 +9,15 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use nexofolio_access::{ExternalProject, PlatformAccess, ProjectSnapshot, SessionPrincipal};
+use nexofolio_access_adapter::{Postgres, PostgresAccess, Unconfigured};
+use nexofolio_access_contracts::{
+    ExternalProject, PlatformAccess, ProjectSnapshot, SessionPrincipal,
+};
 use nexofolio_backend::{
     http,
     wiring::{Config, build_access},
 };
-use nexofolio_contracts::{ProjectId, Secret, UserId};
-use nexofolio_infrastructure::{Postgres, PostgresAccess, Unconfigured};
+use nexofolio_common::{ProjectId, Secret, UserId};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -401,6 +403,26 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
             .status(),
         401
     );
+    // Removal is real even with configured login and a valid session.
+    for path in [
+        "/v1/ingestion/batches",
+        "/v1/ingestion/capabilities",
+        "/v1/projects/unused/evidence",
+        "/v1/projects/unused/maintenance-runs",
+    ] {
+        for method in [reqwest::Method::GET, reqwest::Method::POST] {
+            assert_eq!(
+                client
+                    .request(method, format!("{url}{path}"))
+                    .bearer_auth(renewed["token"].as_str().unwrap())
+                    .send()
+                    .await
+                    .unwrap()
+                    .status(),
+                404
+            );
+        }
+    }
     stop.cancel();
     handle.await.unwrap().unwrap();
     database.close().await;

@@ -1,11 +1,5 @@
 pub mod access;
-pub mod capture;
-pub mod catalog_preview;
-pub mod documents;
 pub mod downloads;
-pub mod ingestion;
-pub mod maintenance;
-pub mod official_catalog;
 use crate::{
     mcp::{FoundationMcp, require_token},
     wiring::Config,
@@ -18,8 +12,8 @@ use axum::{
     response::Response,
     routing::get,
 };
-use nexofolio_access::McpTokenVerifier;
-use nexofolio_application::DatabaseProbe;
+use nexofolio_access_contracts::McpTokenVerifier;
+use nexofolio_common::DatabaseProbe;
 use rmcp::transport::streamable_http_server::{
     StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
 };
@@ -124,19 +118,4 @@ pub async fn serve(
                 .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "HTTP shutdown deadline exceeded"))?
         }
     }
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Page {
-    #[serde(default = "first_page")]
-    pub page: u32,
-    #[serde(default = "page_size")]
-    pub limit: u32,
-}
-fn first_page() -> u32 {
-    1
-}
-fn page_size() -> u32 {
-    20
 }

@@ -1,7 +1,7 @@
 use crate::{http::access::AccessHttp, wiring::Config};
-use nexofolio_application::LoginService;
-use nexofolio_contracts::Result;
-use nexofolio_infrastructure::{ConfiguredEmergencyPassword, Postgres, PostgresAccess, Zentao};
+use nexofolio_access::LoginService;
+use nexofolio_access_adapter::{ConfiguredEmergencyPassword, Postgres, PostgresAccess, Zentao};
+use nexofolio_common::Result;
 use std::sync::Arc;
 
 pub fn build_access(config: &Config, database: Postgres) -> Result<Option<axum::Router>> {
@@ -20,5 +20,5 @@ pub fn build_access(config: &Config, database: Postgres) -> Result<Option<axum::
         store.clone(),
     ));
     let access = AccessHttp::new(login, store.clone());
-    super::services::build_services(config, database, store, access).map(Some)
+    Ok(Some(crate::http::access::routes(access)))
 }

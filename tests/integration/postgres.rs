@@ -1,6 +1,6 @@
-use nexofolio_application::DatabaseProbe;
-use nexofolio_contracts::{Error, Secret};
-use nexofolio_infrastructure::Postgres;
+use nexofolio_access_adapter::Postgres;
+use nexofolio_common::DatabaseProbe;
+use nexofolio_common::{Error, Secret};
 use std::time::Duration;
 
 #[tokio::test]
@@ -36,5 +36,28 @@ async fn real_postgres_connects_and_migrations_are_repeatable() {
     database.check().await.unwrap();
     database.migrate().await.unwrap();
     database.migrate().await.unwrap();
+    let pool = sqlx::PgPool::connect(&std::env::var("TEST_DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let tables: Vec<String> = sqlx::query_scalar(
+        "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        tables,
+        vec![
+            "_sqlx_migrations",
+            "environment_names",
+            "environments",
+            "internal_sessions",
+            "login_audit",
+            "projects",
+            "user_project_access",
+            "users"
+        ]
+    );
+    pool.close().await;
     database.close().await;
 }

@@ -440,15 +440,15 @@ async fn route_is_present_without_access_or_database_availability() {
     .unwrap();
     struct Offline;
     #[async_trait::async_trait]
-    impl nexofolio_application::DatabaseProbe for Offline {
-        async fn check(&self) -> nexofolio_contracts::Result<()> {
+    impl nexofolio_common::DatabaseProbe for Offline {
+        async fn check(&self) -> nexofolio_common::Result<()> {
             panic!("downloads must not consult the database")
         }
     }
     let app = super::super::router(
         &config,
         Arc::new(Offline),
-        Arc::new(nexofolio_infrastructure::Unconfigured),
+        Arc::new(nexofolio_access_adapter::Unconfigured),
         tokio_util::sync::CancellationToken::new(),
     );
     // Invalid query validates route mounting without reaching external services.

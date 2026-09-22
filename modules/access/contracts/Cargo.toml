@@ -1,0 +1,18 @@
+[package]
+name = "nexofolio-access-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+nexofolio-common.workspace = true
+schemars.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

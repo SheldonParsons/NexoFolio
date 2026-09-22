@@ -31,20 +31,11 @@ services:
       NEXOFOLIO_FETCHER_RELEASE_DIR: ${NEXOFOLIO_FETCHER_RELEASE_DIR:-}
       NEXOFOLIO_DESKTOP_INTERNAL_RELEASE_DIR: ${NEXOFOLIO_DESKTOP_INTERNAL_RELEASE_DIR:-}
       NEXOFOLIO_DESKTOP_PUBLIC_RELEASE_DIR: ${NEXOFOLIO_DESKTOP_PUBLIC_RELEASE_DIR:-}
-      NEXOFOLIO_CAPTURE_ENABLED: ${NEXOFOLIO_CAPTURE_ENABLED:-false}
-      NEXOFOLIO_BLOB_ROOT: /var/lib/nexofolio/blobs
-      NEXOFOLIO_MAINTENANCE_CONTEXT_TOKENS: ${NEXOFOLIO_MAINTENANCE_CONTEXT_TOKENS:-65536}
-      NEXOFOLIO_MAINTENANCE_MAX_CALLS: ${NEXOFOLIO_MAINTENANCE_MAX_CALLS:-256}
-      NEXOFOLIO_MAINTENANCE_MODEL_TIMEOUT_MS: ${NEXOFOLIO_MAINTENANCE_MODEL_TIMEOUT_MS:-240000}
-      NEXOFOLIO_MAINTENANCE_SNAPSHOT_BYTES: ${NEXOFOLIO_MAINTENANCE_SNAPSHOT_BYTES:-67108864}
-      NEXOFOLIO_MAINTENANCE_VISION: ${NEXOFOLIO_MAINTENANCE_VISION:-false}
       NEXOFOLIO_ZENTAO_BASE_URL: ${NEXOFOLIO_ZENTAO_BASE_URL:-}
       NEXOFOLIO_SESSION_KEY: ${NEXOFOLIO_SESSION_KEY:-}
       NEXOFOLIO_EMERGENCY_PASSWORD_HASH: ${NEXOFOLIO_EMERGENCY_PASSWORD_HASH:-}
       NEXOFOLIO_MCP_ALLOWED_HOSTS: ${NEXOFOLIO_MCP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
       NEXOFOLIO_MCP_ALLOWED_ORIGINS: ${NEXOFOLIO_MCP_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
-    volumes:
-      - capture_data:/var/lib/nexofolio/blobs
     ports:
       - "127.0.0.1:${NEXOFOLIO_HTTP_PORT:-18080}:8080"
     depends_on:
@@ -61,30 +52,10 @@ services:
     image: ${BACKEND_IMAGE:-nexofolio-backend:foundation}
     command: ["nexofolio-worker"]
     environment: *backend_env
-    volumes:
-      - capture_data:/var/lib/nexofolio/blobs
     depends_on:
       db:
         condition: service_healthy
     stop_grace_period: 10s
-
-  storage-init:
-    image: ${BACKEND_IMAGE:-nexofolio-backend:foundation}
-    profiles: ["tools"]
-    user: "0:0"
-    environment:
-      NEXO_VOLUME_UID: ${NEXOFOLIO_CATALOG_MODEL_UID:-10001}
-      NEXO_VOLUME_GID: ${NEXOFOLIO_CATALOG_MODEL_GID:-10001}
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        touch /var/lib/nexofolio/blobs/.initialized
-        chown -R "$$NEXO_VOLUME_UID:$$NEXO_VOLUME_GID" /var/lib/nexofolio/blobs
-        chmod 700 /var/lib/nexofolio/blobs
-    volumes:
-      - capture_data:/var/lib/nexofolio/blobs
 
   migrate:
     image: ${BACKEND_IMAGE:-nexofolio-backend:foundation}
@@ -97,4 +68,3 @@ services:
 
 volumes:
   postgres_data:
-  capture_data:

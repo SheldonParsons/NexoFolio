@@ -1,8 +1,8 @@
+use nexofolio_access_adapter::{Postgres, Unconfigured};
 use nexofolio_backend::{
     http,
     wiring::{Config, init_logging, install_shutdown_handler},
 };
-use nexofolio_infrastructure::{Postgres, Unconfigured};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;

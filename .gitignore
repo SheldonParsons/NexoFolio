@@ -43,9 +43,3 @@ __pycache__/
 *.log
 .DS_Store
 Thumbs.db
-
-# Rebuildable architecture viewer and visual-check evidence; keep diagram source/scripts.
-/docs/architecture/diagrams/**/backend.html
-/docs/architecture/diagrams/**/backend.visual-check.*
-/docs/architecture/diagrams/**/delivery.receipt.json
-/docs/architecture/diagrams/**/validation.receipt.json

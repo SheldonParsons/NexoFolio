@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use nexofolio_access::{McpPrincipal, McpTokenVerifier, ProjectAction, ProjectGrant};
-use nexofolio_application::DatabaseProbe;
+use nexofolio_access_adapter::Unconfigured;
+use nexofolio_access_contracts::{McpPrincipal, McpTokenVerifier, ProjectAction, ProjectGrant};
 use nexofolio_backend::{
     http,
     wiring::{Config, run_worker},
 };
-use nexofolio_contracts::{Error, ProjectId, Result, Secret, TokenId, UserId};
-use nexofolio_infrastructure::Unconfigured;
+use nexofolio_common::DatabaseProbe;
+use nexofolio_common::{Error, ProjectId, Result, Secret, TokenId, UserId};
 use serde_json::{Value, json};
 use std::{
     sync::{
@@ -128,7 +128,13 @@ async fn health_changes_independently_of_liveness_and_default_mcp_is_closed() {
         assert!(response.headers().contains_key("www-authenticate"));
         assert!(!response.text().await.unwrap().contains("any-value"));
     }
-    for path in ["/v1/auth/login", "/v1/projects", "/v1/captures/batch"] {
+    for path in [
+        "/v1/auth/login",
+        "/v1/projects",
+        "/v1/ingestion/batches",
+        "/v1/captures/batch",
+        "/v1/projects/example/maintenance-runs",
+    ] {
         assert_eq!(
             client
                 .post(format!("{url}{path}"))

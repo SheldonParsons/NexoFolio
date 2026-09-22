@@ -1,23 +1,8 @@
-use nexofolio_contracts::{Error, Result, Secret};
+use nexofolio_common::{Error, Result, Secret};
 use std::{net::SocketAddr, time::Duration};
 
 #[derive(Debug)]
-pub struct CatalogModelConfig {
-    pub base_url: String,
-    pub model: String,
-    pub api_key_file: std::path::PathBuf,
-}
-
-#[derive(Debug)]
 pub struct Config {
-    pub maintenance_vision: bool,
-    pub maintenance_context_tokens: usize,
-    pub maintenance_snapshot_bytes: usize,
-    pub maintenance_model_timeout: Duration,
-    pub maintenance_max_calls: u32,
-    pub capture_enabled: bool,
-    pub blob_root: std::path::PathBuf,
-    pub catalog_model: Option<CatalogModelConfig>,
     pub bind_addr: SocketAddr,
     pub database_url: Secret,
     pub database_max_connections: u32,
@@ -68,54 +53,7 @@ impl Config {
             }
             Ok(items)
         };
-        let model_keys = [
-            "NEXOFOLIO_CATALOG_MODEL_BASE_URL",
-            "NEXOFOLIO_CATALOG_MODEL",
-            "NEXOFOLIO_CATALOG_MODEL_API_KEY_FILE",
-        ];
-        let model_values: Vec<_> = model_keys
-            .iter()
-            .map(|k| lookup(k).filter(|s| !s.trim().is_empty()))
-            .collect();
-        let catalog_model = if model_values.iter().all(Option::is_none) {
-            None
-        } else {
-            if model_values.iter().any(Option::is_none) {
-                return Err(invalid(
-                    "catalog model base URL, model, and API key file (configure all three)",
-                ));
-            }
-            Some(CatalogModelConfig {
-                base_url: model_values[0].clone().unwrap(),
-                model: model_values[1].clone().unwrap(),
-                api_key_file: model_values[2].clone().unwrap().into(),
-            })
-        };
         let config = Self {
-            maintenance_vision: lookup("NEXOFOLIO_MAINTENANCE_VISION")
-                .is_some_and(|v| v == "true" || v == "1"),
-            maintenance_context_tokens: number(
-                "NEXOFOLIO_MAINTENANCE_CONTEXT_TOKENS",
-                65536,
-                1048576,
-            )? as usize,
-            maintenance_model_timeout: Duration::from_millis(number(
-                "NEXOFOLIO_MAINTENANCE_MODEL_TIMEOUT_MS",
-                240000,
-                240000,
-            )?),
-            maintenance_snapshot_bytes: number(
-                "NEXOFOLIO_MAINTENANCE_SNAPSHOT_BYTES",
-                64 * 1024 * 1024,
-                1024 * 1024 * 1024,
-            )? as usize,
-            maintenance_max_calls: number("NEXOFOLIO_MAINTENANCE_MAX_CALLS", 256, 4096)? as u32,
-            capture_enabled: lookup("NEXOFOLIO_CAPTURE_ENABLED")
-                .is_some_and(|v| v == "true" || v == "1"),
-            blob_root: lookup("NEXOFOLIO_BLOB_ROOT")
-                .unwrap_or_else(|| "./data/blobs".into())
-                .into(),
-            catalog_model,
             bind_addr,
             database_url: Secret::new(database_url),
             database_max_connections: number("NEXOFOLIO_DB_MAX_CONNECTIONS", 5, 100)? as u32,

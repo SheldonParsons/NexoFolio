@@ -49,14 +49,11 @@ def main():
         env_file.write_text(
             f"POSTGRES_PASSWORD={password}\n"
             f"DATABASE_URL=postgres://nexofolio:{password}@db:5432/nexofolio\n"
-            "NEXOFOLIO_HTTP_PORT=0\nNEXOFOLIO_DB_PORT=0\nNEXOFOLIO_CAPTURE_ENABLED=true\nNEXOFOLIO_CATALOG_MODEL_UID=501\nNEXOFOLIO_CATALOG_MODEL_GID=20\n"
+            "NEXOFOLIO_HTTP_PORT=0\nNEXOFOLIO_DB_PORT=0\n"
         )
         env_file.chmod(0o600)
         compose = ["docker", "compose", "--env-file", str(env_file), "-p", project,
                    "-f", str(ROOT / "deploy/compose.yaml")]
-        uid_override=Path(directory)/"uid.yaml"
-        uid_override.write_text('services:\n  api:\n    user: "501:20"\n  worker:\n    user: "501:20"\n')
-        compose.extend(["-f",str(uid_override)])
         # Only documented image overrides are inherited; deployment credentials are ours.
         environment = os.environ.copy()
         for key in [k for k in environment if k in ("DATABASE_URL", "POSTGRES_PASSWORD") or k.startswith("NEXOFOLIO_")]:
@@ -71,7 +68,6 @@ def main():
             run(["cargo", "test", "-p", "nexofolio-backend", "--test", "postgres", "--locked", "--", "--ignored"], env=test_env)
             report["checks"].append("real_postgres_probe_and_repeatable_migrations")
             dc("run", "--rm", "migrate")
-            dc("run", "--rm", "storage-init")
             dc("up", "-d", "--wait", "api", "worker")
             url = "http://127.0.0.1:" + dc("port", "api", "8080").rsplit(":", 1)[1]
             status(url + "/health/live", 200)
@@ -83,8 +79,8 @@ def main():
             dc("run", "--rm", "migrate")
             tables = dc("exec", "-T", "db", "psql", "-U", "nexofolio", "-d", "nexofolio", "-Atc",
                         "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")
-            required={"_sqlx_migrations","users","projects","internal_sessions","interface_documents","interface_observed_revisions","project_catalogs","catalog_versions","capture_events","capture_receipts","capture_assets","evidence_facts","evidence_sample_groups","maintenance_runs","maintenance_checkpoints","knowledge_releases","knowledge_activation_receipts"}
-            assert required <= set(tables.splitlines()), tables
+            required={"_sqlx_migrations","users","projects","internal_sessions","user_project_access","login_audit","environments","environment_names"}
+            assert set(tables.splitlines()) == required, tables
             report["checks"].append("container_admin_and_access_schema")
             dc("stop", "db")
             status(url + "/health/live", 200)
@@ -92,15 +88,11 @@ def main():
             dc("start", "db")
             status(url + "/health/ready", 200)
             report["checks"].append("database_outage_and_recovery")
-            dc("exec", "-T", "worker", "sh", "-c", "printf volume-fixture > /var/lib/nexofolio/blobs/smoke.txt")
-            assert dc("exec", "-T", "api", "cat", "/var/lib/nexofolio/blobs/smoke.txt")=="volume-fixture"
             dc("stop", "api", "worker")
             for service in ["api", "worker"]:
                 container = dc("ps", "--all", "--quiet", service)
                 assert run(["docker", "inspect", "--format", "{{.State.ExitCode}}", container]) == "0"
             dc("start", "api", "worker")
-            assert dc("exec", "-T", "worker", "cat", "/var/lib/nexofolio/blobs/smoke.txt")=="volume-fixture"
-            report["checks"].append("shared_evidence_volume_survives_restart")
             # Docker may allocate a different host port when restarting port=0 bindings.
             url = "http://127.0.0.1:" + dc("port", "api", "8080").rsplit(":", 1)[1]
             status(url + "/health/ready", 200)

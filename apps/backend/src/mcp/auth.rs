@@ -6,8 +6,8 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use nexofolio_access::{McpPrincipal, McpTokenVerifier};
-use nexofolio_contracts::{Error, Secret};
+use nexofolio_access_contracts::{McpPrincipal, McpTokenVerifier};
+use nexofolio_common::{Error, Secret};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -68,7 +68,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use axum::{Router, body::Body, extract::Extension, http::Request, middleware, routing::get};
-    use nexofolio_contracts::{Result, TokenId, UserId};
+    use nexofolio_common::{Result, TokenId, UserId};
     use tower::ServiceExt;
 
     struct FixtureVerifier(McpPrincipal);
