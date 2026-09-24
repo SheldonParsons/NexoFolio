@@ -4,14 +4,18 @@
 //! Everything here is types, traits and errors: no IO, no storage, no runtime.
 //! `apps/backend` picks the implementations and wires them together.
 //!
-//! | contract      | implemented by | used by      |
-//! |---------------|----------------|--------------|
-//! | [`scope`]       | access         | intake, apps |
-//! | [`observation`] | observe        | intake       |
+//! | contract        | implemented by | used by                          |
+//! |-----------------|----------------|----------------------------------|
+//! | [`scope`]       | access         | intake, apps                     |
+//! | [`observation`] | observe        | intake                           |
+//! | [`endpoint`]    | observe        | knowledge, curate, view, apps    |
+//! | [`feed`]        | every publisher (observe: `ChangeFeed<EndpointEvent>`) | subscribers |
 //!
 //! Enable the `testing` feature for in-memory fakes and the conformance suites
 //! that every real implementation must pass.
 
+pub mod endpoint;
+pub mod feed;
 pub mod observation;
 pub mod scope;
 

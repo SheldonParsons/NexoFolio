@@ -4,9 +4,13 @@
 //! implementation proves it honours a contract by passing the same conformance
 //! suite the fake passes.
 
+mod endpoint;
+mod feed;
 mod observation;
 mod scope;
 
+pub use endpoint::{InMemoryAddresses, InMemoryEndpoints, service_addresses_conformance};
+pub use feed::{InMemoryFeed, change_feed_conformance};
 pub use observation::{
     RecordingSink, observation_sink_conformance, sample_declaration, sample_exchange,
 };
