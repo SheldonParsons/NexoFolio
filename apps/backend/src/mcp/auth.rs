@@ -85,7 +85,6 @@ mod tests {
         let verifier: Arc<dyn McpTokenVerifier> = Arc::new(FixtureVerifier(McpPrincipal {
             user_id,
             token_id: TokenId::new(),
-            grants: vec![],
         }));
         let app = Router::new()
             .route(

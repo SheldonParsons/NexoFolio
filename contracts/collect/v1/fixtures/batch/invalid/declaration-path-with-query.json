@@ -1,0 +1,114 @@
+{
+  "batch_id": "2d9c5e50-7e77-4f74-9c79-9d405020c633",
+  "platform": "swagger-sync",
+  "platform_version": "1.0.0",
+  "target": {
+    "project_id": "5b0f6a52-1c2d-4c8e-9f35-2a1d7c9e4b10",
+    "site": null,
+    "source_url": "https://shop.example.com/v3/api-docs"
+  },
+  "records": [
+    {
+      "id": "9b5d4a6c-2ebf-4071-9c5d-4e6f7a8b9ca3",
+      "kind": "http_declaration",
+      "version": 1,
+      "observed_at": "2026-09-24T10:00:00Z",
+      "payload": {
+        "method": "POST",
+        "path": "/order/list?page=1",
+        "operation_id": "addOrderItem",
+        "summary": "新增订单明细",
+        "tags": [
+          "订单"
+        ],
+        "request": {
+          "path_params": {
+            "orderId": {
+              "required": true,
+              "schema": {
+                "type": "integer",
+                "format": "int64"
+              }
+            }
+          },
+          "body": {
+            "required": true,
+            "media_type": "application/json",
+            "schema": {
+              "type": "object",
+              "required": [
+                "sku",
+                "qty"
+              ],
+              "properties": {
+                "sku": {
+                  "type": "string"
+                },
+                "qty": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "remark": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "ac6e5b7d-3fc0-4182-8d6e-5f7a8b9cadb4",
+      "kind": "http_declaration",
+      "version": 1,
+      "observed_at": "2026-09-24T10:00:00Z",
+      "payload": {
+        "method": "GET",
+        "path": "/order/list",
+        "request": {
+          "query": {
+            "page": {
+              "schema": {
+                "type": "integer"
+              }
+            },
+            "size": {
+              "schema": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "media_type": "application/json",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "total": {
+                  "type": "integer"
+                },
+                "list": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "bd7f6c8e-40d1-4293-9e7f-6a8b9cadbec5",
+      "kind": "http_declaration",
+      "version": 1,
+      "observed_at": "2026-09-24T10:00:00Z",
+      "payload": {
+        "method": "GET",
+        "path": "/health"
+      }
+    }
+  ]
+}

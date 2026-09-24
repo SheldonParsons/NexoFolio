@@ -1,0 +1,2210 @@
+{
+  "batch_id": "0b7a3c3e-5c55-4d52-9a57-7b2f3f0e4a11",
+  "platform": "nexofolio-fetcher",
+  "platform_version": "0.2.0",
+  "target": {
+    "project_id": "5b0f6a52-1c2d-4c8e-9f35-2a1d7c9e4b10",
+    "environment": {
+      "id": "8f2c1e7a-4b6d-4f1a-9c3e-6d5b2a1f0e98"
+    },
+    "site": {
+      "origin": "https://shop.example.com",
+      "prefix": "/"
+    }
+  },
+  "records": [
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    },
+    {
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T08:00:05.000Z",
+      "context": {
+        "page_url": "https://shop.example.com/#/order/new",
+        "seq": 43,
+        "transport": "xhr",
+        "frame": "page"
+      },
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example.com/api/order",
+          "headers": {
+            "state": "partial",
+            "entries": [
+              [
+                "content-type",
+                "application/json"
+              ]
+            ]
+          },
+          "body": {
+            "state": "full",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"customerId\":\"C-778\",\"items\":[]}"
+          }
+        },
+        "response": {
+          "status": 200,
+          "body": {
+            "state": "truncated",
+            "media_type": "application/json",
+            "encoding": "utf8",
+            "content": "{\"code\":0,\"data\":{\"id\":\"O-2026",
+            "bytes": 2097152
+          }
+        }
+      }
+    }
+  ]
+}

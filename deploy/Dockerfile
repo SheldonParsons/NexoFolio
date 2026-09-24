@@ -6,7 +6,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY apps ./apps
 COPY crates ./crates
-COPY migrations ./migrations
 COPY tests ./tests
 COPY modules ./modules
 RUN cargo build --locked --release -p nexofolio-backend --bins

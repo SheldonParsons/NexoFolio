@@ -40,7 +40,7 @@ async fn real_postgres_connects_and_migrations_are_repeatable() {
         .await
         .unwrap();
     let tables: Vec<String> = sqlx::query_scalar(
-        "SELECT tablename FROM pg_tables WHERE schemaname=current_schema() ORDER BY tablename",
+        "SELECT tablename FROM pg_tables WHERE schemaname='access' ORDER BY tablename",
     )
     .fetch_all(&pool)
     .await
@@ -50,14 +50,22 @@ async fn real_postgres_connects_and_migrations_are_repeatable() {
         vec![
             "_sqlx_migrations",
             "environment_names",
+            "environment_sites",
             "environments",
             "internal_sessions",
             "login_audit",
             "projects",
+            "sites",
             "user_project_access",
             "users"
         ]
     );
+    let public: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM pg_tables WHERE schemaname='public'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(public, 0, "access keeps nothing in public");
     pool.close().await;
     database.close().await;
 }

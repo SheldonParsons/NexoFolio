@@ -7,7 +7,10 @@ use axum::{
     routing::{get, post},
 };
 use nexofolio_access::LoginService;
-use nexofolio_access_contracts::{LoginCredentials, PlatformAccess, SessionPrincipal};
+use nexofolio_access_contracts::{
+    Environment, EnvironmentPage, Environments, LoginCredentials, ProjectAccess, ProjectCard,
+    ProjectPage, SessionPrincipal, Sessions,
+};
 use nexofolio_common::{Error, ProjectId, Secret};
 use serde::Deserialize;
 use std::sync::Arc;
@@ -15,15 +18,24 @@ use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct AccessHttp {
-    pub login: Arc<LoginService>,
-    pub store: Arc<dyn PlatformAccess>,
+    login: Arc<LoginService>,
+    sessions: Arc<dyn Sessions>,
+    projects: Arc<dyn ProjectAccess>,
+    environments: Arc<dyn Environments>,
     permits: Arc<Semaphore>,
 }
 impl AccessHttp {
-    pub fn new(login: Arc<LoginService>, store: Arc<dyn PlatformAccess>) -> Self {
+    pub fn new(
+        login: Arc<LoginService>,
+        sessions: Arc<dyn Sessions>,
+        projects: Arc<dyn ProjectAccess>,
+        environments: Arc<dyn Environments>,
+    ) -> Self {
         Self {
             login,
-            store,
+            sessions,
+            projects,
+            environments,
             permits: Arc::new(Semaphore::new(4)),
         }
     }
@@ -127,7 +139,7 @@ pub fn routes(state: AccessHttp) -> Router {
             axum::routing::patch(rename_environment),
         )
         .route_layer(middleware::from_fn_with_state(
-            state.store.clone(),
+            state.sessions.clone(),
             session_auth,
         ));
     Router::new()
@@ -171,7 +183,7 @@ async fn login(
     Ok(Json(serde_json::json!({"user":result.session.user,"token":result.session.token.expose(),"token_type":"Bearer","expires_at":result.session.expires_at,"token_reused":result.session.reused,"project_sync":result.sync})).into_response())
 }
 pub(crate) async fn session_auth(
-    State(store): State<Arc<dyn PlatformAccess>>,
+    State(sessions): State<Arc<dyn Sessions>>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AccessError> {
@@ -190,7 +202,7 @@ pub(crate) async fn session_auth(
     {
         return Err(Error::Unauthenticated.into());
     }
-    let principal = store.verify_session(&Secret::new(value)).await?;
+    let principal = sessions.verify_session(&Secret::new(value)).await?;
     req.extensions_mut().insert(principal);
     Ok(next.run(req).await)
 }
@@ -198,21 +210,21 @@ async fn me(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
 ) -> Result<Json<serde_json::Value>, AccessError> {
-    Ok(Json(serde_json::json!({"user":s.store.me(&p).await?})))
+    Ok(Json(serde_json::json!({"user":s.sessions.me(&p).await?})))
 }
 async fn projects(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
     Query(q): Query<Pagination>,
-) -> Result<Json<nexofolio_access_contracts::ProjectPage>, AccessError> {
-    Ok(Json(s.store.list_projects(&p, q.page, q.limit).await?))
+) -> Result<Json<ProjectPage>, AccessError> {
+    Ok(Json(s.projects.list_projects(&p, q.page, q.limit).await?))
 }
 async fn project(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
     Path(id): Path<ProjectId>,
-) -> Result<Json<nexofolio_access_contracts::ProjectCard>, AccessError> {
-    Ok(Json(s.store.require_project(&p, id).await?))
+) -> Result<Json<ProjectCard>, AccessError> {
+    Ok(Json(s.projects.require_project(&p, id).await?))
 }
 
 #[derive(Deserialize)]
@@ -225,9 +237,9 @@ async fn environments(
     Extension(p): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
     Query(q): Query<Pagination>,
-) -> Result<Json<nexofolio_access_contracts::EnvironmentPage>, AccessError> {
+) -> Result<Json<EnvironmentPage>, AccessError> {
     Ok(Json(
-        s.store
+        s.environments
             .list_environments(&p, project, q.page, q.limit)
             .await?,
     ))
@@ -237,9 +249,11 @@ async fn create_environment(
     Extension(p): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
     Json(body): Json<EnvironmentName>,
-) -> Result<Json<nexofolio_access_contracts::Environment>, AccessError> {
+) -> Result<Json<Environment>, AccessError> {
     Ok(Json(
-        s.store.create_environment(&p, project, &body.name).await?,
+        s.environments
+            .create_environment(&p, project, &body.name)
+            .await?,
     ))
 }
 async fn rename_environment(
@@ -247,9 +261,9 @@ async fn rename_environment(
     Extension(p): Extension<SessionPrincipal>,
     Path((project, id)): Path<(ProjectId, nexofolio_common::EnvironmentId)>,
     Json(body): Json<EnvironmentName>,
-) -> Result<Json<nexofolio_access_contracts::Environment>, AccessError> {
+) -> Result<Json<Environment>, AccessError> {
     Ok(Json(
-        s.store
+        s.environments
             .rename_environment(&p, project, id, &body.name)
             .await?,
     ))

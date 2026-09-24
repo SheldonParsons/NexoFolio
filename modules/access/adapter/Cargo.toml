@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 nexofolio-common.workspace = true
 nexofolio-access-contracts.workspace = true
+nexofolio-contracts.workspace = true
 async-trait.workspace = true
 sqlx.workspace = true
 serde_json.workspace = true
@@ -22,6 +23,7 @@ argon2 = "0.5"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [dev-dependencies]
+nexofolio-contracts = { workspace = true, features = ["testing"] }
 tokio.workspace = true
 
 [lints]

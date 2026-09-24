@@ -1,0 +1,25 @@
+{
+  "batch_id": "3eab6f61-8f88-4085-8d8a-ae5161d1d744",
+  "platform": "swagger-sync",
+  "platform_version": "1.0.0",
+  "target": {
+    "project_id": "5b0f6a52-1c2d-4c8e-9f35-2a1d7c9e4b10",
+    "site": null,
+    "source_url": "https://shop.example.com/v3/api-docs",
+    "environment": {
+      "name": "正式环境"
+    }
+  },
+  "records": [
+    {
+      "id": "bd7f6c8e-40d1-4293-9e7f-6a8b9cadbec5",
+      "kind": "http_declaration",
+      "version": 1,
+      "observed_at": "2026-09-24T10:00:00Z",
+      "payload": {
+        "method": "GET",
+        "path": "/health"
+      }
+    }
+  ]
+}

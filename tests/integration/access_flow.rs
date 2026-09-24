@@ -11,7 +11,7 @@ use axum::{
 };
 use nexofolio_access_adapter::{Postgres, PostgresAccess, Unconfigured};
 use nexofolio_access_contracts::{
-    ExternalProject, PlatformAccess, ProjectSnapshot, SessionPrincipal,
+    ExternalProject, LoginStore, ProjectAccess, ProjectSnapshot, SessionPrincipal,
 };
 use nexofolio_backend::{
     http,
@@ -195,7 +195,7 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
     assert_eq!(first["project_sync"]["status"], "completed");
     assert_eq!(first["project_sync"]["counts"]["created"], 1);
     let uid: Uuid = first["user"]["id"].as_str().unwrap().parse().unwrap();
-    let row=sqlx::query("SELECT token_encrypted,token_hash,abs(extract(epoch FROM (expires_at-(issued_at+interval '3 months'))))::float8 AS delta FROM internal_sessions WHERE user_id=$1").bind(uid).fetch_one(&sql).await.unwrap();
+    let row=sqlx::query("SELECT token_encrypted,token_hash,abs(extract(epoch FROM (expires_at-(issued_at+interval '3 months'))))::float8 AS delta FROM access.internal_sessions WHERE user_id=$1").bind(uid).fetch_one(&sql).await.unwrap();
     assert!(row.get::<f64, _>("delta") < 1.0);
     assert!(
         !row.get::<Vec<u8>, _>("token_encrypted")
@@ -327,7 +327,7 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
         401
     );
     // Force expiry in the isolated test database, then recreate via emergency login.
-    sqlx::query("UPDATE internal_sessions SET issued_at=now()-interval '5 months',expires_at=now()-interval '1 second' WHERE user_id=$1").bind(uid).execute(&sql).await.unwrap();
+    sqlx::query("UPDATE access.internal_sessions SET issued_at=now()-interval '5 months',expires_at=now()-interval '1 second' WHERE user_id=$1").bind(uid).execute(&sql).await.unwrap();
     assert_eq!(
         client
             .get(format!("{url}/v1/projects"))
@@ -388,7 +388,7 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
     );
     let bob_token = bob["token"].as_str().unwrap();
     let bob_uid: Uuid = bob["user"]["id"].as_str().unwrap().parse().unwrap();
-    sqlx::query("UPDATE users SET enabled=false WHERE id=$1")
+    sqlx::query("UPDATE access.users SET enabled=false WHERE id=$1")
         .bind(bob_uid)
         .execute(&sql)
         .await

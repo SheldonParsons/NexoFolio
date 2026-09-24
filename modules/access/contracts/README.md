@@ -95,7 +95,7 @@ access_state 为 allowed、denied 或 unknown。未知权限返回 can_access=fa
 ## GET /v1/projects/{project_id}
 
 已登录且具有该项目本地访问关系时返回项目卡片；明确无权限返回 403/PROJECT_ACCESS_DENIED；本地权限尚未建立返回 503/PROJECT_ACCESS_UNAVAILABLE；不存在或不同实例返回 404。
-此端点是当前的“进入项目”校验。后续知识端点必须同样调用 PlatformAccess::require_project，不能认为进过一次项目就不再检查。
+此端点是当前的“进入项目”校验。后续知识端点必须同样调用 ProjectAccess::require_project，不能认为进过一次项目就不再检查。
 不提供 POST /v1/projects、独立项目同步 API 或项目编辑/删除 API。
 
 ## 验证

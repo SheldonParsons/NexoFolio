@@ -1,0 +1,58 @@
+{
+  "contract": "collect",
+  "contract_version": "1.0.0",
+  "kinds": {
+    "http_exchange": [
+      1
+    ],
+    "http_declaration": [
+      1
+    ]
+  },
+  "limits": {
+    "records_per_batch": 50,
+    "batch_bytes": 8388608,
+    "record_bytes": 4194304
+  },
+  "files": {
+    "README.md": "aad1d6694cfe9892e499a5939b6e4e1f644f46049180935c9e43226eb7570092",
+    "batch.schema.json": "e178b5fc51658a9f8fed56f978fc47a03abedb97bef1358825179d82f962fc04",
+    "error.schema.json": "4a5694534a79e350a1bb22d20171f383c6c6a358ca26d8f86e01c29b6bdefff8",
+    "fixtures/batch/invalid/declaration-bad-response-code.json": "4d0115e17b15ba45834b127f07d6263bafbd50eec5c37d3150ed80acc2515a14",
+    "fixtures/batch/invalid/declaration-path-with-query.json": "e05d4d638799226b33943cf8c269707670a73263abec3c2723f0d8969d532b1f",
+    "fixtures/batch/invalid/declaration-with-context.json": "5ea933b3d460ce75fffd2d2325192af560948f2d1683e33fddb3b740120fd471",
+    "fixtures/batch/invalid/declaration-with-exchange-payload.json": "09fd3a19084abaddd8f8ca81b930a3d7de52fe7f719a7cb5098ebf071f59990d",
+    "fixtures/batch/invalid/empty-records.json": "656d45b5aea783d1f1ab96884e087903d2f1ac4c7461ed0452842db854ad7fac",
+    "fixtures/batch/invalid/environment-name-with-surrounding-space.json": "df4737400ffac3f841b6373c41273bb603007932d4f9c206d76bf5cc5dc013c2",
+    "fixtures/batch/invalid/environment-with-id-and-name.json": "67ec60291c7b310863d370611e9d1b4de0129f5d9143365afed9a9f098991358",
+    "fixtures/batch/invalid/exchange-without-environment.json": "8a19b3b48b3f7279e871bd5ea4d63bbd59cc2f0c1dacfcaefd78a95f74f46682",
+    "fixtures/batch/invalid/full-body-without-content.json": "5d4a1a794660ae7e62284479395a719bc2954c2f0e80848e6276b6d005665a0a",
+    "fixtures/batch/invalid/header-entry-not-a-pair.json": "983de33a14d1e322befc10707a1c34418ff460c048230299bc730dbc269a4832",
+    "fixtures/batch/invalid/lowercase-method.json": "1d89f090592a6a32a88da99146c6cf17980746925b23dfa097209619783f03e4",
+    "fixtures/batch/invalid/missing-platform.json": "7e6e8f6d5ac65cba002e08d675df741da8ed5a22378dc71311b1bd3708e49582",
+    "fixtures/batch/invalid/missing-target.json": "be712f17db884da675a25934688ebf1b19c1ec95e7aae49eafc0eb133878e53f",
+    "fixtures/batch/invalid/none-body-with-content.json": "531d0a53479a0d0107307ff67d960881ce74925f6b2d67eed7e89ccd8124b14f",
+    "fixtures/batch/invalid/platform-with-spaces.json": "99073a5f888c670e8992ac7137785a575d86df5bbd90512b952f53885ea70b45",
+    "fixtures/batch/invalid/relative-request-url.json": "7b503ae040d3d20c5e539bcb0e0190d8c55c18a78e4ab6be3ae9f81c0f942fe4",
+    "fixtures/batch/invalid/response-without-status.json": "cd98628d15b1dbf12b4ee1306b4dedfb3b06906d3fc24ba4979bc2ed5c596fc8",
+    "fixtures/batch/invalid/site-origin-with-path.json": "bec072c877e79b07f8dad61124d167c3939c4ff76d7b6c2e4fa86e7ac489257f",
+    "fixtures/batch/invalid/timestamp-without-timezone.json": "c746115e32bb5255f8ee5f9ff3dbd78147a725c2ab99353dbf8aaffa9d6484b5",
+    "fixtures/batch/invalid/too-many-records.json": "1adce72d7665f6f8b38916a326960d421403ac4879fd161625e83efc9d82cd0e",
+    "fixtures/batch/invalid/unknown-body-state.json": "cd30f6fcd36b8be027fbe217fb361fb111794a76ba35b8534b01bfad8c3ded4a",
+    "fixtures/batch/invalid/unknown-context-field.json": "885c4e29be128d09646b9a7eca2b62a1efefdbde5dd35c0fbf47eb3455cb5d38",
+    "fixtures/batch/invalid/unknown-kind.json": "54f86076931c45d691139af87bf51e55a544eb81dd0ca2a2ec83399f5e63434e",
+    "fixtures/batch/invalid/unknown-record-field.json": "9a5728e8dc8a483cbeb530150e0465f76d8266bbe2cfa17c6fec19a48ef19caa",
+    "fixtures/batch/invalid/unsupported-version.json": "c1e04ec4e8754b3d88921f53140c773b1b00cc4bcbb5e9bf134189183978e603",
+    "fixtures/batch/valid/declaration-with-environment-name.json": "b035c4dc937ef46f7cf9b597565ebaeba9021157c61e425ef0a0fe2d9b1c7ed5",
+    "fixtures/batch/valid/exchange-without-context-or-response.json": "40c0bf1ac99105ae464c05e3af14f7c9128cbb082948dd19c080df1428ce57d0",
+    "fixtures/batch/valid/fetcher-exchanges.json": "84854378ffe46793cae015152b6426af356d0246c4f15a019ebf8a6ad6b674e7",
+    "fixtures/batch/valid/swagger-declarations-without-environment.json": "1ea822a3e23b6edfb18d1d6ad025f74e2c11e3bc818aa8efc2bda18784b084aa",
+    "fixtures/error/valid/rate-limited.json": "fbd687419c3865cfce51e5335c5ee6eff6bc65bea2274c0144805b4d0ff20b03",
+    "fixtures/error/valid/unknown-project.json": "d867686fb5562a9c902eba3d045c90f64c26187d7d2bf964eaed126120c29f63",
+    "fixtures/receipt/invalid/missing-rejected.json": "6c144bb915a7507bf075c4ef348f077d08fcf314e3cef630f560a396ec585146",
+    "fixtures/receipt/invalid/unknown-reason.json": "b6370ae18e51dfef7d19e182ecfd9d0d7eff0fe0784f5033ab81c8452a06e8fc",
+    "fixtures/receipt/valid/all-accepted.json": "78395bb22a71c1c9a955d0a49d58ad9863c37bdb8de9de180d0f7e0e1b5d5dd9",
+    "fixtures/receipt/valid/some-rejected.json": "0277692718b9965f8e6a691c7e8a23e07f06b9b5a3269298ce985bb885804c6e",
+    "receipt.schema.json": "7fb3d1170fcbfbb91b901865fac08aca146aa47030885482a8ad49580b5ebea6"
+  }
+}

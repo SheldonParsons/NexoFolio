@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexofolio.dev/contracts/collect/v1/batch.schema.json",
+  "title": "CollectBatch",
+  "description": "POST /v1/collect/batches 的请求体。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["batch_id", "platform", "target", "records"],
+  "properties": {
+    "batch_id": { "$ref": "#/$defs/Uuid", "description": "批次 ID。重试时必须复用，服务端据此保证同一批次只计数一次。" },
+    "platform": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$", "description": "来源标识，例如 nexofolio-fetcher、swagger-sync。只用于标记来源和限流，不代表身份。" },
+    "platform_version": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "target": { "$ref": "#/$defs/Target" },
+    "records": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "#/$defs/Record" } }
+  },
+  "if": { "properties": { "records": { "contains": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "http_exchange" } } } } } },
+  "then": { "properties": { "target": { "required": ["environment"] } } },
+  "$defs": {
+    "Uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "Method": { "type": "string", "pattern": "^[A-Z][A-Z0-9_-]{0,15}$" },
+    "Timestamp": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,9})?(Z|[+-]\\d{2}:\\d{2})$" },
+
+    "Target": {
+      "description": "这一批记录的归属。由客户端决定，服务端只校验。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id"],
+      "properties": {
+        "project_id": { "$ref": "#/$defs/Uuid" },
+        "environment": {
+          "description": "http_exchange 必填；http_declaration 可省略，省略时声明对项目的所有环境有效。按 name 指定时，不存在会自动创建。",
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["id"], "properties": { "id": { "$ref": "#/$defs/Uuid" } } },
+            { "type": "object", "additionalProperties": false, "required": ["name"], "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[^\\s\\u0000-\\u001f\\u007f](?:[^\\u0000-\\u001f\\u007f]*[^\\s\\u0000-\\u001f\\u007f])?$", "description": "与 access 的环境名规则一致：区分大小写，不做归一化，首尾不能有空白，不能有控制字符。" } } }
+          ]
+        },
+        "site": {
+          "description": "采集时所在的站点入口，只作为环境标注，不参与接口身份。",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["origin", "prefix"],
+              "properties": {
+                "origin": { "type": "string", "maxLength": 2048, "pattern": "^https?://[^/?#\\s]+$" },
+                "prefix": { "type": "string", "maxLength": 2048, "pattern": "^/[^?#\\s]*$" }
+              }
+            }
+          ]
+        },
+        "source_url": { "description": "声明来源的文档地址，例如 Swagger 的 api-docs 地址。", "type": "string", "minLength": 1, "maxLength": 2048 }
+      }
+    },
+
+    "Record": {
+      "type": "object",
+      "required": ["id", "kind", "version", "observed_at", "payload"],
+      "properties": {
+        "id": { "$ref": "#/$defs/Uuid", "description": "记录 ID，客户端生成，用于在回执中定位被拒绝的记录。" },
+        "kind": { "enum": ["http_exchange", "http_declaration"] },
+        "version": { "const": 1 },
+        "observed_at": { "$ref": "#/$defs/Timestamp", "description": "采集或声明获取的时间。" },
+        "context": { "$ref": "#/$defs/Context" },
+        "payload": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "http_exchange" } } },
+          "then": { "additionalProperties": false, "properties": { "id": true, "kind": true, "version": true, "observed_at": true, "context": true, "payload": { "$ref": "#/$defs/HttpExchange" } } }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "http_declaration" } } },
+          "then": { "additionalProperties": false, "properties": { "id": true, "kind": true, "version": true, "observed_at": true, "payload": { "$ref": "#/$defs/HttpDeclaration" } } }
+        }
+      ]
+    },
+
+    "Context": {
+      "description": "可选。通常只有浏览器类客户端能提供。服务端保存，但不依赖它做必需判断。",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_url": { "type": "string", "maxLength": 1048576 },
+        "page_title": { "type": "string", "maxLength": 1024 },
+        "client_instance_id": { "$ref": "#/$defs/Uuid" },
+        "page_id": { "$ref": "#/$defs/Uuid" },
+        "frame_id": { "$ref": "#/$defs/Uuid" },
+        "view_id": { "$ref": "#/$defs/Uuid" },
+        "interaction_id": { "$ref": "#/$defs/Uuid" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "transport": { "enum": ["xhr", "fetch", "other"] },
+        "frame": { "enum": ["page", "iframe"] },
+        "started_at": { "$ref": "#/$defs/Timestamp" },
+        "completed_at": { "$ref": "#/$defs/Timestamp" }
+      }
+    },
+
+    "Headers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "entries"],
+      "properties": {
+        "state": { "enum": ["complete", "partial", "truncated"], "description": "complete：全部请求头；partial：客户端只看得到一部分（浏览器页面内看不到 Cookie 等）；truncated：超过上限被截断。" },
+        "entries": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "type": "array", "prefixItems": [{ "type": "string", "minLength": 1, "maxLength": 1024 }, { "type": "string", "maxLength": 65536 }], "minItems": 2, "maxItems": 2 }
+        }
+      }
+    },
+
+    "Body": {
+      "type": "object",
+      "required": ["state"],
+      "properties": { "state": { "enum": ["full", "truncated", "unreadable", "none"] } },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "enum": ["full", "truncated"] } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["state", "encoding", "content"],
+            "properties": {
+              "state": true,
+              "media_type": { "type": "string", "maxLength": 255 },
+              "encoding": { "enum": ["utf8", "base64"] },
+              "content": { "type": "string" },
+              "bytes": { "type": "integer", "minimum": 0, "description": "原始字节数（已知时填写）。truncated 时表示截断前的大小。" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "unreadable" } } },
+          "then": { "additionalProperties": false, "properties": { "state": true, "media_type": { "type": "string", "maxLength": 255 }, "note": { "type": "string", "maxLength": 1024 } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "none" } } },
+          "then": { "additionalProperties": false, "properties": { "state": true } }
+        }
+      ]
+    },
+
+    "HttpExchange": {
+      "description": "实际发生过的一次调用。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["request"],
+      "properties": {
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "url", "body"],
+          "properties": {
+            "method": { "$ref": "#/$defs/Method" },
+            "url": { "type": "string", "maxLength": 1048576, "pattern": "^https?://[^/?#\\s]+", "description": "绝对地址，包含查询参数。" },
+            "url_truncated": { "type": "boolean" },
+            "headers": { "$ref": "#/$defs/Headers" },
+            "body": { "$ref": "#/$defs/Body" }
+          }
+        },
+        "response": {
+          "description": "没有采集到响应时省略。",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "body"],
+          "properties": {
+            "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+            "headers": { "$ref": "#/$defs/Headers" },
+            "body": { "$ref": "#/$defs/Body" }
+          }
+        }
+      }
+    },
+
+    "Schema": { "description": "自包含的 JSON Schema / OpenAPI Schema 对象，客户端需先展开所有 $ref。", "type": "object" },
+
+    "Parameter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "required": { "type": "boolean" },
+        "description": { "type": "string", "maxLength": 4096 },
+        "schema": { "$ref": "#/$defs/Schema" },
+        "example": true
+      }
+    },
+    "Parameters": { "type": "object", "maxProperties": 256, "additionalProperties": { "$ref": "#/$defs/Parameter" } },
+
+    "HttpDeclaration": {
+      "description": "声明出来的接口结构（Swagger/OpenAPI 同步、手工录入）。只有结构、没有示例和响应都合法。",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "path"],
+      "properties": {
+        "method": { "$ref": "#/$defs/Method" },
+        "path": { "type": "string", "maxLength": 2048, "pattern": "^/[^?#\\s]*$", "description": "路径模板，路径参数写成 {name}。" },
+        "operation_id": { "type": "string", "maxLength": 256 },
+        "summary": { "type": "string", "maxLength": 1024 },
+        "description": { "type": "string", "maxLength": 65536 },
+        "tags": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 256 } },
+        "deprecated": { "type": "boolean" },
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "path_params": { "$ref": "#/$defs/Parameters" },
+            "query": { "$ref": "#/$defs/Parameters" },
+            "headers": { "$ref": "#/$defs/Parameters" },
+            "body": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "required": { "type": "boolean" },
+                "media_type": { "type": "string", "maxLength": 255 },
+                "schema": { "$ref": "#/$defs/Schema" },
+                "example": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "type": "object",
+          "propertyNames": { "pattern": "^([1-5][0-9]{2}|[1-5]XX|default)$" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "description": { "type": "string", "maxLength": 4096 },
+              "media_type": { "type": "string", "maxLength": 255 },
+              "schema": { "$ref": "#/$defs/Schema" },
+              "example": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

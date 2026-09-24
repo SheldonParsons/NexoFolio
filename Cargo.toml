@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/common", "modules/access/contracts", "modules/access/core", "modules/access/adapter"]
+members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -11,6 +11,7 @@ publish = false
 [workspace.dependencies]
 async-trait = "0.1"
 axum = "0.8.9"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
 clap = { version = "4", features = ["derive"] }
 http-body-util = "0.1"
 rmcp = { version = "3.3.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
@@ -28,6 +29,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 nexofolio-common = { path = "crates/common" }
+nexofolio-contracts = { path = "crates/contracts" }
 nexofolio-access-contracts = { path = "modules/access/contracts" }
 nexofolio-access = { path = "modules/access/core" }
 nexofolio-access-adapter = { path = "modules/access/adapter" }

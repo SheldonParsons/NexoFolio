@@ -1,5 +1,7 @@
 # 后端重新开发：先拆除，再逐模块交付
 
+> 已被 [0002 插件改造计划与后端模块划分](0002-fetcher-and-modules.md) 取代（2026-09-24）。本文保留作历史记录，其中的模块表和"在GitButler工作区操作"等做法不再适用。
+
 2026-09-22。旧实现已从源码删除，不再以增加兼容分支或继续补调度器的方式推进。Git提交f2d4ae3保留上轮完整实现与验收记录。此次在现有GitButler工作区操作，不切换分支、不重写历史。
 
 ## 业务模块
@@ -22,8 +24,7 @@ modules/access/
   contracts/                  公共数据类型与能力接口
   core/                       登录及登录后同步的业务流程
   adapter/                    禅道、认证加密、用户/项目/环境持久化
-    migrations/               本模块新库迁移
-migrations/legacy/            不可改写的历史SQL账本，不是旧业务运行入口
+    migrations/               本模块迁移，落在access schema，账本为access._sqlx_migrations
 tests/architecture/           依赖与封装检查
 tests/integration/            健康检查、生命周期、权限与迁移验收
 ```
@@ -49,7 +50,7 @@ tests/integration/            健康检查、生命周期、权限与迁移验�
 
 ## 迁移边界
 
-新库仅应用access/adapter/migrations中的两份访问控制/环境迁移，建8张表（包括_sqlx_migrations）。历史数据库若含旧业务迁移版本，用冻结legacy账本校验其checksum，不修改或丢弃已执行版本，不删除历史业务表。已执行SQL是数据库版本兼容资料，不是待恢复的旧业务源码。
+新库只应用access/adapter/migrations中的迁移，全部表（包括账本_sqlx_migrations）建在access schema，public里不建表。阶段1（2026-09-24）删除了冻结的migrations/legacy账本：每个模块改用自己schema里的账本，不再与旧库的public._sqlx_migrations对账。旧库里public下的历史业务表和旧账本不会被读取、修改或删除；在旧库上运行迁移会在access schema里建一套新的空表。已执行的迁移文件依然不可修改。
 
 旧数据库不用于新模块的隔离验收：其中可能存在旧触发器和跨表约束。今后启用新模块时需另行设计数据迁移和数据库角色，而不能通过Rust包隔离宣称这些旧数据库行为已经消失。
 

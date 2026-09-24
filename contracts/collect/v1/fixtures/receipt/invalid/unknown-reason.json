@@ -1,0 +1,11 @@
+{
+  "batch_id": "0b7a3c3e-5c55-4d52-9a57-7b2f3f0e4a11",
+  "accepted": 1,
+  "rejected": [
+    {
+      "index": 1,
+      "id": "x",
+      "reason": "UNBOUND_URL"
+    }
+  ]
+}

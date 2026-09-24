@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexofolio.dev/contracts/collect/v1/error.schema.json",
+  "title": "CollectError",
+  "description": "整批被拒绝（HTTP 4xx/5xx）时的响应体。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_BATCH",
+            "BATCH_TOO_LARGE",
+            "UNKNOWN_PROJECT",
+            "UNKNOWN_ENVIRONMENT",
+            "BATCH_ID_REUSED",
+            "RATE_LIMITED",
+            "UNAVAILABLE"
+          ]
+        },
+        "message": { "type": "string", "maxLength": 4096 }
+      }
+    }
+  }
+}

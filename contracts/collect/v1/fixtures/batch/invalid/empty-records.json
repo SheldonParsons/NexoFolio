@@ -1,0 +1,16 @@
+{
+  "batch_id": "0b7a3c3e-5c55-4d52-9a57-7b2f3f0e4a11",
+  "platform": "nexofolio-fetcher",
+  "platform_version": "0.2.0",
+  "target": {
+    "project_id": "5b0f6a52-1c2d-4c8e-9f35-2a1d7c9e4b10",
+    "environment": {
+      "id": "8f2c1e7a-4b6d-4f1a-9c3e-6d5b2a1f0e98"
+    },
+    "site": {
+      "origin": "https://shop.example.com",
+      "prefix": "/"
+    }
+  },
+  "records": []
+}

@@ -1,19 +1,23 @@
 # NexoFolio 后端
 
-当前处于重新开发的基础阶段。2026-09-22已移除旧采集、接口知识、证据、目录重构及发布流程，保留登录、项目权限、环境管理和运行基础。新模块逐个讨论、实现与验收。
+当前处于重新开发阶段。2026-09-22已移除旧采集、接口知识、证据、目录重构及发布流程，保留登录、项目权限、环境管理和运行基础。新模块逐个讨论、实现与验收。
 
-[模块边界与重新开发路线](docs/architecture/0001-restart.md)
+- [插件改造计划与后端模块划分](docs/architecture/0002-fetcher-and-modules.md)（当前方案）
+- [收集合同 v1](contracts/collect/v1/README.md)
 
 ## 项目结构
 
 - `apps/backend`：API、空闲worker、管理CLI，HTTP/MCP传输与装配。
+- `contracts/collect/v1`：公开收集接口的 JSON Schema、fixtures 和哈希清单，客户端以此为准。
 - `crates/common`：最小技术公共类型。
+- `crates/contracts`：模块之间唯一的通用合同层，只有类型、trait 和错误；`testing` feature 提供假实现和一致性测试。
 - `modules/access/contracts`：身份、项目及环境的公共合同。
 - `modules/access/core`：登录与同步流程。
 - `modules/access/adapter`：PostgreSQL、禅道及加密适配，拥有自己的迁移。
-- `tests/architecture`：阻止禁止依赖，包含故意违规的失败用例。
+- `tests/architecture`：阻止禁止依赖和跨模块 SQL，包含故意违规的失败用例。
+- `tests/contracts`：校验收集合同的 fixtures 和哈希清单。
 
-接收、知识、重构模块尚未创建。旧实现和文档可从Git提交`f2d4ae3`查阅，不在新代码里保留第二套运行路径。
+intake、observe、knowledge、curate、view 模块尚未创建。旧实现和文档可从Git提交`f2d4ae3`查阅，不在新代码里保留第二套运行路径。
 
 ## 验证
 
@@ -50,4 +54,4 @@ docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yam
 docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yaml up -d api worker
 ```
 
-本轮没有替换已有运行容器，也没有修改现有数据库和录制数据。不要对原项目执行`down -v`。新建库只建访问模块的表；迁移规则见[migrations说明](migrations/README.md)。
+本轮没有替换已有运行容器，也没有修改现有数据库和录制数据。不要对原项目执行`down -v`。每个模块的表和迁移账本都在自己的 schema 里：access 的迁移在 `modules/access/adapter/migrations`，全部落在 `access` schema，账本是 `access._sqlx_migrations`，不在 `public` 建任何表。

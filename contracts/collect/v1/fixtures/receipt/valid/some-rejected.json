@@ -1,0 +1,12 @@
+{
+  "batch_id": "0b7a3c3e-5c55-4d52-9a57-7b2f3f0e4a11",
+  "accepted": 1,
+  "rejected": [
+    {
+      "index": 1,
+      "id": "6e2a1d3f-9b8c-4d4e-8f2a-1b3c4d5e6f70",
+      "reason": "RECORD_TOO_LARGE",
+      "message": "record exceeds 4 MiB"
+    }
+  ]
+}

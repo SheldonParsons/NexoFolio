@@ -1,5 +1,5 @@
 use nexofolio_access_contracts::{
-    EmergencyPassword, LoginCredentials, LoginProvider, PlatformAccess, SessionLogin,
+    EmergencyPassword, LoginCredentials, LoginProvider, LoginStore, RemoteLogin, SessionLogin,
     SessionPrincipal, SyncCounts,
 };
 use nexofolio_common::Result;
@@ -22,14 +22,14 @@ pub struct LoginService {
     instance: String,
     provider: Arc<dyn LoginProvider>,
     emergency: Arc<dyn EmergencyPassword>,
-    store: Arc<dyn PlatformAccess>,
+    store: Arc<dyn LoginStore>,
 }
 impl LoginService {
     pub fn new(
         instance: String,
         provider: Arc<dyn LoginProvider>,
         emergency: Arc<dyn EmergencyPassword>,
-        store: Arc<dyn PlatformAccess>,
+        store: Arc<dyn LoginStore>,
     ) -> Self {
         Self {
             instance,
@@ -77,7 +77,7 @@ impl LoginService {
     async fn sync(
         &self,
         principal: &SessionPrincipal,
-        remote: &nexofolio_access_contracts::RemoteLogin,
+        remote: &RemoteLogin,
         generation: i64,
     ) -> Result<SyncCounts> {
         let snapshot = self.provider.projects(remote).await?;

@@ -19,6 +19,6 @@ pub fn build_access(config: &Config, database: Postgres) -> Result<Option<axum::
         emergency,
         store.clone(),
     ));
-    let access = AccessHttp::new(login, store.clone());
+    let access = AccessHttp::new(login, store.clone(), store.clone(), store);
     Ok(Some(crate::http::access::routes(access)))
 }

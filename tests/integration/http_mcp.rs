@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use nexofolio_access_adapter::Unconfigured;
-use nexofolio_access_contracts::{McpPrincipal, McpTokenVerifier, ProjectAction, ProjectGrant};
+use nexofolio_access_contracts::{McpPrincipal, McpTokenVerifier};
 use nexofolio_backend::{
     http,
     wiring::{Config, run_worker},
 };
 use nexofolio_common::DatabaseProbe;
-use nexofolio_common::{Error, ProjectId, Result, Secret, TokenId, UserId};
+use nexofolio_common::{Error, Result, Secret, TokenId, UserId};
 use serde_json::{Value, json};
 use std::{
     sync::{
@@ -43,10 +43,6 @@ impl McpTokenVerifier for TestVerifier {
         Ok(McpPrincipal {
             user_id: UserId::new(),
             token_id: TokenId::new(),
-            grants: vec![ProjectGrant {
-                project_id: ProjectId::new(),
-                actions: vec![ProjectAction::Read],
-            }],
         })
     }
 }

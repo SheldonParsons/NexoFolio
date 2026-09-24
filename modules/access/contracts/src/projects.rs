@@ -1,9 +1,10 @@
+use crate::SessionPrincipal;
 use async_trait::async_trait;
-use nexofolio_common::{ProjectId, Result, UserId};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use nexofolio_common::{ProjectId, Result};
+use serde::Serialize;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+/// A project as ZenTao reports it. Projects are never created locally.
+#[derive(Debug, Clone)]
 pub struct ExternalProject {
     pub instance: String,
     pub external_id: String,
@@ -11,37 +12,44 @@ pub struct ExternalProject {
     pub state: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct ProjectSourcePage {
-    pub items: Vec<ExternalProject>,
-    pub complete: bool,
-    pub next_cursor: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ProjectAction {
-    Read,
-    Write,
-    Adjudicate,
-    Publish,
-    IssueMcpToken,
+pub enum AccessState {
+    Allowed,
+    Denied,
+    Unknown,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ProjectGrant {
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectCard {
     pub project_id: ProjectId,
-    pub actions: Vec<ProjectAction>,
+    pub name: String,
+    pub status: String,
+    pub can_access: bool,
+    pub access_state: AccessState,
+    pub reason_code: Option<&'static str>,
 }
 
-/// Project creation is intentionally absent: projects come from the external source.
-#[async_trait]
-pub trait ProjectSource: Send + Sync {
-    async fn list_projects(&self, cursor: Option<&str>) -> Result<ProjectSourcePage>;
+#[derive(Debug, Serialize)]
+pub struct ProjectPage {
+    pub items: Vec<ProjectCard>,
+    pub page: u32,
+    pub limit: u32,
+    pub total: u64,
 }
 
-/// Implementation must follow the confirmed ZenTao permission contract.
 #[async_trait]
-pub trait ProjectPermissionSource: Send + Sync {
-    async fn grants_for(&self, user_id: UserId) -> Result<Vec<ProjectGrant>>;
+pub trait ProjectAccess: Send + Sync {
+    async fn list_projects(
+        &self,
+        principal: &SessionPrincipal,
+        page: u32,
+        limit: u32,
+    ) -> Result<ProjectPage>;
+    /// Every protected project resource must call this gate (not just its entry page).
+    async fn require_project(
+        &self,
+        principal: &SessionPrincipal,
+        project: ProjectId,
+    ) -> Result<ProjectCard>;
 }

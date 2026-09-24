@@ -1,0 +1,51 @@
+{
+  "batch_id": "1c8b4d4f-6d66-4e63-8b68-8c3f4f1f5b22",
+  "platform": "har-import",
+  "target": {
+    "project_id": "5b0f6a52-1c2d-4c8e-9f35-2a1d7c9e4b10",
+    "environment": {
+      "name": " 测试环境"
+    }
+  },
+  "records": [
+    {
+      "id": "7f3b2e4a-0c9d-4e5f-9a3b-2c4d5e6f7a81",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T09:00:00Z",
+      "payload": {
+        "request": {
+          "method": "DELETE",
+          "url": "https://test-gw.example.com/shop/order/1001",
+          "body": {
+            "state": "none"
+          }
+        }
+      }
+    },
+    {
+      "id": "8a4c3f5b-1dae-4f60-8b4c-3d5e6f7a8b92",
+      "kind": "http_exchange",
+      "version": 1,
+      "observed_at": "2026-09-24T09:00:01+08:00",
+      "payload": {
+        "request": {
+          "method": "POST",
+          "url": "https://test-gw.example.com/shop/file/upload",
+          "body": {
+            "state": "unreadable",
+            "media_type": "multipart/form-data",
+            "note": "stream body"
+          }
+        },
+        "response": {
+          "status": 504,
+          "body": {
+            "state": "unreadable",
+            "note": "read timeout after 15s"
+          }
+        }
+      }
+    }
+  ]
+}

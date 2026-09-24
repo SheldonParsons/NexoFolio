@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nexofolio.dev/contracts/collect/v1/receipt.schema.json",
+  "title": "CollectReceipt",
+  "description": "POST /v1/collect/batches 成功（HTTP 200）时的响应体。未列在 rejected 中的记录都已被接收，客户端可以删除本地副本。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["batch_id", "accepted", "rejected"],
+  "properties": {
+    "batch_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "accepted": { "type": "integer", "minimum": 0, "maximum": 50 },
+    "rejected": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["index", "id", "reason"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0, "maximum": 49, "description": "记录在 records 数组中的位置。" },
+          "id": { "type": "string" },
+          "reason": { "enum": ["INVALID_RECORD", "UNSUPPORTED_KIND", "UNSUPPORTED_VERSION", "RECORD_TOO_LARGE"] },
+          "message": { "type": "string", "maxLength": 1024 }
+        }
+      }
+    }
+  }
+}

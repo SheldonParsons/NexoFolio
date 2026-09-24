@@ -7,6 +7,10 @@ use sqlx::{
 };
 use std::{str::FromStr, time::Duration};
 
+/// Everything access stores lives in this schema. Connections put it alone on
+/// the `search_path`, so SQL in this crate stays unqualified.
+const SCHEMA: &str = "access";
+
 #[derive(Clone)]
 pub struct Postgres {
     pub(crate) pool: PgPool,
@@ -23,6 +27,7 @@ impl Postgres {
         }
         let options = PgConnectOptions::from_str(url.expose())
             .map_err(|_| Error::invalid("DATABASE_URL is invalid"))?
+            .options([("search_path", SCHEMA)])
             .disable_statement_logging();
         let pool = PgPoolOptions::new()
             .max_connections(max_connections)
@@ -33,32 +38,15 @@ impl Postgres {
 
     /// Explicit administration only; API and worker never migrate automatically.
     pub async fn migrate(&self) -> Result<()> {
-        let error = |_| Error::Unavailable {
-            component: "database_migrations",
-        };
-        let ledger: Option<String> =
-            sqlx::query_scalar("SELECT to_regclass('_sqlx_migrations')::text")
-                .fetch_one(&self.pool)
-                .await
-                .map_err(error)?;
-        let legacy = if ledger.is_some() {
-            sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM _sqlx_migrations WHERE version NOT IN (202609140001,202609140002))")
-                .fetch_one(&self.pool).await.map_err(error)?
-        } else {
-            false
-        };
-        if legacy {
-            // Frozen, checksummed migration ledger for databases made before the reset.
-            // Never rewrite applied SQL or silently ignore missing migration versions.
-            sqlx::migrate!("../../../migrations/legacy")
-                .run(&self.pool)
-                .await
-        } else {
-            sqlx::migrate!("./migrations").run(&self.pool).await
-        }
-        .map_err(|_| Error::Unavailable {
-            component: "database_migrations",
-        })
+        let mut migrator = sqlx::migrate!("./migrations");
+        migrator.create_schema(SCHEMA);
+        migrator.dangerous_set_table_name(format!("{SCHEMA}._sqlx_migrations"));
+        migrator
+            .run(&self.pool)
+            .await
+            .map_err(|_| Error::Unavailable {
+                component: "database_migrations",
+            })
     }
 
     pub async fn close(&self) {
