@@ -122,7 +122,7 @@ async fn pass(
         .addresses(project)
         .await?
         .into_iter()
-        .filter_map(|row| Some((row.address.clone(), row.verdict()?)))
+        .map(|row| (row.address.clone(), row.verdict()))
         .collect();
     let endpoints: HashMap<EndpointId, EndpointRow> = tx
         .endpoints(project)

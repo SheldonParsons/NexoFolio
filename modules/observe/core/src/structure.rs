@@ -137,35 +137,6 @@ fn shape_of(media_type: Option<&str>, text: &str) -> Option<Shape> {
     }
 }
 
-/// Whether a response shows the address is not a JSON API: a non-JSON media
-/// type and content that does not parse. Missing or empty bodies prove nothing.
-pub fn clearly_not_json(body: &Body) -> bool {
-    let (media_type, content) = match body {
-        Body::Full {
-            media_type,
-            content,
-        }
-        | Body::Truncated {
-            media_type,
-            content,
-            ..
-        } => (media_type, Some(content)),
-        Body::Unreadable { media_type, .. } => (media_type, None),
-        Body::None => return false,
-    };
-    let Some(media_type) = media_type.as_deref().map(essence) else {
-        return false;
-    };
-    if is_json_media(&media_type) {
-        return false;
-    }
-    match content.map(text) {
-        Some(text) if text.trim().is_empty() => false,
-        Some(text) => serde_json::from_str::<Value>(&text).is_err(),
-        None => true,
-    }
-}
-
 fn query_of(url: &str) -> Option<&str> {
     let before_fragment = url.split('#').next().unwrap_or_default();
     before_fragment.split_once('?').map(|(_, query)| query)
@@ -357,23 +328,6 @@ mod tests {
             structure.request.shape.fields.keys().collect::<Vec<_>>(),
             ["file", "note"]
         );
-    }
-
-    #[test]
-    fn recognises_responses_that_are_not_json() {
-        assert!(clearly_not_json(&full("text/html", "<html></html>")));
-        assert!(!clearly_not_json(&full("text/plain", r#"{"ok":true}"#)));
-        assert!(!clearly_not_json(&full("application/json", "oops")));
-        assert!(!clearly_not_json(&full("text/html", "  ")));
-        assert!(!clearly_not_json(&Body::None));
-        assert!(clearly_not_json(&Body::Unreadable {
-            media_type: Some("image/png".into()),
-            note: None
-        }));
-        assert!(!clearly_not_json(&Body::Unreadable {
-            media_type: None,
-            note: None
-        }));
     }
 
     #[test]

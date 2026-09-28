@@ -7,7 +7,7 @@
 
 ## 项目结构
 
-- `apps/backend`：API、空闲worker、管理CLI，HTTP/MCP传输与装配。
+- `apps/backend`：API（内含每小时的过期批次清理）、管理CLI，HTTP/MCP传输与装配。
 - `contracts/collect/v1`：公开收集接口的 JSON Schema、fixtures 和哈希清单，客户端以此为准。
 - `crates/common`：最小技术公共类型。
 - `crates/contracts`：模块之间唯一的通用合同层，只有类型、trait 和错误；`testing` feature 提供假实现和一致性测试。
@@ -39,7 +39,6 @@ Rust工具链与依赖由rust-toolchain.toml、Cargo.lock固定。复制`.env.ex
 cargo run -p nexofolio-backend --bin nexofolio-admin -- check-config
 cargo run -p nexofolio-backend --bin nexofolio-admin -- migrate
 cargo run -p nexofolio-backend --bin nexofolio-api
-cargo run -p nexofolio-backend --bin nexofolio-worker
 # 查看 observe 对某个项目整理出的接口：
 cargo run -p nexofolio-backend --bin nexofolio-admin -- observe report --project <项目ID>
 ```
@@ -57,7 +56,7 @@ cp deploy/.env.example deploy/.env
 # 填写配置后，使用全新的隔离Compose项目检查该版本：
 docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yaml build api
 docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yaml run --rm migrate
-docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yaml up -d api worker
+docker compose -p nexofolio-restart --env-file deploy/.env -f deploy/compose.yaml up -d api
 ```
 
 本轮没有替换已有运行容器，也没有修改现有数据库和录制数据。不要对原项目执行`down -v`。每个模块的表和迁移账本都在自己的 schema 里：access 的迁移在 `modules/access/adapter/migrations`，全部落在 `access` schema，账本是 `access._sqlx_migrations`，不在 `public` 建任何表。

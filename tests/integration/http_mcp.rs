@@ -3,7 +3,7 @@ use nexofolio_access_adapter::Unconfigured;
 use nexofolio_access_contracts::{McpPrincipal, McpTokenVerifier};
 use nexofolio_backend::{
     http,
-    wiring::{Config, run_worker},
+    wiring::{Config, run_housekeeping},
 };
 use nexofolio_common::DatabaseProbe;
 use nexofolio_common::{Error, Result, Secret, TokenId, UserId};
@@ -213,7 +213,7 @@ impl DatabaseProbe for HangingProbe {
 }
 
 #[tokio::test]
-async fn readiness_probe_is_bounded_and_worker_cancels() {
+async fn readiness_probe_is_bounded_and_housekeeping_cancels() {
     let (url, stop, handle) = start(Arc::new(HangingProbe), Arc::new(Unconfigured)).await;
     let response = tokio::time::timeout(
         Duration::from_secs(1),
@@ -226,13 +226,13 @@ async fn readiness_probe_is_bounded_and_worker_cancels() {
     stop.cancel();
     assert!(handle.await.unwrap().is_ok());
     let stop = CancellationToken::new();
-    let worker = tokio::spawn(run_worker(
+    let housekeeping = tokio::spawn(run_housekeeping(
         stop.clone(),
         Arc::new(InMemoryLedger::new()),
         Arc::new(InMemoryObserveStore::new()),
     ));
     stop.cancel();
-    tokio::time::timeout(Duration::from_secs(1), worker)
+    tokio::time::timeout(Duration::from_secs(1), housekeeping)
         .await
         .unwrap()
         .unwrap();

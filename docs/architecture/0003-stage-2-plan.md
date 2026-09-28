@@ -88,7 +88,7 @@ Intake::submit(raw: &[u8]) -> Result<Receipt, CollectError>
   - 主键冲突，说明这批处理过，整个事务什么都不做，直接返回成功。
   - 并发的第二个事务会等第一个提交，然后撞上主键，同样什么都不做。
 - 于是 intake 可以放心"至少交付一次"，实际效果是恰好一次，intake 这边不需要锁，也不需要"处理中"状态。
-- `seen_batches` 和 intake 账本一样保留 7 天，由 worker 每小时清理一次。
+- `seen_batches` 和 intake 账本一样保留 7 天，由 api 进程每小时清理一次（原来是单独的 worker，见文末"2e 之后的调整"）。
 
 ### 2.5 限流
 
@@ -114,7 +114,7 @@ Intake::submit(raw: &[u8]) -> Result<Receipt, CollectError>
 - 装配：
   - `PostgresAccess` 作为 `TargetResolver` 和 `SiteRegistry`。
   - observe 的 store 作为 `ObservationSink`、`EndpointReader`，以及 `ChangeFeed<EndpointEvent>`。
-- worker：新增"清理 7 天前的批次账本和 `seen_batches`"，每小时一次。
+- 定时清理："清理 7 天前的批次账本和 `seen_batches`"，每小时一次（现在在 api 进程里跑）。
 - admin CLI：新增 `admin observe report --project <id>`，打印接口列表、模板、各环境字段标签和待裁决项。它是阶段 2 的验收工具，阶段 3 有了 view 之后可以删掉。
 - 把 `intake`、`observe` 加进 `tests/architecture/dependencies.rs` 的 `MODULES`。
 
@@ -152,18 +152,14 @@ modules/observe/adapter   Postgres：observe schema
 
 ### 4.2 服务地址归属
 
-表 `service_addresses(project_id, address, verdict, decided_by, reason)`。`verdict` 取 `own` 或 `external`，`decided_by` 取 `auto` 或 `manual`。
+表 `service_addresses(project_id, address, manual_verdict, calls, last_seen)`。`manual_verdict` 取 `own`、`external` 或空。
 
-判断顺序与 0002 相同：
+**页面正常发出的请求，都算本项目。**（2026-09-28 改，原来的自动判断见文末"2e 之后的调整"。）
 
 1. 有人工结论的，以人工结论为准。
-2. 取页面地址，依次用批次的 `site.origin`、请求头 `Origin`、请求头 `Referer`。取到后，用公共后缀列表（`psl` crate，编译时内置）计算可注册域名。两边相同，判为 `own`。
-3. 以下任一条成立，判为 `external`：
-   - 这个地址在 3 个以上项目里出现过。
-   - 响应既不是 JSON 媒体类型，也解析不出 JSON。
+2. 没有的，一律判为 `own`。不按域名、响应类型或别的项目来猜。
 
-   注意第 3 条排在第 2 条后面，所以同域名下的文件下载接口不会被误判为外部服务。
-4. 都判断不了的，判为 `own`，宁可多收。
+哪个地址是第三方服务，由人手动标成 `external`。
 
 **外部地址不单独存放，和项目自己的接口放在同一套数据里，同一份文档。** 区别只在路径模板怎么写：
 
@@ -187,8 +183,8 @@ modules/observe/adapter   Postgres：observe schema
 
 | 接口 | 说明 |
 |---|---|
-| `GET /v1/projects/{id}/service-addresses` | 列出项目的服务地址：结论、自动还是人工、判定理由、调用次数 |
-| `PUT /v1/projects/{id}/service-addresses` | 请求体 `{ address, verdict: own \| external }`，写入人工结论。地址还没出现过也可以写，之后的流量从第一条起就按这个结论处理 |
+| `GET /v1/projects/{id}/service-addresses` | 列出项目的服务地址：结论、`decision`（`default` 默认 / `manual` 人工）、调用次数 |
+| `PUT /v1/projects/{id}/service-addresses` | 请求体 `{ address, verdict: own \| external \| null }`，写入人工结论，`null` 撤销。地址还没出现过也可以写，之后的流量从第一条起就按这个结论处理 |
 
 这两个接口由 observe 在合同层提供一个 `ServiceAddresses` trait，apps 负责 HTTP 和权限检查。界面和 MCP 上的操作，放到阶段 3、4 再接。
 
@@ -412,10 +408,10 @@ modules/observe/adapter   Postgres：observe schema
 |---|---|
 | 输入 | 旧快照 400 条事件：`http_exchange` 153、`page_context` 144、`interaction` 82、`ui_snapshot` 21；HTTP 全部属于项目 1058 的「UAT 环境」 |
 | 上传 | 153 条全部接收，0 拒绝，4 个批次；原样重跑一次，回执相同，`report` 一字不差 |
-| 接口数量 | 39，与旧系统相同；37 个路径一致（参数名从 `{param1}` 变为 `{id}`） |
-| 模板错误 | 2 个：`commodity/commodityPageForConsultOrderV2`、`commodityCategory/getCategoryTreeWithinUserProductLinePermissionsV2` 被当成参数，变成 `commodity/{id}`、`commodityCategory/{id}`。原因是 `template.rs` 的 token 规则（≥20 字符、字母数字混合）把以 `V2` 结尾的驼峰单词算成了 ID。旧系统两者都是固定路径 |
+| 接口数量 | 39，与旧系统相同；修复后 39 个路径全部一致（参数名从 `{param1}` 变为 `{id}`） |
+| 模板错误（已修） | 首次重放有 2 个：`commodity/commodityPageForConsultOrderV2`、`commodityCategory/getCategoryTreeWithinUserProductLinePermissionsV2` 被当成参数，变成 `commodity/{id}`、`commodityCategory/{id}`。原因是 token 规则（≥20 字符、字母数字混合）把以 `V2` 结尾的驼峰单词算成了 ID。已在 `template.rs` 补一条：整段只有一串数字、且不超过 3 位时，算带版本号的单词，不算 token。修复后重放，两者都是固定路径 |
 | 没识别的参数 | `listByFormKey/at2510292900001-19` 保持固定路径（18 字符，不满足 token 规则），和旧系统一样 |
-| 服务地址 | `presalescloud.gree.com`（145 次）、`dun.gree.com`（8 次，滑块验证码）都自动判为本项目 |
+| 服务地址 | `presalescloud.gree.com`（145 次）、`dun.gree.com`（8 次，滑块验证码）都自动判为本项目；已确认滑块验证码服务属于本项目 |
 | 标签 | 903 个字段"观察中"，40 个"总是出现"，没有可选/新增/移除/多态：只有 5 个接口调用 ≥5 次，其余数据量不够。`null\|object` 这类可空字段判为"总是出现"，不算多态 |
 | 存储 | 47 个指纹（每个一份样本），约 345 kB；observe 全部表不到 1 MB |
 
@@ -429,7 +425,21 @@ modules/observe/adapter   Postgres：observe schema
 
 待你抽查后决定：
 
-- 上面 2 个模板错误要不要现在修（建议：token 规则排除"字母单词 + 结尾数字"，如 `…V2`）。
 - 数据量太小，标签阈值无法评估，建议保持默认值，等真实插件用一段时间再看。
-- `dun.gree.com` 要不要改判为外部。
 - 抽查完成后删除 `experiments/legacy-replay/`。
+
+## 2e 之后的调整（2026-09-28）
+
+**服务地址不再自动判外部。** 你确认"页面正常发出的请求都算本项目"，所以去掉了 2c 的自动判断：同域名判本项目、3 个以上项目共用判外部、响应不是 JSON 判外部。现在没有人工结论的地址一律算本项目，第三方服务由人手动标外部（4.2 已改）。
+
+- 代码：删了 `modules/observe/core/src/address.rs`、`structure.rs` 里的 `clearly_not_json`、存储端口的 `other_projects_using`、合同里的 `AutoReason`，以及 `psl` 依赖。`Decision` 改成 `default` / `manual` 两个值，`GET service-addresses` 的 `decision` 从 `{"by": "auto", "reason": ...}` 变成字符串。前端和插件都没用到这个字段。
+- 数据库：新迁移 `202609280002_manual_verdicts_only.sql` 删掉 `auto_verdict`、`auto_reason` 两列和跨项目查询用的索引，不改已执行的迁移。已有库里原来自动判外部的地址，迁移后变成本项目；已经按外部生成的接口不会自动改回，需要在该地址上随便改一次结论触发迁移，或者清空本地库重来。
+- `admin observe report` 不再把每个地址列进"待裁决"：默认就是本项目，不用逐个确认。
+- 验证：全部测试（含真实数据库）、clippy 通过；旧库执行新迁移成功；旧数据重放后两个地址都是"本项目（默认）"，39 个接口与旧系统一致。
+
+**删掉了单独的 worker 程序。** 它是阶段 1 留下来的空程序，阶段 2 只在里面放了"每小时清理 7 天前的批次账本和 `seen_batches`"，这件事没有单独讨论过。为了一个清理任务多开一个进程、多一个部署服务，不值得。
+
+- 现在清理任务在 `nexofolio-api` 进程里跑：启动时跑一次，之后每小时一次，关机时随 api 一起停（`wiring/lifecycle.rs` 的 `run_housekeeping`）。
+- 删了 `apps/backend/src/bin/worker.rs`、`nexofolio-worker` 这个可执行文件、compose 里的 `worker` 服务和 Dockerfile 里的复制。
+- 以后多实例部署时，几个 api 都会清理，只是重复删同一批行，结果不变。
+- 本地只需要开 `nexofolio-api` 一个窗口。

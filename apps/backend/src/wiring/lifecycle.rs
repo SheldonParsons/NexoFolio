@@ -31,15 +31,15 @@ pub fn install_shutdown_handler(shutdown: CancellationToken) -> io::Result<JoinH
     }
 }
 
-/// Housekeeping until shutdown: forgets processed collect batches, in intake
-/// and in observe, once they are too old to be retried, every hour and once
-/// right after start.
-pub async fn run_worker(
+/// Housekeeping inside the api until shutdown: forgets processed collect
+/// batches, in intake and in observe, once they are too old to be retried,
+/// every hour and once right after start. Running it in several api
+/// processes only deletes the same rows twice.
+pub async fn run_housekeeping(
     shutdown: CancellationToken,
     ledger: Arc<dyn BatchLedger>,
     observe: Arc<dyn ObserveStore>,
 ) {
-    tracing::info!("worker_started");
     let mut hourly = tokio::time::interval(Duration::from_secs(3600));
     hourly.set_missed_tick_behavior(MissedTickBehavior::Delay);
     loop {
@@ -59,5 +59,4 @@ pub async fn run_worker(
             } => {}
         }
     }
-    tracing::info!("worker_stopped");
 }

@@ -10,7 +10,7 @@ use nexofolio_common::{
 use nexofolio_contracts::endpoint::{EndpointEvent, EnvironmentUsage, ServiceAddress, Verdict};
 use nexofolio_contracts::feed::{Change, ChangeFeed, Cursor, FeedError};
 use nexofolio_observe_contracts::{
-    AddressRow, AutoVerdict, BasePath, Declaration, EndpointRow, FingerprintHash, FingerprintStats,
+    AddressRow, BasePath, Declaration, EndpointRow, FingerprintHash, FingerprintStats,
     NewFingerprint, ObserveStore, ObserveTx, StoreError, StoreResult, Traffic,
 };
 use serde::Serialize;
@@ -53,7 +53,7 @@ impl PostgresObserve {
         Ok(Self { pool })
     }
 
-    /// Explicit administration only; API and worker never migrate automatically.
+    /// Explicit administration only; the api never migrates automatically.
     pub async fn migrate(&self) -> Result<()> {
         let mut migrator = sqlx::migrate!("./migrations");
         migrator.create_schema(SCHEMA);
@@ -171,23 +171,10 @@ struct PostgresTx {
 }
 
 fn address_row(row: &PgRow) -> StoreResult<AddressRow> {
-    let auto = match (
-        row.try_get::<Option<String>, _>("auto_verdict")
-            .map_err(unavailable)?,
-        row.try_get::<Option<String>, _>("auto_reason")
-            .map_err(unavailable)?,
-    ) {
-        (Some(verdict), Some(reason)) => Some(AutoVerdict {
-            verdict: parse(verdict)?,
-            reason: parse(reason)?,
-        }),
-        _ => None,
-    };
     let manual: Option<String> = row.try_get("manual_verdict").map_err(unavailable)?;
     Ok(AddressRow {
         address: address(row.try_get("address").map_err(unavailable)?)?,
         manual: manual.map(parse).transpose()?,
-        auto,
         calls: count(row.try_get("calls").map_err(unavailable)?),
         last_seen: row.try_get("last_seen").map_err(unavailable)?,
     })
@@ -205,7 +192,7 @@ fn endpoint_row(row: &PgRow) -> StoreResult<EndpointRow> {
 // Macros rather than consts: sqlx only takes SQL that is a literal.
 macro_rules! address_columns {
     () => {
-        "address,manual_verdict,auto_verdict,auto_reason,calls,last_seen"
+        "address,manual_verdict,calls,last_seen"
     };
 }
 macro_rules! endpoint_columns {
@@ -272,41 +259,20 @@ impl ObserveTx for PostgresTx {
         .collect()
     }
 
-    async fn other_projects_using(
-        &mut self,
-        project: ProjectId,
-        address: &ServiceAddress,
-    ) -> StoreResult<u64> {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT count(*) FROM service_addresses WHERE address=$2 AND project_id<>$1 AND calls>0",
-        )
-        .bind(uuid(project))
-        .bind(address.as_str())
-        .fetch_one(&mut *self.tx)
-        .await
-        .map(count)
-        .map_err(unavailable)
-    }
-
     async fn count_address(
         &mut self,
         project: ProjectId,
         address: &ServiceAddress,
-        auto: AutoVerdict,
         at: DateTime<Utc>,
     ) -> StoreResult<()> {
         sqlx::query(
-            "INSERT INTO service_addresses(project_id,address,auto_verdict,auto_reason,calls,last_seen) \
-             VALUES($1,$2,$3,$4,1,$5) ON CONFLICT(project_id,address) DO UPDATE SET \
-             auto_verdict=coalesce(service_addresses.auto_verdict,excluded.auto_verdict), \
-             auto_reason=coalesce(service_addresses.auto_reason,excluded.auto_reason), \
+            "INSERT INTO service_addresses(project_id,address,calls,last_seen) \
+             VALUES($1,$2,1,$3) ON CONFLICT(project_id,address) DO UPDATE SET \
              calls=service_addresses.calls+1, \
              last_seen=greatest(service_addresses.last_seen,excluded.last_seen)",
         )
         .bind(uuid(project))
         .bind(address.as_str())
-        .bind(text(auto.verdict))
-        .bind(text(auto.reason))
         .bind(at)
         .execute(&mut *self.tx)
         .await
@@ -332,7 +298,7 @@ impl ObserveTx for PostgresTx {
         .map_err(unavailable)?;
         sqlx::query(
             "DELETE FROM service_addresses WHERE project_id=$1 AND address=$2 \
-             AND manual_verdict IS NULL AND auto_verdict IS NULL",
+             AND manual_verdict IS NULL AND last_seen IS NULL",
         )
         .bind(uuid(project))
         .bind(address.as_str())

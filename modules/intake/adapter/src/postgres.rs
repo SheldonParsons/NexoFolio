@@ -38,7 +38,7 @@ impl PostgresLedger {
         Ok(Self { pool })
     }
 
-    /// Explicit administration only; API and worker never migrate automatically.
+    /// Explicit administration only; the api never migrates automatically.
     pub async fn migrate(&self) -> Result<()> {
         let mut migrator = sqlx::migrate!("./migrations");
         migrator.create_schema(SCHEMA);

@@ -1,7 +1,7 @@
 mod config;
 mod lifecycle;
 pub use config::Config;
-pub use lifecycle::{install_shutdown_handler, run_worker};
+pub use lifecycle::{install_shutdown_handler, run_housekeeping};
 
 use nexofolio_common::{Error, Result};
 use tracing_subscriber::EnvFilter;

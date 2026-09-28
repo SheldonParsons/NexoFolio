@@ -11,7 +11,6 @@
 //! commit. A bad observation is skipped with a warning; only storage failures
 //! fail the delivery.
 
-mod address;
 mod declaration;
 mod facts;
 mod identity;
@@ -45,8 +44,8 @@ pub struct Observe<S> {
     store: S,
 }
 
-/// Forgets delivered batches older than [`RETENTION`]; run periodically by
-/// the worker.
+/// Forgets delivered batches older than [`RETENTION`]; run hourly by the
+/// api's housekeeping.
 pub async fn purge_expired(store: &dyn ObserveStore, now: DateTime<Utc>) -> StoreResult<u64> {
     store.purge_batches(now - RETENTION).await
 }
@@ -265,19 +264,15 @@ impl<S: ObserveStore> ServiceAddresses for Observe<S> {
         let rows = tx.addresses(project).await.map_err(unavailable)?;
         Ok(rows
             .into_iter()
-            .filter_map(|row| {
-                let (verdict, decision) = match (row.manual, row.auto) {
-                    (Some(manual), _) => (manual, Decision::Manual),
-                    (None, Some(auto)) => (auto.verdict, Decision::Auto(auto.reason)),
-                    (None, None) => return None,
-                };
-                Some(AddressStatus {
-                    address: row.address,
-                    verdict,
-                    decision,
-                    calls: row.calls,
-                    last_seen: row.last_seen,
-                })
+            .map(|row| AddressStatus {
+                verdict: row.verdict(),
+                decision: match row.manual {
+                    Some(_) => Decision::Manual,
+                    None => Decision::Default,
+                },
+                address: row.address,
+                calls: row.calls,
+                last_seen: row.last_seen,
             })
             .collect())
     }
@@ -294,12 +289,12 @@ impl<S: ObserveStore> ServiceAddresses for Observe<S> {
             let before = tx
                 .address(project, &address)
                 .await?
-                .and_then(|r| r.verdict());
+                .map_or(Verdict::Own, |r| r.verdict());
             tx.set_manual(project, &address, verdict).await?;
             let after = tx
                 .address(project, &address)
                 .await?
-                .and_then(|r| r.verdict());
+                .map_or(Verdict::Own, |r| r.verdict());
             let mut events = Vec::new();
             if before != after {
                 identity::rehome(tx.as_mut(), project, &mut events).await?;

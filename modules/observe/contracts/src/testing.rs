@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, TimeDelta, Utc};
 use nexofolio_common::{EndpointId, EnvironmentId, ProjectId};
 use nexofolio_contracts::endpoint::{
-    AutoReason, EndpointChange, EndpointEvent, EnvironmentUsage, ServiceAddress, Verdict,
+    EndpointChange, EndpointEvent, EnvironmentUsage, ServiceAddress, Verdict,
 };
 use nexofolio_contracts::feed::{Change, ChangeFeed, Cursor, FeedError};
 use serde_json::{Value, json};
@@ -167,24 +167,10 @@ impl ObserveTx for InMemoryTx {
         Ok(rows)
     }
 
-    async fn other_projects_using(
-        &mut self,
-        project: ProjectId,
-        address: &ServiceAddress,
-    ) -> StoreResult<u64> {
-        Ok(self
-            .work
-            .addresses
-            .iter()
-            .filter(|((owner, seen), row)| *owner != project && seen == address && row.calls > 0)
-            .count() as u64)
-    }
-
     async fn count_address(
         &mut self,
         project: ProjectId,
         address: &ServiceAddress,
-        auto: AutoVerdict,
         at: DateTime<Utc>,
     ) -> StoreResult<()> {
         let row = self
@@ -194,11 +180,9 @@ impl ObserveTx for InMemoryTx {
             .or_insert_with(|| AddressRow {
                 address: address.clone(),
                 manual: None,
-                auto: None,
                 calls: 0,
                 last_seen: None,
             });
-        row.auto.get_or_insert(auto);
         row.calls += 1;
         row.last_seen = row.last_seen.max(Some(at));
         Ok(())
@@ -218,12 +202,11 @@ impl ObserveTx for InMemoryTx {
             .or_insert(AddressRow {
                 address: address.clone(),
                 manual: None,
-                auto: None,
                 calls: 0,
                 last_seen: None,
             });
         row.manual = verdict;
-        if row.verdict().is_none() {
+        if row.manual.is_none() && row.last_seen.is_none() {
             self.work.addresses.remove(&key);
         }
         Ok(())
@@ -524,39 +507,30 @@ where
     );
 
     // Addresses.
-    let own = AutoVerdict {
-        verdict: Verdict::Own,
-        reason: AutoReason::SameSite,
-    };
-    let external = AutoVerdict {
-        verdict: Verdict::External,
-        reason: AutoReason::NotJson,
-    };
     let analytics = ServiceAddress::parse("https://analytics.example.net").expect("address");
     let mut tx = begin().await;
     assert_eq!(tx.address(project, &api).await.unwrap(), None);
-    tx.count_address(project, &api, own, at(10)).await.unwrap();
-    tx.count_address(project, &api, external, at(5))
-        .await
-        .unwrap();
+    tx.count_address(project, &api, at(10)).await.unwrap();
+    tx.count_address(project, &api, at(5)).await.unwrap();
     let row = tx.address(project, &api).await.unwrap().expect("counted");
     assert_eq!(
-        (row.auto, row.calls, row.last_seen),
-        (Some(own), 2, Some(at(10))),
-        "first automatic verdict stays"
+        (row.manual, row.calls, row.last_seen),
+        (None, 2, Some(at(10))),
+        "traffic alone decides nothing"
     );
+    assert_eq!(row.verdict(), Verdict::Own);
     tx.set_manual(project, &api, Some(Verdict::External))
         .await
         .unwrap();
     assert_eq!(
         tx.address(project, &api).await.unwrap().unwrap().verdict(),
-        Some(Verdict::External)
+        Verdict::External
     );
     tx.set_manual(project, &api, None).await.unwrap();
     assert_eq!(
         tx.address(project, &api).await.unwrap().unwrap().verdict(),
-        Some(Verdict::Own),
-        "traffic keeps the automatic verdict"
+        Verdict::Own,
+        "an address with traffic stays"
     );
     tx.set_manual(project, &analytics, Some(Verdict::External))
         .await
@@ -571,17 +545,12 @@ where
     tx.set_manual(project, &analytics, None).await.unwrap();
     assert_eq!(tx.address(project, &analytics).await.unwrap(), None);
     let other = ProjectId::new();
-    tx.set_manual(other, &analytics, Some(Verdict::External))
-        .await
-        .unwrap();
+    tx.count_address(other, &api, at(1)).await.unwrap();
     assert_eq!(
-        tx.other_projects_using(project, &analytics).await.unwrap(),
-        0,
-        "registration alone is no traffic"
+        tx.address(project, &api).await.unwrap().unwrap().calls,
+        2,
+        "counted per project"
     );
-    tx.count_address(other, &api, own, at(1)).await.unwrap();
-    assert_eq!(tx.other_projects_using(project, &api).await.unwrap(), 1);
-    assert_eq!(tx.other_projects_using(other, &api).await.unwrap(), 1);
 
     // Base paths.
     let base = BasePath {

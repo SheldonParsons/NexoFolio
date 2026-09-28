@@ -114,7 +114,7 @@ MCP 使用独立签发的专用 Token，不直接复用普通用户登录 Token�
 当前代码基于 Rust Cargo workspace，主要技术为 Tokio、Axum、Tower、Serde、SQLx/PostgreSQL、rmcp。工具链由rust-toolchain.toml固定，依赖由Cargo.lock锁定。以下是现状，不要求新业务照搬同样的目录布局。
 
 ```text
-apps/backend/                     API、空闲worker、管理CLI及传输装配
+apps/backend/                     API（内含定时清理）、管理CLI及传输装配
 crates/common/                    基本ID、错误、Secret、数据库健康探针
 modules/access/contracts/         用户、项目、环境的合同
 modules/access/core/              登录与项目同步流程
@@ -131,7 +131,7 @@ modules/access/adapter/migrations/ access模块迁移（access schema，独立�
 - MCP传输基础；默认拒绝未经验证的Token，没有注册业务工具。
 - 管理CLI的配置检查与迁移命令。
 
-已经删除的业务实现：采集接收、接口结构整理、证据提取、目录重构、知识候选、发布与回退。worker当前空闲，不消费这些旧业务任务。
+已经删除的业务实现：采集接收、接口结构整理、证据提取、目录重构、知识候选、发布与回退。没有单独的后台程序；过期批次的清理在API进程里每小时跑一次。
 
 仓库曾讨论过intake、knowledge、rebuild等名称和拆分方式，那是此前agent的职责草案，**不是要求接手者照抄的架构**。可以提出不同的模块划分和数据流，只需满足用户对清楚边界、可验证隔离、合同对齐及逐步开发的要求。
 

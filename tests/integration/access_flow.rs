@@ -685,16 +685,16 @@ async fn observed(
         ),
         403
     );
-    let auto = list().await;
-    assert_eq!(auto[0]["address"], "https://shop.example.com");
-    assert_eq!(auto[0]["verdict"], "own");
-    assert_eq!(auto[0]["decision"]["by"], "auto");
-    assert_eq!(auto[0]["calls"], calls);
+    let default = list().await;
+    assert_eq!(default[0]["address"], "https://shop.example.com");
+    assert_eq!(default[0]["verdict"], "own");
+    assert_eq!(default[0]["decision"], "default");
+    assert_eq!(default[0]["calls"], calls);
 
     assert_eq!(status(decide(json!("external")).await.unwrap()), 204);
     let manual = list().await;
     assert_eq!(manual[0]["verdict"], "external");
-    assert_eq!(manual[0]["decision"], json!({"by": "manual"}));
+    assert_eq!(manual[0]["decision"], "manual");
     assert_eq!(
         templates().await,
         vec!["GET https://shop.example.com/api/order/{id}"],
@@ -710,7 +710,7 @@ async fn observed(
     assert!(invalid.status().is_client_error());
 
     assert_eq!(status(decide(Value::Null).await.unwrap()), 204);
-    assert_eq!(list().await[0]["decision"]["by"], "auto");
+    assert_eq!(list().await[0]["decision"], "default");
     assert_eq!(templates().await, vec!["GET /api/order/{id}"]);
     let moved: i64 = sqlx::query_scalar("SELECT sum(calls)::bigint FROM observe.fingerprints")
         .fetch_one(sql)

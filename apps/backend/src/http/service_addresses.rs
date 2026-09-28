@@ -46,7 +46,7 @@ pub fn routes(
 #[serde(deny_unknown_fields)]
 struct DecideBody {
     address: ServiceAddress,
-    /// `null` hands the address back to the automatic verdict.
+    /// `null` clears the manual verdict: the address is the project's own again.
     verdict: Option<Verdict>,
 }
 

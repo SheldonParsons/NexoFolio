@@ -10,10 +10,6 @@ name = "nexofolio-api"
 path = "src/bin/api.rs"
 
 [[bin]]
-name = "nexofolio-worker"
-path = "src/bin/worker.rs"
-
-[[bin]]
 name = "nexofolio-admin"
 path = "src/bin/admin.rs"
 

@@ -6,45 +6,40 @@ use tokio::{
 };
 
 #[tokio::test]
-async fn api_and_worker_exit_cleanly_on_sigterm() {
-    for (binary, expected) in [
-        (env!("CARGO_BIN_EXE_nexofolio-api"), "api_started"),
-        (env!("CARGO_BIN_EXE_nexofolio-worker"), "worker_started"),
-    ] {
-        let mut child = Command::new(binary)
-            .env_clear()
-            .env("DATABASE_URL", "postgres://unused@127.0.0.1:1/unused")
-            .env("NEXOFOLIO_BIND_ADDR", "127.0.0.1:0")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
-        let startup = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+async fn api_exits_cleanly_on_sigterm() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nexofolio-api"))
+        .env_clear()
+        .env("DATABASE_URL", "postgres://unused@127.0.0.1:1/unused")
+        .env("NEXOFOLIO_BIND_ADDR", "127.0.0.1:0")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let startup = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(
+        startup.contains("api_started"),
+        "unexpected startup output: {startup}"
+    );
+    let pid = child.id().unwrap();
+    assert!(
+        Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
             .await
             .unwrap()
-            .unwrap()
-            .unwrap();
-        assert!(
-            startup.contains(expected),
-            "unexpected startup output: {startup}"
-        );
-        let pid = child.id().unwrap();
-        assert!(
-            Command::new("kill")
-                .args(["-TERM", &pid.to_string()])
-                .status()
-                .await
-                .unwrap()
-                .success()
-        );
-        let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(status.success(), "process exited unsuccessfully: {status}");
-    }
+            .success()
+    );
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(status.success(), "process exited unsuccessfully: {status}");
 }
 
 #[tokio::test]

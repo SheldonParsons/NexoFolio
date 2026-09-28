@@ -290,7 +290,7 @@ modules/knowledge    知识：目录树、接口位置、描述、字段说明�
 modules/curate       整理：LLM 内容补全、目录整理循环、预算
 modules/view         视图：把事实和知识组装成文档，提供浏览和关键字检索
 
-apps/backend         装配根：HTTP 路由、MCP 工具、worker、CLI、下载接口
+apps/backend         装配根：HTTP 路由、MCP 工具、定时清理、CLI、下载接口
 ```
 
 每个模块内部仍然采用 `core`（纯逻辑）+ `adapter`（数据库、外部服务）两层。
@@ -374,7 +374,7 @@ apps/backend         装配根：HTTP 路由、MCP 工具、worker、CLI、下�
 - view 不写入任何事实或知识，只维护自己的读取模型或检索索引，而且这些都可以从 observe 和 knowledge 重建。
 - "待分类"虚拟目录在这里计算：observe 里有、但 knowledge 里还没有安排位置的接口，都显示在"待分类"下。因此新接口一被 observe 接收，就能立即被浏览和检索到，不需要等 knowledge 或 curate。
 
-**apps/backend 只做装配**：HTTP 路由、MCP 工具定义、worker 调度、配置。
+**apps/backend 只做装配**：HTTP 路由、MCP 工具定义、定时清理、配置。
 
 - MCP 的"直接修改"只是把请求转成 knowledge 的写入命令，apps 里不写业务逻辑。
 - 下载接口暂时留在 apps，因为它和知识库没有关系。以后如果变大，可以独立成模块。

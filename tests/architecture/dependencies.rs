@@ -23,8 +23,6 @@ const PURE: &[&str] = &[
     "async-trait",
     "base64",
     "chrono",
-    // The public suffix list is compiled in; looking a domain up is pure.
-    "psl",
     "serde",
     "serde_json",
     "schemars",

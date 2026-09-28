@@ -267,7 +267,7 @@ impl Intake {
     }
 }
 
-/// Forgets batches older than [`RETENTION`]; run periodically by the worker.
+/// Forgets batches older than [`RETENTION`]; run hourly by the api's housekeeping.
 pub async fn purge_expired(
     ledger: &dyn BatchLedger,
     now: DateTime<Utc>,

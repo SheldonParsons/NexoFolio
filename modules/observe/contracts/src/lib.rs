@@ -9,36 +9,27 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nexofolio_common::{EndpointId, EnvironmentId, ProjectId};
-use nexofolio_contracts::endpoint::{
-    AutoReason, EndpointEvent, EnvironmentUsage, ServiceAddress, Verdict,
-};
+use nexofolio_contracts::endpoint::{EndpointEvent, EnvironmentUsage, ServiceAddress, Verdict};
 use serde_json::Value;
 use uuid::Uuid;
 
 #[cfg(feature = "testing")]
 pub mod testing;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AutoVerdict {
-    pub verdict: Verdict,
-    pub reason: AutoReason,
-}
-
 /// What a project knows about one service address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AddressRow {
     pub address: ServiceAddress,
     pub manual: Option<Verdict>,
-    /// Decided once, on the first call seen; `None` before any traffic.
-    pub auto: Option<AutoVerdict>,
     pub calls: u64,
+    /// `None` before any traffic.
     pub last_seen: Option<DateTime<Utc>>,
 }
 
 impl AddressRow {
-    /// A manual verdict wins over the automatic one.
-    pub fn verdict(&self) -> Option<Verdict> {
-        self.manual.or(self.auto.map(|auto| auto.verdict))
+    /// Every address is the project's own until someone decides otherwise.
+    pub fn verdict(&self) -> Verdict {
+        self.manual.unwrap_or(Verdict::Own)
     }
 }
 
@@ -138,24 +129,15 @@ pub trait ObserveTx: Send {
     /// Ordered by address.
     async fn addresses(&mut self, project: ProjectId) -> StoreResult<Vec<AddressRow>>;
 
-    /// How many other projects have called this address.
-    async fn other_projects_using(
-        &mut self,
-        project: ProjectId,
-        address: &ServiceAddress,
-    ) -> StoreResult<u64>;
-
-    /// Counts one call. `auto` is kept only if none was decided yet.
     async fn count_address(
         &mut self,
         project: ProjectId,
         address: &ServiceAddress,
-        auto: AutoVerdict,
         at: DateTime<Utc>,
     ) -> StoreResult<()>;
 
-    /// `None` clears the manual verdict; an address left without any verdict
-    /// is forgotten.
+    /// `None` clears the manual verdict; an address left without a verdict
+    /// or traffic is forgotten.
     async fn set_manual(
         &mut self,
         project: ProjectId,

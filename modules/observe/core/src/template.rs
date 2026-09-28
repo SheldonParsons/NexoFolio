@@ -33,10 +33,16 @@ pub fn is_param(segment: &str) -> bool {
             4 | 7 => *byte == b'-',
             _ => byte.is_ascii_digit(),
         });
+    // One short digit run is a word with a version, like `pageListV2`, not a token.
+    let digit_runs: Vec<&[u8]> = bytes
+        .split(|byte| !byte.is_ascii_digit())
+        .filter(|run| !run.is_empty())
+        .collect();
+    let word = digit_runs.len() <= 1 && digit_runs.iter().all(|run| run.len() <= 3);
     let token = bytes.len() >= 20
         && all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_')
         && bytes.iter().any(u8::is_ascii_alphabetic)
-        && bytes.iter().any(u8::is_ascii_digit);
+        && !word;
     braced || digits || hex || uuid || date || token
 }
 
@@ -165,6 +171,9 @@ mod tests {
             "items",
             "abcdef",
             "a-very-long-literal-name",
+            "commodityPageForConsultOrderV2",
+            "getCategoryTreeWithinUserProductLinePermissionsV2",
+            "getOrderV2ListByCustomerId",
             "{}",
         ] {
             assert!(!is_param(literal), "{literal}");

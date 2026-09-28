@@ -13,7 +13,7 @@ use nexofolio_observe_contracts::{
 use crate::declaration::DeclaredFields;
 use crate::identity::{Known, ensure_endpoint};
 use crate::structure::{Structure, path_of};
-use crate::{address, template};
+use crate::template;
 
 enum Failure {
     Store(StoreError),
@@ -85,17 +85,10 @@ impl<'a> Ingest<'a> {
         let method = exchange.request.method.to_ascii_uppercase();
 
         let row = self.tx.address(project, &address).await?;
-        let auto = match row.as_ref().and_then(|row| row.auto) {
-            Some(auto) => auto,
-            None => {
-                let others = self.tx.other_projects_using(project, &address).await?;
-                address::auto_verdict(&address, observation, others)
-            }
-        };
         self.tx
-            .count_address(project, &address, auto, observation.observed_at)
+            .count_address(project, &address, observation.observed_at)
             .await?;
-        let verdict = row.and_then(|row| row.manual).unwrap_or(auto.verdict);
+        let verdict = row.map_or(Verdict::Own, |row| row.verdict());
 
         let path = path_of(url);
         let path_template = match verdict {

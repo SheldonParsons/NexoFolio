@@ -4,9 +4,8 @@
 use chrono::{DateTime, Utc};
 use nexofolio_common::{EndpointId, EnvironmentId, ProjectId};
 use nexofolio_contracts::endpoint::{
-    AutoReason, Decision, EndpointChange, EndpointError, EndpointEvent, EndpointFacts,
-    EndpointReader, FieldLabel, FieldLocation, PathSegment, ServiceAddress, ServiceAddresses,
-    Verdict,
+    Decision, EndpointChange, EndpointError, EndpointEvent, EndpointFacts, EndpointReader,
+    FieldLabel, FieldLocation, PathSegment, ServiceAddress, ServiceAddresses, Verdict,
 };
 use nexofolio_contracts::feed::{ChangeFeed, Cursor};
 use nexofolio_contracts::observation::{
@@ -375,7 +374,7 @@ async fn a_field_missing_in_one_environment_differs() {
 }
 
 #[tokio::test]
-async fn non_json_addresses_are_external_with_absolute_templates() {
+async fn every_address_is_own_until_decided() {
     let world = World::new();
     let html = Body::Full {
         media_type: Some("text/html".into()),
@@ -384,24 +383,21 @@ async fn non_json_addresses_are_external_with_absolute_templates() {
     world
         .calls(
             world.prod,
-            "https://analytics.example.net/collect/123",
+            "https://captcha.example.net/check/123",
             html,
             1,
             0,
         )
         .await;
     let facts = world.only_endpoint().await;
-    assert_eq!(
-        facts.summary.path_template,
-        "https://analytics.example.net/collect/{id}"
-    );
-    assert!(facts.summary.external);
+    assert_eq!(facts.summary.path_template, "/check/{id}");
+    assert!(!facts.summary.external);
     let statuses = ServiceAddresses::list(&world.observe, world.project)
         .await
         .unwrap();
     assert_eq!(statuses.len(), 1);
-    assert_eq!(statuses[0].verdict, Verdict::External);
-    assert_eq!(statuses[0].decision, Decision::Auto(AutoReason::NotJson));
+    assert_eq!(statuses[0].verdict, Verdict::Own);
+    assert_eq!(statuses[0].decision, Decision::Default);
     assert_eq!(statuses[0].calls, 1);
 }
 

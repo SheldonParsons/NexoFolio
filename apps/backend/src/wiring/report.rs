@@ -39,9 +39,6 @@ where
     writeln!(out, "\n服务地址（{}）", addresses.len()).unwrap();
     for address in &addresses {
         writeln!(out, "  {}", describe_address(address)).unwrap();
-        if let Decision::Auto(_) = address.decision {
-            pending.push(format!("确认服务地址 {}", describe_address(address)));
-        }
     }
 
     writeln!(out, "\n接口（{}）", endpoints.len()).unwrap();
@@ -169,8 +166,8 @@ fn describe_address(address: &AddressStatus) -> String {
         Verdict::External => "外部",
     };
     let decision = match address.decision {
-        Decision::Manual => "人工".to_owned(),
-        Decision::Auto(reason) => format!("自动：{}", snake(reason)),
+        Decision::Manual => "人工",
+        Decision::Default => "默认",
     };
     format!(
         "{} {verdict}（{decision}），{} 次",
@@ -264,7 +261,7 @@ fn location(location: FieldLocation) -> String {
     }
 }
 
-/// The serde name of a unit enum value, e.g. `same_site`.
+/// The serde name of a unit enum value, e.g. `string`.
 fn snake<T: serde::Serialize>(value: T) -> String {
     match serde_json::to_value(value) {
         Ok(serde_json::Value::String(name)) => name,

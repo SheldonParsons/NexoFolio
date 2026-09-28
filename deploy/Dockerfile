@@ -20,7 +20,6 @@ RUN apt-get update \
     && groupadd --gid 10001 nexofolio \
     && useradd --uid 10001 --gid 10001 --no-create-home nexofolio
 COPY --from=build /app/target/release/nexofolio-api /usr/local/bin/
-COPY --from=build /app/target/release/nexofolio-worker /usr/local/bin/
 COPY --from=build /app/target/release/nexofolio-admin /usr/local/bin/
 USER 10001:10001
 ENV NEXOFOLIO_BIND_ADDR=0.0.0.0:8080

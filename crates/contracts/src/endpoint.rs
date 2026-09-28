@@ -91,24 +91,11 @@ pub enum Verdict {
     External,
 }
 
-/// Why observe decided a verdict on its own.
+/// Who set an address's verdict. Nobody means the project's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AutoReason {
-    /// Same registrable domain as the page the call was made from.
-    SameSite,
-    /// Seen in several unrelated projects.
-    SharedAcrossProjects,
-    /// Answers with something other than JSON.
-    NotJson,
-    /// Nothing decided it either way; kept as the project's own.
-    Default,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "by", content = "reason", rename_all = "snake_case")]
 pub enum Decision {
-    Auto(AutoReason),
+    Default,
     Manual,
 }
 
