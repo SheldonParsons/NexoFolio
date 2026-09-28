@@ -403,3 +403,33 @@ modules/observe/adapter   Postgres：observe schema
 - 地址结论改回来时（外部 → 本项目 → 外部），会建一个新接口，之前的接口都作为别名留着，旧 ID 仍然能解析。
 - 同一项目的写入用 Postgres advisory lock 串行（按项目加锁，顺序固定）；outbox 写入另有一把锁，保证游标按提交顺序递增。
 - `report` 里的环境显示 ID，不显示名称：名称在 access，admin 命令不登录。
+
+## 2e 交付记录（2026-09-28）
+
+重放脚本：`experiments/legacy-replay/replay.py`（只用 Python 标准库）。输出在 `experiments/results/legacy-replay/`：`summary.json`（计数）、`old-interfaces.txt`（旧系统 39 个接口）、`report.txt`（`admin observe report`）。脚本不打印请求、响应和请求头。
+
+| 项目 | 结果 |
+|---|---|
+| 输入 | 旧快照 400 条事件：`http_exchange` 153、`page_context` 144、`interaction` 82、`ui_snapshot` 21；HTTP 全部属于项目 1058 的「UAT 环境」 |
+| 上传 | 153 条全部接收，0 拒绝，4 个批次；原样重跑一次，回执相同，`report` 一字不差 |
+| 接口数量 | 39，与旧系统相同；37 个路径一致（参数名从 `{param1}` 变为 `{id}`） |
+| 模板错误 | 2 个：`commodity/commodityPageForConsultOrderV2`、`commodityCategory/getCategoryTreeWithinUserProductLinePermissionsV2` 被当成参数，变成 `commodity/{id}`、`commodityCategory/{id}`。原因是 `template.rs` 的 token 规则（≥20 字符、字母数字混合）把以 `V2` 结尾的驼峰单词算成了 ID。旧系统两者都是固定路径 |
+| 没识别的参数 | `listByFormKey/at2510292900001-19` 保持固定路径（18 字符，不满足 token 规则），和旧系统一样 |
+| 服务地址 | `presalescloud.gree.com`（145 次）、`dun.gree.com`（8 次，滑块验证码）都自动判为本项目 |
+| 标签 | 903 个字段"观察中"，40 个"总是出现"，没有可选/新增/移除/多态：只有 5 个接口调用 ≥5 次，其余数据量不够。`null\|object` 这类可空字段判为"总是出现"，不算多态 |
+| 存储 | 47 个指纹（每个一份样本），约 345 kB；observe 全部表不到 1 MB |
+
+与方案不同的地方：
+
+- **没有把快照恢复到临时 Postgres。** 快照是 pg_dump 17 的自定义格式，而且是写到管道的（没有数据偏移），环境里没有 `pg_restore`。脚本直接解析 dump 文件，按顺序扫描数据块，读出 `capture_events`、`environments`、`interface_documents` 三张表；blob 直接从 `blobs.tar.gz` 读。
+- 只重放 `http_exchange`。其余 247 条是 collect v1 还不支持的 kind。
+- 不带 `site`：旧数据没有记录站点范围，不编造。环境按名称发送，由服务端创建。
+- 新后端的项目 ID 是随机的，所以脚本要传 `--project-id`。本次验收在隔离的临时库里直接插入项目行，没有动本地库。
+- 旧请求头只有页面可见部分，映射为 `partial`；旧的 `unreadable` 正文（1 条文件上传）映射为 `unreadable`，旧内容不上传。
+
+待你抽查后决定：
+
+- 上面 2 个模板错误要不要现在修（建议：token 规则排除"字母单词 + 结尾数字"，如 `…V2`）。
+- 数据量太小，标签阈值无法评估，建议保持默认值，等真实插件用一段时间再看。
+- `dun.gree.com` 要不要改判为外部。
+- 抽查完成后删除 `experiments/legacy-replay/`。
