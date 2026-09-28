@@ -19,5 +19,7 @@ pub fn init_logging(filter: &str) -> Result<()> {
         })
 }
 
-mod access;
-pub use access::build_access;
+mod api;
+mod databases;
+pub use api::build_api;
+pub use databases::Databases;

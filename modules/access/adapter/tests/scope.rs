@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use nexofolio_access_adapter::{Postgres, PostgresAccess};
 use nexofolio_common::{EnvironmentId, ProjectId, Secret};
 use nexofolio_contracts::scope::{
-    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteRegistry,
-    SiteScope, TargetResolver,
+    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteMatch,
+    SiteRegistry, SiteScope, TargetResolver,
 };
 use nexofolio_contracts::testing::{
     ScopeFixture, site_registry_conformance, target_resolver_conformance,
@@ -90,7 +90,7 @@ impl TargetResolver for Harness {
 
 #[async_trait]
 impl SiteRegistry for Harness {
-    async fn lookup(&self, page_url: &str) -> Result<Option<SiteBinding>, ScopeError> {
+    async fn lookup(&self, page_url: &str) -> Result<Option<SiteMatch>, ScopeError> {
         self.store.lookup(page_url).await
     }
     async fn bind(&self, binding: SiteBinding) -> Result<(), ScopeError> {

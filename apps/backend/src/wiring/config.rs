@@ -1,4 +1,5 @@
 use nexofolio_common::{Error, Result, Secret};
+use nexofolio_intake::Limits;
 use std::{net::SocketAddr, time::Duration};
 
 #[derive(Debug)]
@@ -15,6 +16,7 @@ pub struct Config {
     pub zentao_base_url: Option<String>,
     pub session_key: Option<Secret>,
     pub emergency_password_hash: Option<Secret>,
+    pub collect_limits: Limits,
 }
 
 impl Config {
@@ -85,6 +87,10 @@ impl Config {
                 .filter(|s| !s.is_empty())
                 .map(Secret::new),
             log_filter: lookup("NEXOFOLIO_LOG").unwrap_or_else(|| "info".into()),
+            collect_limits: Limits {
+                rate_per_minute: number("NEXOFOLIO_COLLECT_RATE_PER_MINUTE", 120, 60_000)? as u32,
+                burst: number("NEXOFOLIO_COLLECT_BURST", 30, 10_000)? as u32,
+            },
         };
         if config.zentao_base_url.is_some() != config.session_key.is_some() {
             return Err(invalid(

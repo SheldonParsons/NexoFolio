@@ -9,10 +9,7 @@ use tokio::{
 async fn api_and_worker_exit_cleanly_on_sigterm() {
     for (binary, expected) in [
         (env!("CARGO_BIN_EXE_nexofolio-api"), "api_started"),
-        (
-            env!("CARGO_BIN_EXE_nexofolio-worker"),
-            "worker_started_no_job_source_configured",
-        ),
+        (env!("CARGO_BIN_EXE_nexofolio-worker"), "worker_started"),
     ] {
         let mut child = Command::new(binary)
             .env_clear()

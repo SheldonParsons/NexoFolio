@@ -15,5 +15,6 @@ pub use observation::{
     RecordingSink, observation_sink_conformance, sample_declaration, sample_exchange,
 };
 pub use scope::{
-    InMemoryScope, ScopeFixture, site_registry_conformance, target_resolver_conformance,
+    FIXTURE_PROJECT_NAME, InMemoryScope, ScopeFixture, site_registry_conformance,
+    target_resolver_conformance,
 };

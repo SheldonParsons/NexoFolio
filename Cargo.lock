@@ -1618,6 +1618,7 @@ dependencies = [
  "argon2",
  "async-trait",
  "axum",
+ "chrono",
  "clap",
  "http-body-util",
  "jsonschema",
@@ -1625,6 +1626,10 @@ dependencies = [
  "nexofolio-access-adapter",
  "nexofolio-access-contracts",
  "nexofolio-common",
+ "nexofolio-contracts",
+ "nexofolio-intake",
+ "nexofolio-intake-adapter",
+ "nexofolio-intake-contracts",
  "reqwest",
  "rmcp",
  "semver",
@@ -1662,6 +1667,52 @@ dependencies = [
  "async-trait",
  "chrono",
  "nexofolio-common",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nexofolio-intake"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "nexofolio-common",
+ "nexofolio-contracts",
+ "nexofolio-intake-contracts",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nexofolio-intake-adapter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-common",
+ "nexofolio-intake-contracts",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nexofolio-intake-contracts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
  "serde",
  "serde_json",
  "thiserror",

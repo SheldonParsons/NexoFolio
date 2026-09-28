@@ -46,6 +46,12 @@ nexofolio-common.workspace = true
 nexofolio-access-contracts.workspace = true
 nexofolio-access.workspace = true
 nexofolio-access-adapter.workspace = true
+nexofolio-contracts.workspace = true
+nexofolio-intake-contracts.workspace = true
+nexofolio-intake.workspace = true
+nexofolio-intake-adapter.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
 axum.workspace = true
 clap.workspace = true
 rmcp.workspace = true
@@ -63,9 +69,9 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+nexofolio-intake-contracts = { workspace = true, features = ["testing"] }
 sqlx.workspace = true
 argon2 = "0.5"
-async-trait.workspace = true
 http-body-util.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 jsonschema = { version = "0.57", default-features = false }

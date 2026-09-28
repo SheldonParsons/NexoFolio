@@ -12,7 +12,7 @@ mod sql_ownership;
 
 /// Registered backend modules. A crate or directory outside this list is an
 /// undefined boundary.
-pub(crate) const MODULES: &[&str] = &["access"];
+pub(crate) const MODULES: &[&str] = &["access", "intake"];
 
 const COMMON: &str = "nexofolio-common";
 const CONTRACTS: &str = "nexofolio-contracts";
@@ -21,11 +21,15 @@ const BACKEND: &str = "nexofolio-backend";
 /// External crates allowed in anything that must stay free of IO.
 const PURE: &[&str] = &[
     "async-trait",
+    "base64",
     "chrono",
     "serde",
     "serde_json",
     "schemars",
+    "sha2",
     "thiserror",
+    // A logging facade only; the subscriber and its output live in the backend.
+    "tracing",
     "uuid",
     "zeroize",
 ];

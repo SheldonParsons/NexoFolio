@@ -3,8 +3,8 @@ use super::{PostgresAccess, typed, uuid};
 use async_trait::async_trait;
 use nexofolio_access_contracts::validate_environment_name;
 use nexofolio_contracts::scope::{
-    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteRegistry,
-    SiteScope, TargetResolver,
+    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteMatch,
+    SiteRegistry, SiteScope, TargetResolver,
 };
 use sqlx::{Postgres as Pg, Row, Transaction};
 use uuid::Uuid;
@@ -50,18 +50,20 @@ impl TargetResolver for PostgresAccess {
 
 #[async_trait]
 impl SiteRegistry for PostgresAccess {
-    async fn lookup(&self, page_url: &str) -> Result<Option<SiteBinding>, ScopeError> {
+    async fn lookup(&self, page_url: &str) -> Result<Option<SiteMatch>, ScopeError> {
         let Some(origin) = SiteScope::origin_of(page_url) else {
             return Ok(None);
         };
         let rows = sqlx::query(
-            "SELECT origin,prefix,project_id,environment_id FROM sites WHERE origin=$1",
+            "SELECT s.origin,s.prefix,s.project_id,s.environment_id,p.name AS project_name,e.name AS environment_name \
+             FROM sites s JOIN projects p ON p.id=s.project_id JOIN environments e ON e.id=s.environment_id \
+             WHERE s.origin=$1",
         )
         .bind(origin)
         .fetch_all(&self.database.pool)
         .await
         .map_err(unavailable)?;
-        let mut best: Option<SiteBinding> = None;
+        let mut best: Option<SiteMatch> = None;
         for row in rows {
             let origin: String = row.try_get("origin").map_err(unavailable)?;
             let prefix: String = row.try_get("prefix").map_err(unavailable)?;
@@ -69,14 +71,18 @@ impl SiteRegistry for PostgresAccess {
             if !site.contains(page_url)
                 || best
                     .as_ref()
-                    .is_some_and(|b| b.site.specificity() >= site.specificity())
+                    .is_some_and(|b| b.binding.site.specificity() >= site.specificity())
             {
                 continue;
             }
-            best = Some(SiteBinding {
-                site,
-                project_id: typed(row.try_get("project_id").map_err(unavailable)?),
-                environment_id: typed(row.try_get("environment_id").map_err(unavailable)?),
+            best = Some(SiteMatch {
+                binding: SiteBinding {
+                    site,
+                    project_id: typed(row.try_get("project_id").map_err(unavailable)?),
+                    environment_id: typed(row.try_get("environment_id").map_err(unavailable)?),
+                },
+                project_name: row.try_get("project_name").map_err(unavailable)?,
+                environment_name: row.try_get("environment_name").map_err(unavailable)?,
             });
         }
         Ok(best)

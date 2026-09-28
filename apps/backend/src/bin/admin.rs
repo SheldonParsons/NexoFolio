@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
-use nexofolio_access_adapter::Postgres;
-use nexofolio_backend::wiring::{Config, init_logging};
+use nexofolio_backend::wiring::{Config, Databases, build_api, init_logging};
 
 #[derive(Parser)]
 #[command(about = "NexoFolio foundation administration")]
@@ -20,21 +19,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     let config = Config::from_env()?;
     init_logging(&config.log_filter)?;
-    let database = Postgres::new(
-        &config.database_url,
-        config.database_max_connections,
-        config.database_timeout,
-    )?;
-    let _access = nexofolio_backend::wiring::build_access(&config, database.clone())?;
+    let databases = Databases::new(&config)?;
+    let _api = build_api(&config, &databases)?;
     match cli.command {
         Command::CheckConfig => {
             println!("Configuration valid (database connectivity not checked).")
         }
         Command::Migrate => {
-            database.migrate().await?;
+            databases.migrate().await?;
             println!("Database migrations completed.");
         }
     }
-    database.close().await;
+    databases.close().await;
     Ok(())
 }

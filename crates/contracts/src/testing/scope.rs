@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use nexofolio_common::{EnvironmentId, ProjectId};
 
 use crate::scope::{
-    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteRegistry,
-    SiteScope, TargetResolver,
+    CollectTarget, EnvironmentSelector, ResolvedTarget, ScopeError, SiteBinding, SiteMatch,
+    SiteRegistry, SiteScope, TargetResolver,
 };
 
 /// Seeds projects and environments so conformance suites can run against any implementation.
@@ -23,6 +23,9 @@ struct State {
     sites: Vec<SiteBinding>,
     annotations: Vec<(EnvironmentId, SiteScope)>,
 }
+
+/// Every project the fake creates carries this name.
+pub const FIXTURE_PROJECT_NAME: &str = "fixture project";
 
 /// Fake access: projects, environments, the site registry and site annotations in memory.
 #[derive(Default)]
@@ -151,14 +154,26 @@ impl TargetResolver for InMemoryScope {
 
 #[async_trait]
 impl SiteRegistry for InMemoryScope {
-    async fn lookup(&self, page_url: &str) -> Result<Option<SiteBinding>, ScopeError> {
+    async fn lookup(&self, page_url: &str) -> Result<Option<SiteMatch>, ScopeError> {
         let state = self.state.lock().expect("fake lock");
-        Ok(state
+        let Some(binding) = state
             .sites
             .iter()
             .filter(|binding| binding.site.contains(page_url))
             .max_by_key(|binding| binding.site.specificity())
-            .cloned())
+        else {
+            return Ok(None);
+        };
+        let environment_name = state.environments[&binding.project_id]
+            .iter()
+            .find(|(id, _)| *id == binding.environment_id)
+            .map(|(_, name)| name.clone())
+            .expect("bound environment exists");
+        Ok(Some(SiteMatch {
+            binding: binding.clone(),
+            project_name: FIXTURE_PROJECT_NAME.to_owned(),
+            environment_name,
+        }))
     }
 
     async fn bind(&self, binding: SiteBinding) -> Result<(), ScopeError> {
@@ -280,7 +295,7 @@ pub async fn site_registry_conformance<R: SiteRegistry + ScopeFixture>(registry:
 
     assert_eq!(
         registry.lookup(&format!("{host}/")).await,
-        Ok(None),
+        Ok(None::<SiteMatch>),
         "empty registry"
     );
 
@@ -290,7 +305,13 @@ pub async fn site_registry_conformance<R: SiteRegistry + ScopeFixture>(registry:
         .await
         .expect("bind prefix");
 
-    let found = |url: String| async move { registry.lookup(&url).await.expect("lookup") };
+    let found = |url: String| async move {
+        registry
+            .lookup(&url)
+            .await
+            .expect("lookup")
+            .map(|hit| hit.binding)
+    };
     assert_eq!(
         found(format!("{host}/#/order")).await,
         Some(binding("/", prod))
@@ -311,6 +332,17 @@ pub async fn site_registry_conformance<R: SiteRegistry + ScopeFixture>(registry:
         "origin is case-insensitive"
     );
     assert_eq!(found("https://unrelated.example.test/".into()).await, None);
+
+    let hit = registry
+        .lookup(&format!("{host}/test/x"))
+        .await
+        .expect("lookup names")
+        .expect("bound");
+    assert_eq!(
+        hit.environment_name, "测试环境",
+        "environment name for display"
+    );
+    assert!(!hit.project_name.is_empty(), "project name for display");
 
     registry.bind(binding("/", test)).await.expect("rebind");
     assert_eq!(

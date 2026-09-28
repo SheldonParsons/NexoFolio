@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter"]
+members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -10,6 +10,7 @@ publish = false
 
 [workspace.dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 axum = "0.8.9"
 chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
 clap = { version = "4", features = ["derive"] }
@@ -18,6 +19,7 @@ rmcp = { version = "3.3.0", default-features = false, features = ["server", "tra
 schemars = { version = "1.2.2", features = ["uuid1"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros", "uuid", "chrono"] }
 thiserror = "2"
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "process", "io-util"] }
@@ -33,6 +35,9 @@ nexofolio-contracts = { path = "crates/contracts" }
 nexofolio-access-contracts = { path = "modules/access/contracts" }
 nexofolio-access = { path = "modules/access/core" }
 nexofolio-access-adapter = { path = "modules/access/adapter" }
+nexofolio-intake-contracts = { path = "modules/intake/contracts" }
+nexofolio-intake = { path = "modules/intake/core" }
+nexofolio-intake-adapter = { path = "modules/intake/adapter" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

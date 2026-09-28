@@ -1,5 +1,13 @@
-use std::io;
+use chrono::DateTime;
+use nexofolio_intake::purge_expired;
+use nexofolio_intake_contracts::BatchLedger;
+use std::{
+    io,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use tokio::task::JoinHandle;
+use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 
 pub fn install_shutdown_handler(shutdown: CancellationToken) -> io::Result<JoinHandle<()>> {
@@ -23,9 +31,24 @@ pub fn install_shutdown_handler(shutdown: CancellationToken) -> io::Result<JoinH
     }
 }
 
-/// Foundation lifecycle only. No in-memory queue pretending to be durable work.
-pub async fn run_worker(shutdown: CancellationToken) {
-    tracing::info!(mode = "idle", "worker_started_no_job_source_configured");
-    shutdown.cancelled().await;
+/// Housekeeping until shutdown: forgets processed collect batches once they
+/// are too old to be retried, every hour and once right after start.
+pub async fn run_worker(shutdown: CancellationToken, ledger: Arc<dyn BatchLedger>) {
+    tracing::info!("worker_started");
+    let mut hourly = tokio::time::interval(Duration::from_secs(3600));
+    hourly.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            _ = shutdown.cancelled() => break,
+            _ = async {
+                hourly.tick().await;
+                let now = DateTime::from(SystemTime::now());
+                match purge_expired(ledger.as_ref(), now).await {
+                    Ok(purged) => tracing::info!(purged, "collect_batches_purged"),
+                    Err(_) => tracing::warn!("collect_batch_purge_failed"),
+                }
+            } => {}
+        }
+    }
     tracing::info!("worker_stopped");
 }

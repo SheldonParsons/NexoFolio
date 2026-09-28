@@ -1,20 +1,18 @@
-use nexofolio_access_adapter::Postgres;
-use nexofolio_backend::wiring::{Config, init_logging, install_shutdown_handler, run_worker};
+use nexofolio_backend::wiring::{
+    Config, Databases, init_logging, install_shutdown_handler, run_worker,
+};
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
     init_logging(&config.log_filter)?;
-    let database = Postgres::new(
-        &config.database_url,
-        config.database_max_connections,
-        config.database_timeout,
-    )?;
+    let databases = Databases::new(&config)?;
     let shutdown = CancellationToken::new();
     let signals = install_shutdown_handler(shutdown.clone())?;
-    run_worker(shutdown).await;
+    run_worker(shutdown, Arc::new(databases.intake.clone())).await;
     signals.abort();
-    database.close().await;
+    databases.close().await;
     Ok(())
 }

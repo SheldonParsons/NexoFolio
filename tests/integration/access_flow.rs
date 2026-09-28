@@ -15,7 +15,7 @@ use nexofolio_access_contracts::{
 };
 use nexofolio_backend::{
     http,
-    wiring::{Config, build_access},
+    wiring::{Config, Databases, build_api},
 };
 use nexofolio_common::{ProjectId, Secret, UserId};
 use serde::Deserialize;
@@ -168,10 +168,14 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
         "NEXOFOLIO_ZENTAO_BASE_URL" => Some(base.clone()),
         "NEXOFOLIO_SESSION_KEY" => Some(key.clone()),
         "NEXOFOLIO_EMERGENCY_PASSWORD_HASH" => Some(emergency.clone()),
+        "NEXOFOLIO_COLLECT_RATE_PER_MINUTE" => Some("1".into()),
+        "NEXOFOLIO_COLLECT_BURST" => Some("8".into()),
         _ => None,
     })
     .unwrap();
-    let access = build_access(&config, database.clone()).unwrap();
+    let databases = Databases::new(&config).unwrap();
+    databases.migrate().await.unwrap();
+    let access = build_api(&config, &databases).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let stop = CancellationToken::new();
@@ -251,6 +255,7 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
             .status(),
         200
     );
+    sites_and_collect(&client, &url, &token, &a_id, &b_id, &sql).await;
     let before = fixture.calls.load(Ordering::SeqCst);
     let em = login(&client, &url, "ALICE", "fixture-emergency").await;
     assert_eq!(em["token"], first["token"]);
@@ -426,6 +431,176 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
     stop.cancel();
     handle.await.unwrap().unwrap();
     database.close().await;
+    databases.close().await;
     sql.close().await;
+}
+
+/// Site registry and collect on top of a logged-in user who can open project
+/// `a` but not `b`.
+async fn sites_and_collect(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    a: &str,
+    b: &str,
+    sql: &sqlx::PgPool,
+) {
+    let page = "https://shop.example.com/app/#/order/1001";
+    let lookup = || async {
+        let r = client
+            .get(format!("{url}/v1/sites/lookup"))
+            .query(&[("url", page)])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        assert_eq!(r.headers()["cache-control"], "no-store");
+        r.json::<Value>().await.unwrap()
+    };
+    assert_eq!(
+        lookup().await,
+        Value::Null,
+        "nothing bound yet, no login needed"
+    );
+
+    let environment: Value = client
+        .post(format!("{url}/v1/projects/{a}/environments"))
+        .bearer_auth(token)
+        .json(&json!({"name": "test"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let environment = environment["id"].as_str().unwrap().to_owned();
+    let bind = |project: &str, environment: &str, token: Option<&str>| {
+        let mut request = client.put(format!("{url}/v1/sites")).json(&json!({
+            "site": {"origin": "https://shop.example.com", "prefix": "/app"},
+            "project_id": project,
+            "environment_id": environment,
+        }));
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
+        request.send()
+    };
+    assert_eq!(bind(a, &environment, None).await.unwrap().status(), 401);
+    assert_eq!(
+        bind(b, &environment, Some(token)).await.unwrap().status(),
+        403
+    );
+    let unknown = bind(a, &uuid::Uuid::new_v4().to_string(), Some(token))
+        .await
+        .unwrap();
+    assert_eq!(unknown.status(), 404);
+    assert_eq!(
+        unknown.json::<Value>().await.unwrap()["error"]["code"],
+        "UNKNOWN_ENVIRONMENT"
+    );
+    assert_eq!(
+        bind(a, &environment, Some(token)).await.unwrap().status(),
+        204
+    );
+    assert_eq!(
+        lookup().await,
+        json!({
+            "site": {"origin": "https://shop.example.com", "prefix": "/app"},
+            "project": {"id": a, "name": "A"},
+            "environment": {"id": environment, "name": "test"},
+        })
+    );
+
+    let post = |body: Vec<u8>| {
+        client
+            .post(format!("{url}/v1/collect/batches"))
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+    };
+    let batch = |project: &str| {
+        json!({
+            "batch_id": uuid::Uuid::new_v4(),
+            "platform": "nexofolio-fetcher",
+            "target": {"project_id": project, "environment": {"id": environment}},
+            "records": [{
+                "id": uuid::Uuid::new_v4(),
+                "kind": "http_exchange",
+                "version": 1,
+                "observed_at": "2026-09-24T08:00:00Z",
+                "payload": {
+                    "request": {"method": "GET", "url": "https://shop.example.com/api/order/1001", "body": {"state": "none"}},
+                    "response": {"status": 200, "body": {"state": "none"}}
+                }
+            }, {"id": "not-a-uuid", "kind": "http_exchange", "version": 1}]
+        })
+    };
+    let refused = |expected: u16, code: &'static str| {
+        move |r: reqwest::Response| async move {
+            assert_eq!(r.status(), expected);
+            assert_eq!(r.json::<Value>().await.unwrap()["error"]["code"], code);
+        }
+    };
+
+    let first = batch(a);
+    let r = post(serde_json::to_vec(&first).unwrap()).await.unwrap();
+    assert_eq!(r.status(), 200);
+    let receipt: Value = r.json().await.unwrap();
+    assert_eq!(receipt["accepted"], 1);
+    assert_eq!(receipt["rejected"][0]["reason"], "INVALID_RECORD");
+    let retry = post(serde_json::to_vec_pretty(&first).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(
+        retry.json::<Value>().await.unwrap(),
+        receipt,
+        "a retry gets the first receipt"
+    );
+    let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM intake.batches WHERE batch_id=$1")
+        .bind(
+            first["batch_id"]
+                .as_str()
+                .unwrap()
+                .parse::<uuid::Uuid>()
+                .unwrap(),
+        )
+        .fetch_one(sql)
+        .await
+        .unwrap();
+    assert_eq!(stored, 1);
+
+    let mut changed = first.clone();
+    changed["platform_version"] = json!("2.0.0");
+    refused(409, "BATCH_ID_REUSED")(post(serde_json::to_vec(&changed).unwrap()).await.unwrap())
+        .await;
+    refused(404, "UNKNOWN_PROJECT")(
+        post(serde_json::to_vec(&batch(&uuid::Uuid::new_v4().to_string())).unwrap())
+            .await
+            .unwrap(),
+    )
+    .await;
+    refused(400, "INVALID_BATCH")(post(b"{".to_vec()).await.unwrap()).await;
+    refused(413, "BATCH_TOO_LARGE")(post(vec![b' '; 8 * 1024 * 1024 + 1]).await.unwrap()).await;
+
+    // Burst of 8 per platform; the calls above used 5.
+    let mut limited = None;
+    for _ in 0..8 {
+        let r = post(serde_json::to_vec(&batch(a)).unwrap()).await.unwrap();
+        if r.status() == 429 {
+            limited = Some(r);
+            break;
+        }
+        assert_eq!(r.status(), 200);
+    }
+    let limited = limited.expect("rate limited within the burst");
+    assert!(
+        limited.headers()["retry-after"]
+            .to_str()
+            .unwrap()
+            .parse::<u64>()
+            .unwrap()
+            > 0
+    );
+    refused(429, "RATE_LIMITED")(limited).await;
 }
 use uuid::Uuid;

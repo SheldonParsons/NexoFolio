@@ -1,5 +1,7 @@
 pub mod access;
+pub mod collect;
 pub mod downloads;
+pub mod sites;
 use crate::{
     mcp::{FoundationMcp, require_token},
     wiring::Config,

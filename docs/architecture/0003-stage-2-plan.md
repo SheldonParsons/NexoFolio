@@ -1,6 +1,6 @@
 # 0003 阶段 2 方案：intake、observe 与插件改造
 
-状态：已确认（2026-09-24），2a 已完成，见文末交付记录。依据 [`0002-fetcher-and-modules.md`](0002-fetcher-and-modules.md)。本文只写阶段 2 怎么做，0002 已确认的规则不再重复。
+状态：已确认（2026-09-24），2a、2b 已完成，见文末交付记录。依据 [`0002-fetcher-and-modules.md`](0002-fetcher-and-modules.md)。本文只写阶段 2 怎么做，0002 已确认的规则不再重复。
 
 ---
 
@@ -351,3 +351,25 @@ modules/observe/adapter   Postgres：observe schema
 
 - 改名不单独设事件，表现为新接口的 `Created` 加旧接口的 `MergedInto`。
 - `EndpointReader` 没有一致性测试：它的行为取决于 observe 的算法，由 2c 用观测序列直接验证。
+
+---
+
+## 2b 交付记录（2026-09-28）
+
+| 交付物 | 位置 | 验收 |
+|---|---|---|
+| intake 合同 | `modules/intake/contracts`：回执、拒绝原因、`BatchLedger`（首次写入为准、按时间清理） | `InMemoryLedger` 与 `PostgresLedger` 都通过 `batch_ledger_conformance` |
+| intake 核心 | `modules/intake/core`：解析与校验（`wire.rs`）、规范化哈希（`hash.rs`）、按平台令牌桶（`limiter.rs`）、`Intake::submit` | `tests/fixtures.rs`：合同里每个 fixture 按预期接收或拒绝；`tests/submit.rs`：重发同回执（含重新排版）、内容不同 409、限流 429、未知项目/环境 404、按名称建环境、只有声明可省略环境、sink 或账本失败 503 且重发只计一次、坏记录只拒绝自己、7 天清理 |
+| intake 存储 | `modules/intake/adapter`：`intake.batches` | 迁移可重复执行；一致性测试 |
+| 站点查询 | `SiteRegistry::lookup` 返回 `SiteMatch`（带项目名、环境名） | access 的一致性测试补了名称断言 |
+| HTTP | `POST /v1/collect/batches`、`GET /v1/sites/lookup`、`PUT /v1/sites`（`apps/backend/src/http/`） | `tests/integration/access_flow.rs` 在真实数据库上走完：查询、401/403/404、登记、上传、重发、409、404、400、413、429 + `Retry-After` |
+| 装配 | `wiring::Databases`（每个模块一个连接池）、`build_api`；admin `migrate` 迁移两个模块；worker 每小时清理账本 | 生命周期测试 |
+
+与方案不同的地方：
+
+- **多了 `nexofolio-intake-contracts`**（2.1 说不单独建）。架构测试规定 adapter 只能依赖合同层，不能依赖自己的 core，账本端口和回执类型因此放在一个合同 crate 里。它只在 intake 的 core、adapter 和 apps 之间使用，不对其他模块开放。
+- 纯逻辑 crate 允许的依赖加了 `base64`、`sha2`（解码 body、计算内容哈希）和 `tracing`（只用日志门面，输出仍由 apps 决定）。
+- 2c 之前，apps 用一个只记数量的 sink（`UntilObserve`）顶替 observe：批次会进账本、回执照常返回，但观测不落库。2c 接上 observe 后删除。
+- `seen_batches` 属于 observe，随 2c 一起做；现在 worker 只清理 intake 账本。
+- 新配置：`NEXOFOLIO_COLLECT_RATE_PER_MINUTE`（默认 120）、`NEXOFOLIO_COLLECT_BURST`（默认 30）。
+- 站点和上传接口只在配置了禅道登录时启用，因为项目来自 access。

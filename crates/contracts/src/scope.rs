@@ -171,6 +171,14 @@ pub struct SiteBinding {
     pub environment_id: EnvironmentId,
 }
 
+/// A lookup hit, with the names a client shows to the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SiteMatch {
+    pub binding: SiteBinding,
+    pub project_name: String,
+    pub environment_name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ScopeError {
     #[error("unknown project")]
@@ -199,7 +207,7 @@ pub trait TargetResolver: Send + Sync {
 #[async_trait]
 pub trait SiteRegistry: Send + Sync {
     /// The binding whose scope contains `page_url` with the longest prefix.
-    async fn lookup(&self, page_url: &str) -> Result<Option<SiteBinding>, ScopeError>;
+    async fn lookup(&self, page_url: &str) -> Result<Option<SiteMatch>, ScopeError>;
 
     /// Creates or replaces the binding for `binding.site`. The environment must
     /// belong to the project.
