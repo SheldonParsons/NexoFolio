@@ -34,6 +34,15 @@ __pycache__/
 .pytest_cache/
 .venv/
 
+# Promo video assets and drafts (not part of the backend project).
+/promo/
+/video-assets/
+/docs/promo-video-codex-prompt.md
+/shot1_start.png
+/shot1_end.png
+/music_player.html
+/music_player.jsx
+
 # Editor/OS scratch files and runtime logs.
 .idea/
 .vscode/
