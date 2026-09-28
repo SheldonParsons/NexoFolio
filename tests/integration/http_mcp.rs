@@ -8,6 +8,7 @@ use nexofolio_backend::{
 use nexofolio_common::DatabaseProbe;
 use nexofolio_common::{Error, Result, Secret, TokenId, UserId};
 use nexofolio_intake_contracts::testing::InMemoryLedger;
+use nexofolio_observe_contracts::testing::InMemoryObserveStore;
 use serde_json::{Value, json};
 use std::{
     sync::{
@@ -225,7 +226,11 @@ async fn readiness_probe_is_bounded_and_worker_cancels() {
     stop.cancel();
     assert!(handle.await.unwrap().is_ok());
     let stop = CancellationToken::new();
-    let worker = tokio::spawn(run_worker(stop.clone(), Arc::new(InMemoryLedger::new())));
+    let worker = tokio::spawn(run_worker(
+        stop.clone(),
+        Arc::new(InMemoryLedger::new()),
+        Arc::new(InMemoryObserveStore::new()),
+    ));
     stop.cancel();
     tokio::time::timeout(Duration::from_secs(1), worker)
         .await

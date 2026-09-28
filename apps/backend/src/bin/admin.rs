@@ -1,5 +1,7 @@
 use clap::{Parser, Subcommand};
-use nexofolio_backend::wiring::{Config, Databases, build_api, init_logging};
+use nexofolio_backend::wiring::{Config, Databases, build_api, init_logging, observe_report};
+use nexofolio_common::ProjectId;
+use nexofolio_observe::Observe;
 
 #[derive(Parser)]
 #[command(about = "NexoFolio foundation administration")]
@@ -12,6 +14,20 @@ struct Cli {
 enum Command {
     CheckConfig,
     Migrate,
+    /// What observe knows.
+    Observe {
+        #[command(subcommand)]
+        command: ObserveCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum ObserveCommand {
+    /// Endpoints, templates, field labels per environment and open decisions.
+    Report {
+        #[arg(long)]
+        project: ProjectId,
+    },
 }
 
 #[tokio::main]
@@ -28,6 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Command::Migrate => {
             databases.migrate().await?;
             println!("Database migrations completed.");
+        }
+        Command::Observe {
+            command: ObserveCommand::Report { project },
+        } => {
+            let observe = Observe::new(databases.observe.clone());
+            print!("{}", observe_report(&observe, project).await?);
         }
     }
     databases.close().await;

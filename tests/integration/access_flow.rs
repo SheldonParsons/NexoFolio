@@ -15,9 +15,10 @@ use nexofolio_access_contracts::{
 };
 use nexofolio_backend::{
     http,
-    wiring::{Config, Databases, build_api},
+    wiring::{Config, Databases, build_api, observe_report},
 };
 use nexofolio_common::{ProjectId, Secret, UserId};
+use nexofolio_observe::Observe;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::Row;
@@ -256,6 +257,14 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
         200
     );
     sites_and_collect(&client, &url, &token, &a_id, &b_id, &sql).await;
+    observed(&client, &url, &token, &a_id, &b_id, &sql).await;
+    let report = observe_report(
+        &Observe::new(databases.observe.clone()),
+        a_id.parse().unwrap(),
+    )
+    .await
+    .unwrap();
+    assert!(report.contains("GET /api/order/{id}"), "{report}");
     let before = fixture.calls.load(Ordering::SeqCst);
     let em = login(&client, &url, "ALICE", "fixture-emergency").await;
     assert_eq!(em["token"], first["token"]);
@@ -602,5 +611,101 @@ async fn sites_and_collect(
             > 0
     );
     refused(429, "RATE_LIMITED")(limited).await;
+}
+
+/// What the batches above left in observe, and the service-address routes.
+async fn observed(
+    client: &reqwest::Client,
+    url: &str,
+    token: &str,
+    a: &str,
+    b: &str,
+    sql: &sqlx::PgPool,
+) {
+    // Every accepted batch counted once, the retried one included.
+    let batches: i64 = sqlx::query_scalar("SELECT count(*) FROM intake.batches")
+        .fetch_one(sql)
+        .await
+        .unwrap();
+    let calls: i64 = sqlx::query_scalar("SELECT sum(calls)::bigint FROM observe.fingerprints")
+        .fetch_one(sql)
+        .await
+        .unwrap();
+    assert!(batches > 1);
+    assert_eq!(calls, batches);
+    let templates = || async {
+        let rows: Vec<String> = sqlx::query_scalar(
+            "SELECT method||' '||path_template FROM observe.endpoints WHERE merged_into IS NULL",
+        )
+        .fetch_all(sql)
+        .await
+        .unwrap();
+        rows
+    };
+    assert_eq!(templates().await, vec!["GET /api/order/{id}"]);
+
+    let addresses = |project: &str| format!("{url}/v1/projects/{project}/service-addresses");
+    let list = || async {
+        let r = client
+            .get(addresses(a))
+            .bearer_auth(token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        r.json::<Value>().await.unwrap()["addresses"].clone()
+    };
+    let decide = |verdict: Value| {
+        client
+            .put(addresses(a))
+            .bearer_auth(token)
+            .json(&json!({"address": "https://shop.example.com", "verdict": verdict}))
+            .send()
+    };
+    let status = |r: reqwest::Response| r.status().as_u16();
+    assert_eq!(status(client.get(addresses(a)).send().await.unwrap()), 401);
+    assert_eq!(
+        status(
+            client
+                .get(addresses(b))
+                .bearer_auth(token)
+                .send()
+                .await
+                .unwrap()
+        ),
+        403
+    );
+    let auto = list().await;
+    assert_eq!(auto[0]["address"], "https://shop.example.com");
+    assert_eq!(auto[0]["verdict"], "own");
+    assert_eq!(auto[0]["decision"]["by"], "auto");
+    assert_eq!(auto[0]["calls"], calls);
+
+    assert_eq!(status(decide(json!("external")).await.unwrap()), 204);
+    let manual = list().await;
+    assert_eq!(manual[0]["verdict"], "external");
+    assert_eq!(manual[0]["decision"], json!({"by": "manual"}));
+    assert_eq!(
+        templates().await,
+        vec!["GET https://shop.example.com/api/order/{id}"],
+        "traffic moved with the verdict"
+    );
+    let invalid = client
+        .put(addresses(a))
+        .bearer_auth(token)
+        .json(&json!({"address": "https://shop.example.com/path", "verdict": "own"}))
+        .send()
+        .await
+        .unwrap();
+    assert!(invalid.status().is_client_error());
+
+    assert_eq!(status(decide(Value::Null).await.unwrap()), 204);
+    assert_eq!(list().await[0]["decision"]["by"], "auto");
+    assert_eq!(templates().await, vec!["GET /api/order/{id}"]);
+    let moved: i64 = sqlx::query_scalar("SELECT sum(calls)::bigint FROM observe.fingerprints")
+        .fetch_one(sql)
+        .await
+        .unwrap();
+    assert_eq!(moved, calls, "moving loses no calls");
 }
 use uuid::Uuid;

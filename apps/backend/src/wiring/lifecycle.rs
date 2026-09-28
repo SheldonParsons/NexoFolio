@@ -1,6 +1,6 @@
 use chrono::DateTime;
-use nexofolio_intake::purge_expired;
 use nexofolio_intake_contracts::BatchLedger;
+use nexofolio_observe_contracts::ObserveStore;
 use std::{
     io,
     sync::Arc,
@@ -31,9 +31,14 @@ pub fn install_shutdown_handler(shutdown: CancellationToken) -> io::Result<JoinH
     }
 }
 
-/// Housekeeping until shutdown: forgets processed collect batches once they
-/// are too old to be retried, every hour and once right after start.
-pub async fn run_worker(shutdown: CancellationToken, ledger: Arc<dyn BatchLedger>) {
+/// Housekeeping until shutdown: forgets processed collect batches, in intake
+/// and in observe, once they are too old to be retried, every hour and once
+/// right after start.
+pub async fn run_worker(
+    shutdown: CancellationToken,
+    ledger: Arc<dyn BatchLedger>,
+    observe: Arc<dyn ObserveStore>,
+) {
     tracing::info!("worker_started");
     let mut hourly = tokio::time::interval(Duration::from_secs(3600));
     hourly.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -43,9 +48,13 @@ pub async fn run_worker(shutdown: CancellationToken, ledger: Arc<dyn BatchLedger
             _ = async {
                 hourly.tick().await;
                 let now = DateTime::from(SystemTime::now());
-                match purge_expired(ledger.as_ref(), now).await {
+                match nexofolio_intake::purge_expired(ledger.as_ref(), now).await {
                     Ok(purged) => tracing::info!(purged, "collect_batches_purged"),
                     Err(_) => tracing::warn!("collect_batch_purge_failed"),
+                }
+                match nexofolio_observe::purge_expired(observe.as_ref(), now).await {
+                    Ok(purged) => tracing::info!(purged, "observed_batches_purged"),
+                    Err(_) => tracing::warn!("observed_batch_purge_failed"),
                 }
             } => {}
         }

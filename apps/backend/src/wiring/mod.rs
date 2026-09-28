@@ -21,5 +21,7 @@ pub fn init_logging(filter: &str) -> Result<()> {
 
 mod api;
 mod databases;
+mod report;
 pub use api::build_api;
 pub use databases::Databases;
+pub use report::observe_report;

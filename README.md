@@ -14,10 +14,12 @@
 - `modules/access/contracts`：身份、项目及环境的公共合同。
 - `modules/access/core`：登录与同步流程。
 - `modules/access/adapter`：PostgreSQL、禅道及加密适配，拥有自己的迁移。
+- `modules/intake`：收集批次的校验、去重和落库（`intake` schema），再交给 observe。
+- `modules/observe`：把观测整理成接口、结构指纹和字段标签，判断服务地址归属（`observe` schema）。
 - `tests/architecture`：阻止禁止依赖和跨模块 SQL，包含故意违规的失败用例。
 - `tests/contracts`：校验收集合同的 fixtures 和哈希清单。
 
-intake、observe、knowledge、curate、view 模块尚未创建。旧实现和文档可从Git提交`f2d4ae3`查阅，不在新代码里保留第二套运行路径。
+knowledge、curate、view 模块尚未创建。旧实现和文档可从Git提交`f2d4ae3`查阅，不在新代码里保留第二套运行路径。
 
 ## 验证
 
@@ -38,11 +40,15 @@ cargo run -p nexofolio-backend --bin nexofolio-admin -- check-config
 cargo run -p nexofolio-backend --bin nexofolio-admin -- migrate
 cargo run -p nexofolio-backend --bin nexofolio-api
 cargo run -p nexofolio-backend --bin nexofolio-worker
+# 查看 observe 对某个项目整理出的接口：
+cargo run -p nexofolio-backend --bin nexofolio-admin -- observe report --project <项目ID>
 ```
+
+每次更新代码后先跑一次 `migrate`，它会创建或升级 access、intake、observe 三个 schema。
 
 需要DATABASE_URL。禅道登录还需要同时设置NEXOFOLIO_ZENTAO_BASE_URL和NEXOFOLIO_SESSION_KEY。普通登录仍验证禅道后创建/复用内部会话，成功登录同步项目；超级密码只登录已有用户，不增加权限。环境管理沿用项目权限。
 
-有效入口：`/health/live`、`/health/ready`、`/v1/auth/login`、`/v1/auth/me`、项目及环境管理、下载接口，以及默认拒绝访问且无业务工具的`/mcp`。旧采集/接口文档/重构/发布路由已经从源码移除，返回404。
+有效入口：`/health/live`、`/health/ready`、`/v1/auth/login`、`/v1/auth/me`、项目及环境管理、`/v1/sites`、`/v1/collect/batches`、`/v1/projects/{id}/service-addresses`、下载接口，以及默认拒绝访问且无业务工具的`/mcp`。旧的接口文档/重构/发布路由已经从源码移除，返回404。
 
 ## Linux容器
 

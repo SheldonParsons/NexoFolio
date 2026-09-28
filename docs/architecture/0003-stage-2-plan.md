@@ -373,3 +373,33 @@ modules/observe/adapter   Postgres：observe schema
 - `seen_batches` 属于 observe，随 2c 一起做；现在 worker 只清理 intake 账本。
 - 新配置：`NEXOFOLIO_COLLECT_RATE_PER_MINUTE`（默认 120）、`NEXOFOLIO_COLLECT_BURST`（默认 30）。
 - 站点和上传接口只在配置了禅道登录时启用，因为项目来自 access。
+
+---
+
+## 2c 交付记录（2026-09-28）
+
+| 交付物 | 位置 | 验收 |
+|---|---|---|
+| observe 合同 | `modules/observe/contracts`：存储端口 `ObserveStore` / `ObserveTx`（一次投递一个事务）和它存的行 | `InMemoryObserveStore` 与 `PostgresObserve` 都通过 `observe_store_conformance`（含回滚、别名、流量迁移、声明覆盖、outbox 顺序） |
+| observe 核心 | `modules/observe/core`：地址归属（`address.rs`）、路径模板（`template.rs`）、结构与指纹（`structure.rs`、`shape.rs`）、声明（`declaration.rs`）、标签（`facts.rs`）、接口身份与归并（`identity.rs`）、投递（`ingest.rs`）；`Observe` 同时是 `ObservationSink`、`EndpointReader`、`ServiceAddresses` | 各文件单元测试；`tests/observe.rs` 用观测序列走完：两套一致性测试、重投只计一次、存储故障可重试、`Created` / `StructureChanged`、晚到声明吸收流量并学到 base path、先声明后流量、观察中/必有/可选、`truncated` 与空列表不证明缺失、环境差异、非 JSON 地址判外部、预先登记从第一条生效、改结论后流量迁移并保留别名 |
+| observe 存储 | `modules/observe/adapter`：`observe` schema（`seen_batches`、`service_addresses`、`base_paths`、`endpoints`、`fingerprints`、`declarations`、`outbox`） | 迁移可重复执行；一致性测试 |
+| HTTP | `GET` / `PUT /v1/projects/{id}/service-addresses`（`apps/backend/src/http/service_addresses.rs`） | `tests/integration/access_flow.rs` 在真实数据库上：上传后每个批次只计一次（重发也一样）、401/403、自动结论、改成外部后模板变成绝对形式、非法地址 4xx、交回自动后回到相对模板、迁移不丢调用 |
+| 装配 | `Observe<PostgresObserve>` 替换 `UntilObserve`；`Databases` 多一个 observe 连接池；admin `migrate` 迁移三个模块；worker 每小时同时清理 intake 账本和 `seen_batches` | 生命周期测试 |
+| 验收工具 | `admin observe report --project <id>`（`apps/backend/src/wiring/report.rs`）：服务地址、接口、各环境调用、base path、字段标签、待裁决 | 集成测试里跑一次 |
+
+与方案不同的地方：
+
+- **多了 `nexofolio-observe-contracts`**，原因同 intake：adapter 只能依赖合同层。只在 observe 的 core、adapter 和 apps 之间使用。
+- 纯逻辑 crate 允许的依赖加了 `psl`（公共后缀表编译在 crate 里，查询不做 IO）。
+- `service_addresses` 分开存人工结论和自动结论（`manual_verdict`、`auto_verdict` + `auto_reason`），不是 4.2 写的 `verdict + decided_by`。这样撤销人工结论时，自动结论还在，不用重算。
+- 自动结论只在地址第一次出现时判一次，之后不变；要改就用人工结论。"3 个以上项目"按"本项目之外至少 2 个项目调用过"判断。
+- `PUT` 的 `verdict` 可以传 `null`，表示撤销人工结论、交回自动判断（合同里的 `decide(None)`）。`GET` 返回 `{ "addresses": [...] }`。
+- 指纹的键是"接口 + 环境 + 服务地址 + 哈希"，比 4.1 多了服务地址：同一接口在不同地址上的流量要能单独迁移（改地址结论、学到新 base path 时）。
+- 4.1 第 6 步的"合并结构"不落库，和标签一样在读取时由指纹算出。
+- 模板规则的补充：
+  - 声明的模板如果本身已经以 base path 开头，直接当完整路径用。
+  - 声明的模板至少要有一段固定文字，才允许用尾部匹配推出 base path，避免 `/{id}` 这类模板匹配一切。
+  - 第一版不解析声明里的 `$ref`。
+- 地址结论改回来时（外部 → 本项目 → 外部），会建一个新接口，之前的接口都作为别名留着，旧 ID 仍然能解析。
+- 同一项目的写入用 Postgres advisory lock 串行（按项目加锁，顺序固定）；outbox 写入另有一把锁，保证游标按提交顺序递增。
+- `report` 里的环境显示 ID，不显示名称：名称在 access，admin 命令不登录。

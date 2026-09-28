@@ -12,7 +12,7 @@ mod sql_ownership;
 
 /// Registered backend modules. A crate or directory outside this list is an
 /// undefined boundary.
-pub(crate) const MODULES: &[&str] = &["access", "intake"];
+pub(crate) const MODULES: &[&str] = &["access", "intake", "observe"];
 
 const COMMON: &str = "nexofolio-common";
 const CONTRACTS: &str = "nexofolio-contracts";
@@ -23,6 +23,8 @@ const PURE: &[&str] = &[
     "async-trait",
     "base64",
     "chrono",
+    // The public suffix list is compiled in; looking a domain up is pure.
+    "psl",
     "serde",
     "serde_json",
     "schemars",

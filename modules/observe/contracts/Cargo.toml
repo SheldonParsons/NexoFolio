@@ -1,0 +1,25 @@
+[package]
+name = "nexofolio-observe-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# In-memory store and the conformance suite every store must pass.
+testing = ["nexofolio-contracts/testing"]
+
+[dependencies]
+nexofolio-common.workspace = true
+nexofolio-contracts.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

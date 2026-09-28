@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter"]
+members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter", "modules/observe/contracts", "modules/observe/core", "modules/observe/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -15,6 +15,7 @@ axum = "0.8.9"
 chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
 clap = { version = "4", features = ["derive"] }
 http-body-util = "0.1"
+psl = "2"
 rmcp = { version = "3.3.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
 schemars = { version = "1.2.2", features = ["uuid1"] }
 serde = { version = "1", features = ["derive"] }
@@ -38,6 +39,9 @@ nexofolio-access-adapter = { path = "modules/access/adapter" }
 nexofolio-intake-contracts = { path = "modules/intake/contracts" }
 nexofolio-intake = { path = "modules/intake/core" }
 nexofolio-intake-adapter = { path = "modules/intake/adapter" }
+nexofolio-observe-contracts = { path = "modules/observe/contracts" }
+nexofolio-observe = { path = "modules/observe/core" }
+nexofolio-observe-adapter = { path = "modules/observe/adapter" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

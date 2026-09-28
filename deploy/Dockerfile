@@ -2,6 +2,9 @@ ARG RUST_IMAGE=rust:1.94.0-bookworm
 ARG RUNTIME_IMAGE=debian:bookworm-slim
 FROM ${RUST_IMAGE} AS build
 ENV CARGO_HTTP_MULTIPLEXING=false CARGO_HTTP_TIMEOUT=30
+# Use the image's toolchain as is: rustfmt/clippy from rust-toolchain.toml
+# are not needed to build, and fetching them needs network access.
+ENV RUSTUP_TOOLCHAIN=1.94.0
 WORKDIR /app
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY apps ./apps

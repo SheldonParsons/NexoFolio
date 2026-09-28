@@ -50,6 +50,9 @@ nexofolio-contracts.workspace = true
 nexofolio-intake-contracts.workspace = true
 nexofolio-intake.workspace = true
 nexofolio-intake-adapter.workspace = true
+nexofolio-observe-contracts.workspace = true
+nexofolio-observe.workspace = true
+nexofolio-observe-adapter.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
 axum.workspace = true
@@ -70,6 +73,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 nexofolio-intake-contracts = { workspace = true, features = ["testing"] }
+nexofolio-observe-contracts = { workspace = true, features = ["testing"] }
 sqlx.workspace = true
 argon2 = "0.5"
 http-body-util.workspace = true

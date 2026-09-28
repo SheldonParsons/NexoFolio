@@ -11,7 +11,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let databases = Databases::new(&config)?;
     let shutdown = CancellationToken::new();
     let signals = install_shutdown_handler(shutdown.clone())?;
-    run_worker(shutdown, Arc::new(databases.intake.clone())).await;
+    run_worker(
+        shutdown,
+        Arc::new(databases.intake.clone()),
+        Arc::new(databases.observe.clone()),
+    )
+    .await;
     signals.abort();
     databases.close().await;
     Ok(())
