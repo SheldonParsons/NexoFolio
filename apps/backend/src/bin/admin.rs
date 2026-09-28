@@ -49,7 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             command: ObserveCommand::Report { project },
         } => {
             let observe = Observe::new(databases.observe.clone());
-            print!("{}", observe_report(&observe, project).await?);
+            let environments = databases.access.project_environments(project).await?;
+            print!(
+                "{}",
+                observe_report(&observe, project, &environments).await?
+            );
         }
     }
     databases.close().await;

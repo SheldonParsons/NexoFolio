@@ -1,4 +1,5 @@
 use super::{PostgresAccess, db_error, typed, uuid};
+use crate::Postgres;
 use async_trait::async_trait;
 use nexofolio_access_contracts::{
     Environment, EnvironmentPage, Environments, ProjectAccess, SessionPrincipal,
@@ -68,6 +69,21 @@ impl Environments for PostgresAccess {
         let result = rename(&mut tx, uuid(project), uuid(id), name).await?;
         tx.commit().await.map_err(db_error)?;
         Ok(result)
+    }
+}
+
+impl Postgres {
+    /// Every environment of a project, without a principal. Administration
+    /// tools only; the API goes through `Environments`.
+    pub async fn project_environments(&self, project: ProjectId) -> Result<Vec<Environment>> {
+        sqlx::query("SELECT id,name FROM environments WHERE project_id=$1 ORDER BY name,id")
+            .bind(uuid(project))
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db_error)?
+            .iter()
+            .map(from_row)
+            .collect()
     }
 }
 

@@ -1,14 +1,23 @@
 //! `admin observe report`: what observe knows about one project, as plain
 //! text. The stage 2 acceptance tool (0003 §3); stage 3's views replace it.
 
-use nexofolio_common::{Error, ProjectId, Result};
+use chrono::{DateTime, Local, Utc};
+use nexofolio_access_contracts::Environment;
+use nexofolio_common::{EnvironmentId, Error, ProjectId, Result};
 use nexofolio_contracts::endpoint::{
     AddressStatus, Conflict, Decision, EndpointReader, FieldFacts, FieldLabel, FieldLocation,
-    ServiceAddresses, Verdict,
+    FieldPath, PathSegment, ServiceAddresses, Verdict,
 };
-use std::fmt::Write;
+use std::{collections::BTreeMap, fmt::Write};
 
-pub async fn observe_report<O>(observe: &O, project: ProjectId) -> Result<String>
+/// Fields nested deeper than this many keys are counted, not listed.
+const SHOWN_DEPTH: usize = 3;
+
+pub async fn observe_report<O>(
+    observe: &O,
+    project: ProjectId,
+    environments: &[Environment],
+) -> Result<String>
 where
     O: EndpointReader + ServiceAddresses,
 {
@@ -21,10 +30,12 @@ where
     let endpoints = EndpointReader::list(observe, project)
         .await
         .map_err(unavailable)?;
+    let names = Names(environments);
     let mut out = String::new();
     let mut pending: Vec<String> = Vec::new();
 
     writeln!(out, "项目 {project}").unwrap();
+    writeln!(out, "时间为本机时区（UTC{}）", Local::now().format("%:z")).unwrap();
     writeln!(out, "\n服务地址（{}）", addresses.len()).unwrap();
     for address in &addresses {
         writeln!(out, "  {}", describe_address(address)).unwrap();
@@ -63,11 +74,11 @@ where
         for usage in &summary.environments {
             writeln!(
                 out,
-                "  环境 {}：{} 次，{} 至 {}",
-                usage.environment_id,
+                "  {}：{} 次，{} 至 {}",
+                names.get(usage.environment_id),
                 usage.calls,
-                usage.first_seen.format("%Y-%m-%d %H:%M"),
-                usage.last_seen.format("%Y-%m-%d %H:%M")
+                local(usage.first_seen),
+                local(usage.last_seen)
             )
             .unwrap();
         }
@@ -75,14 +86,25 @@ where
             if !used.base_path.is_empty() {
                 writeln!(
                     out,
-                    "  前缀 {}{}（环境 {}）",
-                    used.address, used.base_path, used.environment_id
+                    "  前缀 {}{}（{}）",
+                    used.address,
+                    used.base_path,
+                    names.get(used.environment_id)
                 )
                 .unwrap();
             }
         }
+        // Deep fields are folded into their ancestor at SHOWN_DEPTH, one line each.
+        let mut folded: BTreeMap<(String, String), usize> = BTreeMap::new();
         for field in &facts.fields {
-            writeln!(out, "    {}", describe_field(field)).unwrap();
+            match shown(&field.path) {
+                None => writeln!(out, "    {}", describe_field(field, &names)).unwrap(),
+                Some(ancestor) => {
+                    *folded
+                        .entry((location(field.location), ancestor.to_string()))
+                        .or_default() += 1
+                }
+            }
             if let Some(conflict) = &field.conflict {
                 pending.push(format!(
                     "{} {} 的 {} {}：{}",
@@ -94,6 +116,9 @@ where
                 ));
             }
         }
+        for ((location, ancestor), count) in folded {
+            writeln!(out, "    {location} {ancestor} 下还有 {count} 个更深的字段").unwrap();
+        }
     }
 
     writeln!(out, "\n待裁决（{}）", pending.len()).unwrap();
@@ -101,6 +126,41 @@ where
         writeln!(out, "  {item}").unwrap();
     }
     Ok(out)
+}
+
+/// Environment names by id; ids access doesn't know are printed as they are.
+struct Names<'a>(&'a [Environment]);
+
+impl Names<'_> {
+    fn get(&self, id: EnvironmentId) -> String {
+        self.0
+            .iter()
+            .find(|environment| environment.id == id)
+            .map_or_else(
+                || format!("环境 {id}"),
+                |environment| environment.name.clone(),
+            )
+    }
+}
+
+/// `None` when the path is shallow enough to list; otherwise its ancestor at `SHOWN_DEPTH` keys.
+fn shown(path: &FieldPath) -> Option<FieldPath> {
+    let mut keys = 0;
+    for (index, segment) in path.0.iter().enumerate() {
+        if let PathSegment::Key(_) = segment {
+            keys += 1;
+            if keys > SHOWN_DEPTH {
+                return Some(FieldPath(path.0[..index].to_vec()));
+            }
+        }
+    }
+    None
+}
+
+fn local(time: DateTime<Utc>) -> String {
+    time.with_timezone(&Local)
+        .format("%Y-%m-%d %H:%M")
+        .to_string()
 }
 
 fn describe_address(address: &AddressStatus) -> String {
@@ -118,13 +178,33 @@ fn describe_address(address: &AddressStatus) -> String {
     )
 }
 
-fn describe_field(field: &FieldFacts) -> String {
+fn describe_field(field: &FieldFacts, names: &Names) -> String {
     let types: Vec<String> = field.types.iter().map(|t| snake(*t)).collect();
-    let labels: Vec<String> = field
+    // One label when every environment agrees; per environment only when they differ.
+    let same = field
         .labels
-        .iter()
-        .map(|label| format!("{} {}", label.environment_id, describe_label(label.label)))
-        .collect();
+        .windows(2)
+        .all(|pair| pair[0].label == pair[1].label);
+    let labels: Vec<String> = if same {
+        field
+            .labels
+            .first()
+            .map(|label| describe_label(label.label))
+            .into_iter()
+            .collect()
+    } else {
+        field
+            .labels
+            .iter()
+            .map(|label| {
+                format!(
+                    "{} {}",
+                    names.get(label.environment_id),
+                    describe_label(label.label)
+                )
+            })
+            .collect()
+    };
     let mut line = format!(
         "{} {} {}",
         location(field.location),
@@ -156,8 +236,8 @@ fn describe_label(label: FieldLabel) -> String {
         FieldLabel::Observing => "观察中".into(),
         FieldLabel::Always => "总是出现".into(),
         FieldLabel::Optional => "可选".into(),
-        FieldLabel::Added { since } => format!("自 {} 起新增", since.format("%Y-%m-%d %H:%M")),
-        FieldLabel::Removed { since } => format!("自 {} 起消失", since.format("%Y-%m-%d %H:%M")),
+        FieldLabel::Added { since } => format!("自 {} 起新增", local(since)),
+        FieldLabel::Removed { since } => format!("自 {} 起消失", local(since)),
         FieldLabel::Polymorphic => "多种类型".into(),
         FieldLabel::Absent => "从未出现".into(),
     }

@@ -258,13 +258,23 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
     );
     sites_and_collect(&client, &url, &token, &a_id, &b_id, &sql).await;
     observed(&client, &url, &token, &a_id, &b_id, &sql).await;
+    let environments = databases
+        .access
+        .project_environments(a_id.parse().unwrap())
+        .await
+        .unwrap();
     let report = observe_report(
         &Observe::new(databases.observe.clone()),
         a_id.parse().unwrap(),
+        &environments,
     )
     .await
     .unwrap();
     assert!(report.contains("GET /api/order/{id}"), "{report}");
+    assert!(report.contains("test："), "names, not ids: {report}");
+    for environment in &environments {
+        assert!(!report.contains(&environment.id.to_string()), "{report}");
+    }
     let before = fixture.calls.load(Ordering::SeqCst);
     let em = login(&client, &url, "ALICE", "fixture-emergency").await;
     assert_eq!(em["token"], first["token"]);
