@@ -15,7 +15,7 @@ use axum::{
 };
 use nexofolio_access_contracts::{ProjectAccess, SessionPrincipal, Sessions};
 use nexofolio_common::{EndpointId, ProjectId};
-use nexofolio_contracts::endpoint::{EndpointError, EndpointReader};
+use nexofolio_contracts::endpoint::{EndpointError, EndpointFacts, EndpointReader};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -59,7 +59,8 @@ struct Search {
 
 enum EndpointsError {
     Access(AccessError),
-    /// Also for an endpoint of another project: its existence is not ours to tell.
+    /// The endpoint belongs to another project.
+    Forbidden,
     NotFound,
     Unavailable,
 }
@@ -80,6 +81,11 @@ impl IntoResponse for EndpointsError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::Access(error) => return error.into_response(),
+            Self::Forbidden => (
+                StatusCode::FORBIDDEN,
+                "PROJECT_ACCESS_DENIED",
+                "该接口属于其他项目",
+            ),
             Self::NotFound => (StatusCode::NOT_FOUND, "NOT_FOUND", "接口不存在"),
             Self::Unavailable => (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -127,13 +133,24 @@ async fn facts(
         .require_project(&principal, project)
         .await
         .map_err(AccessError::from)?;
+    Ok(Json(json!(facts_of(&s, project, endpoint).await?)))
+}
+
+/// Resolves an endpoint of `project`, aliases included.
+async fn facts_of(
+    s: &EndpointsHttp,
+    project: ProjectId,
+    endpoint: EndpointId,
+) -> Result<EndpointFacts, EndpointsError> {
     let facts = s
         .endpoints
         .get(endpoint)
         .await?
-        .filter(|facts| facts.summary.project_id == project)
         .ok_or(EndpointsError::NotFound)?;
-    Ok(Json(json!(facts)))
+    if facts.summary.project_id != project {
+        return Err(EndpointsError::Forbidden);
+    }
+    Ok(facts)
 }
 
 /// The whole call an example stands for, exactly as it was captured.
@@ -146,12 +163,7 @@ async fn example(
         .require_project(&principal, project)
         .await
         .map_err(AccessError::from)?;
-    let facts = s
-        .endpoints
-        .get(endpoint)
-        .await?
-        .filter(|facts| facts.summary.project_id == project)
-        .ok_or(EndpointsError::NotFound)?;
+    let facts = facts_of(&s, project, endpoint).await?;
     let observation = s
         .endpoints
         .example(facts.summary.id, &example)
