@@ -1,0 +1,23 @@
+[package]
+name = "nexofolio-knowledge-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+nexofolio-common.workspace = true
+nexofolio-contracts.workspace = true
+nexofolio-knowledge-contracts.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

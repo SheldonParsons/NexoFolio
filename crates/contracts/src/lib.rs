@@ -9,6 +9,7 @@
 //! | [`scope`]       | access         | intake, apps                     |
 //! | [`observation`] | observe        | intake                           |
 //! | [`endpoint`]    | observe        | knowledge, curate, view, apps    |
+//! | [`knowledge`]   | knowledge      | curate, view, apps               |
 //! | [`feed`]        | every publisher (observe: `ChangeFeed<EndpointEvent>`) | subscribers |
 //!
 //! Enable the `testing` feature for in-memory fakes and the conformance suites
@@ -16,6 +17,7 @@
 
 pub mod endpoint;
 pub mod feed;
+pub mod knowledge;
 pub mod observation;
 pub mod scope;
 

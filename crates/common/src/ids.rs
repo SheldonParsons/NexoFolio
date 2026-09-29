@@ -28,7 +28,16 @@ macro_rules! identifier {
     )+};
 }
 
-identifier!(ProjectId, EnvironmentId, UserId, TokenId, EndpointId);
+identifier!(
+    ProjectId,
+    EnvironmentId,
+    UserId,
+    TokenId,
+    EndpointId,
+    FolderId,
+    LinkId,
+    RoundId,
+);
 
 #[cfg(test)]
 mod tests {

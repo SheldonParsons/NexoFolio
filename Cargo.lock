@@ -1724,6 +1724,53 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexofolio-knowledge"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-common",
+ "nexofolio-contracts",
+ "nexofolio-knowledge-contracts",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "nexofolio-knowledge-adapter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-common",
+ "nexofolio-contracts",
+ "nexofolio-knowledge-contracts",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "nexofolio-knowledge-contracts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-common",
+ "nexofolio-contracts",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "nexofolio-observe"
 version = "0.1.0"
 dependencies = [

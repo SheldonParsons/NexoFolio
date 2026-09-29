@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter", "modules/observe/contracts", "modules/observe/core", "modules/observe/adapter"]
+members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter", "modules/knowledge/contracts", "modules/knowledge/core", "modules/knowledge/adapter", "modules/observe/contracts", "modules/observe/core", "modules/observe/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -38,6 +38,9 @@ nexofolio-access-adapter = { path = "modules/access/adapter" }
 nexofolio-intake-contracts = { path = "modules/intake/contracts" }
 nexofolio-intake = { path = "modules/intake/core" }
 nexofolio-intake-adapter = { path = "modules/intake/adapter" }
+nexofolio-knowledge-contracts = { path = "modules/knowledge/contracts" }
+nexofolio-knowledge = { path = "modules/knowledge/core" }
+nexofolio-knowledge-adapter = { path = "modules/knowledge/adapter" }
 nexofolio-observe-contracts = { path = "modules/observe/contracts" }
 nexofolio-observe = { path = "modules/observe/core" }
 nexofolio-observe-adapter = { path = "modules/observe/adapter" }
