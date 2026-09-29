@@ -458,3 +458,129 @@ async fn changing_a_verdict_moves_the_traffic() {
         .unwrap();
     assert_eq!(statuses[0].decision, Decision::Manual);
 }
+
+#[tokio::test]
+async fn every_structure_keeps_its_first_call_as_an_example() {
+    let world = World::new();
+    world
+        .calls(
+            world.prod,
+            "https://api.example.com/orders/1",
+            json(r#"{"id":1}"#),
+            2,
+            0,
+        )
+        .await;
+    world
+        .calls(
+            world.prod,
+            "https://api.example.com/orders/2",
+            json(r#"{"id":2,"note":"gift"}"#),
+            1,
+            10,
+        )
+        .await;
+    let facts = world.only_endpoint().await;
+    let examples = &facts.examples;
+    assert_eq!(examples.len(), 2);
+    assert_eq!(
+        examples.iter().map(|e| e.calls).collect::<Vec<_>>(),
+        vec![1, 2],
+        "most recently seen first"
+    );
+    assert!(examples.iter().all(|e| e.status == Some(200)));
+    assert!(examples.iter().all(|e| e.environment_id == world.prod));
+    assert_ne!(examples[0].id, examples[1].id);
+
+    let older = world
+        .observe
+        .example(facts.summary.id, &examples[1].id)
+        .await
+        .unwrap()
+        .expect("sample");
+    let text = older.to_string();
+    assert!(text.contains("/orders/1"), "the first call is kept: {text}");
+    assert!(!text.contains("/orders/2"));
+    assert_eq!(
+        world
+            .observe
+            .example(facts.summary.id, "0000000000000000")
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        world
+            .observe
+            .example(EndpointId::new(), &examples[1].id)
+            .await
+            .unwrap(),
+        None
+    );
+
+    let address = ServiceAddress::parse("https://api.example.com").unwrap();
+    world
+        .observe
+        .decide(world.project, address, Some(Verdict::External))
+        .await
+        .unwrap();
+    let merged = world.only_endpoint().await;
+    assert_ne!(merged.summary.id, facts.summary.id);
+    assert_eq!(merged.examples, facts.examples, "IDs survive merges");
+    assert_eq!(
+        world
+            .observe
+            .example(facts.summary.id, &examples[1].id)
+            .await
+            .unwrap(),
+        Some(older),
+        "the old endpoint ID still resolves"
+    );
+}
+
+/// Prints the JSON the HTTP routes return; run with `--ignored --nocapture`.
+#[tokio::test]
+#[ignore = "prints shapes for review"]
+async fn shapes_for_review() {
+    let world = World::new();
+    world
+        .calls(
+            world.prod,
+            "https://shop.example.com/api/order/1001?with=items",
+            json(r#"{"code":0,"data":{"id":1001,"items":[{"sku":"A-1","qty":2}]}}"#),
+            4,
+            0,
+        )
+        .await;
+    world
+        .calls(
+            world.prod,
+            "https://shop.example.com/api/order/1002",
+            json(r#"{"code":0,"data":{"id":1002,"items":[],"note":"gift"}}"#),
+            1,
+            60,
+        )
+        .await;
+    let list = EndpointReader::list(&world.observe, world.project)
+        .await
+        .unwrap();
+    println!(
+        "== list ==\n{}",
+        serde_json::to_string_pretty(&serde_json::json!({"endpoints": list})).unwrap()
+    );
+    let facts = world.only_endpoint().await;
+    println!(
+        "== facts ==\n{}",
+        serde_json::to_string_pretty(&facts).unwrap()
+    );
+    let example = world
+        .observe
+        .example(facts.summary.id, &facts.examples[0].id)
+        .await
+        .unwrap()
+        .unwrap();
+    println!(
+        "== example ==\n{}",
+        serde_json::to_string_pretty(&serde_json::json!({"observation": example})).unwrap()
+    );
+}

@@ -1,5 +1,5 @@
 use crate::{
-    http::{access::AccessHttp, collect, service_addresses, sites},
+    http::{access::AccessHttp, collect, endpoints, service_addresses, sites},
     wiring::{Config, Databases},
 };
 use nexofolio_access::LoginService;
@@ -39,6 +39,11 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
     Ok(Some(
         crate::http::access::routes(access)
             .merge(sites::routes(store.clone(), store.clone(), store.clone()))
+            .merge(endpoints::routes(
+                store.clone(),
+                store.clone(),
+                observe.clone(),
+            ))
             .merge(service_addresses::routes(store.clone(), store, observe))
             .merge(collect::routes(Arc::new(intake))),
     ))

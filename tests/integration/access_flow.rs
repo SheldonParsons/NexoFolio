@@ -258,6 +258,7 @@ async fn real_database_http_login_sync_permissions_and_token_lifecycle() {
     );
     sites_and_collect(&client, &url, &token, &a_id, &b_id, &sql).await;
     observed(&client, &url, &token, &a_id, &b_id, &sql).await;
+    documented(&client, &url, &token, &a_id, &b_id).await;
     let environments = databases
         .access
         .project_environments(a_id.parse().unwrap())
@@ -718,4 +719,88 @@ async fn observed(
         .unwrap();
     assert_eq!(moved, calls, "moving loses no calls");
 }
+/// The endpoint document: the list, one endpoint's facts, and an example's
+/// whole call.
+async fn documented(client: &reqwest::Client, url: &str, token: &str, a: &str, b: &str) {
+    let endpoints = |project: &str| format!("{url}/v1/projects/{project}/endpoints");
+    let get = |path: String| client.get(path).bearer_auth(token).send();
+    let status = |r: reqwest::Response| r.status().as_u16();
+
+    assert_eq!(status(client.get(endpoints(a)).send().await.unwrap()), 401);
+    assert_eq!(status(get(endpoints(b)).await.unwrap()), 403);
+
+    let listed = get(endpoints(a)).await.unwrap();
+    assert_eq!(status(listed), 200);
+    let listed: Value = get(endpoints(a)).await.unwrap().json().await.unwrap();
+    let listed = listed["endpoints"].as_array().unwrap().clone();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["method"], "GET");
+    assert_eq!(listed[0]["path_template"], "/api/order/{id}");
+    assert_eq!(listed[0]["external"], false);
+    assert!(listed[0]["environments"][0]["calls"].as_i64().unwrap() > 0);
+    let id = listed[0]["id"].as_str().unwrap().to_owned();
+
+    let found = |q: &str| {
+        let path = format!("{}?q={q}", endpoints(a));
+        client.get(path).bearer_auth(token).send()
+    };
+    let matched: Value = found("ORDER").await.unwrap().json().await.unwrap();
+    assert_eq!(
+        matched["endpoints"].as_array().unwrap().len(),
+        1,
+        "search ignores case"
+    );
+    let matched: Value = found("nothing").await.unwrap().json().await.unwrap();
+    assert!(matched["endpoints"].as_array().unwrap().is_empty());
+
+    let facts: Value = get(format!("{}/{id}", endpoints(a)))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(facts["summary"]["id"], id.as_str());
+    assert_eq!(facts["addresses"][0]["address"], "https://shop.example.com");
+    let examples = facts["examples"].as_array().unwrap();
+    assert_eq!(examples.len(), 1, "one structure was seen");
+    assert_eq!(examples[0]["status"], 200);
+    let example = examples[0]["id"].as_str().unwrap().to_owned();
+
+    // Another project's endpoint is not ours to acknowledge.
+    assert_eq!(
+        status(get(format!("{}/{id}", endpoints(b))).await.unwrap()),
+        403
+    );
+    let unknown = Uuid::new_v4();
+    assert_eq!(
+        status(get(format!("{}/{unknown}", endpoints(a))).await.unwrap()),
+        404
+    );
+
+    let observation: Value = get(format!("{}/{id}/examples/{example}", endpoints(a)))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let call = &observation["observation"];
+    assert_eq!(call["fact"]["kind"], "exchange");
+    assert_eq!(call["fact"]["request"]["method"], "GET");
+    assert_eq!(call["fact"]["response"]["status"], 200);
+    assert_eq!(
+        call["fact"]["request"]["url"], "https://shop.example.com/api/order/1001",
+        "the captured call is returned whole"
+    );
+    assert_eq!(
+        status(
+            get(format!("{}/{id}/examples/0000000000000000", endpoints(a)))
+                .await
+                .unwrap()
+        ),
+        404
+    );
+    let cached = get(format!("{}/{id}", endpoints(a))).await.unwrap();
+    assert_eq!(cached.headers()["cache-control"], "no-store");
+}
+
 use uuid::Uuid;
