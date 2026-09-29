@@ -26,10 +26,15 @@ use chrono::{DateTime, TimeDelta, Utc};
 use nexofolio_common::{EndpointId, ProjectId};
 use nexofolio_contracts::endpoint::{
     AddressStatus, AddressUse, Decision, EndpointError, EndpointEvent, EndpointFacts,
-    EndpointReader, EndpointSummary, EnvironmentUsage, ServiceAddress, ServiceAddresses, Verdict,
+    EndpointReader, EndpointSummary, EnvironmentUsage, ExampleSummary, ServiceAddress,
+    ServiceAddresses, Verdict,
 };
 use nexofolio_contracts::observation::{CanonicalObservation, ObservationSink, SinkError};
-use nexofolio_observe_contracts::{ObserveStore, ObserveTx, StoreError, StoreResult};
+use nexofolio_observe_contracts::{
+    FingerprintStats, ObserveStore, ObserveTx, StoreError, StoreResult, Traffic,
+};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 use crate::declaration::DeclaredFields;
 use crate::facts::Seen;
@@ -174,7 +179,21 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
         let mut environments: Vec<EnvironmentUsage> = Vec::new();
         let mut addresses: Vec<AddressUse> = Vec::new();
         let mut seen: Vec<Seen> = Vec::new();
+        let mut examples: Vec<ExampleSummary> = Vec::new();
         for fingerprint in fingerprints {
+            let structure = serde_json::from_value::<Structure>(fingerprint.structure.clone());
+            examples.push(ExampleSummary {
+                id: example_id(&fingerprint),
+                environment_id: fingerprint.environment_id,
+                address: fingerprint.address.clone(),
+                status: structure
+                    .as_ref()
+                    .ok()
+                    .and_then(|structure| structure.status),
+                calls: fingerprint.calls,
+                first_seen: fingerprint.first_seen,
+                last_seen: fingerprint.last_seen,
+            });
             match environments
                 .iter_mut()
                 .find(|usage| usage.environment_id == fingerprint.environment_id)
@@ -206,7 +225,7 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             if !addresses.contains(&used) {
                 addresses.push(used);
             }
-            match serde_json::from_value::<Structure>(fingerprint.structure) {
+            match structure {
                 Ok(structure) => seen.push(Seen {
                     environment_id: fingerprint.environment_id,
                     structure,
@@ -218,6 +237,7 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             }
         }
         environments.sort_by_key(|usage| usage.environment_id.to_string());
+        examples.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then_with(|| a.id.cmp(&b.id)));
         addresses.sort_by(|a, b| {
             (a.environment_id.to_string(), &a.address)
                 .cmp(&(b.environment_id.to_string(), &b.address))
@@ -253,8 +273,45 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             aliases,
             addresses,
             fields,
+            examples,
         }))
     }
+
+    async fn example(&self, id: EndpointId, example: &str) -> Result<Option<Value>, EndpointError> {
+        let mut tx = self.read().await?;
+        let Some(row) = tx.endpoint(id).await.map_err(unavailable)? else {
+            return Ok(None);
+        };
+        let fingerprints = tx.fingerprints(row.id).await.map_err(unavailable)?;
+        let Some(fingerprint) = fingerprints.iter().find(|f| example_id(f) == example) else {
+            return Ok(None);
+        };
+        let traffic = Traffic {
+            endpoint: row.id,
+            environment_id: fingerprint.environment_id,
+            address: fingerprint.address.clone(),
+        };
+        tx.sample(&traffic, &fingerprint.hash)
+            .await
+            .map_err(unavailable)
+    }
+}
+
+/// A fingerprint's public ID. The same structure can be seen in several
+/// environments and on several addresses, so those are part of it; the
+/// endpoint is not, so the ID survives merges.
+fn example_id(fingerprint: &FingerprintStats) -> String {
+    let digest = Sha256::new()
+        .chain_update(fingerprint.environment_id.to_string())
+        .chain_update([0])
+        .chain_update(fingerprint.address.as_str())
+        .chain_update([0])
+        .chain_update(fingerprint.hash)
+        .finalize();
+    digest[..8]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 #[async_trait]

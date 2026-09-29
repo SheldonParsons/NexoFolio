@@ -478,7 +478,7 @@ impl ObserveTx for PostgresTx {
 
     async fn fingerprints(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FingerprintStats>> {
         sqlx::query(
-            "SELECT environment_id,address,structure,calls,first_seen,last_seen FROM fingerprints \
+            "SELECT hash,environment_id,address,structure,calls,first_seen,last_seen FROM fingerprints \
              WHERE endpoint_id=$1 ORDER BY first_seen,hash",
         )
         .bind(uuid(endpoint))
@@ -487,7 +487,9 @@ impl ObserveTx for PostgresTx {
         .map_err(unavailable)?
         .iter()
         .map(|row| {
+            let hash: Vec<u8> = row.try_get("hash").map_err(unavailable)?;
             Ok(FingerprintStats {
+                hash: hash.try_into().map_err(unavailable)?,
                 environment_id: id(row.try_get("environment_id").map_err(unavailable)?),
                 address: address(row.try_get("address").map_err(unavailable)?)?,
                 structure: row.try_get("structure").map_err(unavailable)?,
@@ -497,6 +499,24 @@ impl ObserveTx for PostgresTx {
             })
         })
         .collect()
+    }
+
+    async fn sample(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Option<Value>> {
+        sqlx::query_scalar(
+            "SELECT sample FROM fingerprints \
+             WHERE endpoint_id=$1 AND environment_id=$2 AND address=$3 AND hash=$4",
+        )
+        .bind(uuid(traffic.endpoint))
+        .bind(uuid(traffic.environment_id))
+        .bind(traffic.address.as_str())
+        .bind(hash.as_slice())
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(unavailable)
     }
 
     async fn traffic(&mut self, project: ProjectId) -> StoreResult<Vec<Traffic>> {

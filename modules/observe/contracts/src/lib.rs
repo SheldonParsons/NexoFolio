@@ -72,6 +72,7 @@ pub struct NewFingerprint {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FingerprintStats {
+    pub hash: FingerprintHash,
     pub environment_id: EnvironmentId,
     pub address: ServiceAddress,
     pub structure: Value,
@@ -184,6 +185,13 @@ pub trait ObserveTx: Send {
     async fn insert_fingerprint(&mut self, fingerprint: &NewFingerprint) -> StoreResult<()>;
 
     async fn fingerprints(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FingerprintStats>>;
+
+    /// The sample stored with a fingerprint, `None` when there is no such one.
+    async fn sample(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Option<Value>>;
 
     /// Every traffic group of the project's current endpoints.
     async fn traffic(&mut self, project: ProjectId) -> StoreResult<Vec<Traffic>>;

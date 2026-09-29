@@ -33,6 +33,7 @@ struct StoredFingerprint {
     traffic: Traffic,
     hash: FingerprintHash,
     structure: Value,
+    sample: Value,
     calls: u64,
     first_seen: DateTime<Utc>,
     last_seen: DateTime<Utc>,
@@ -325,6 +326,7 @@ impl ObserveTx for InMemoryTx {
             traffic: fingerprint.traffic.clone(),
             hash: fingerprint.hash,
             structure: fingerprint.structure.clone(),
+            sample: fingerprint.sample.clone(),
             calls: 1,
             first_seen: fingerprint.seen,
             last_seen: fingerprint.seen,
@@ -339,6 +341,7 @@ impl ObserveTx for InMemoryTx {
             .iter()
             .filter(|f| f.traffic.endpoint == endpoint)
             .map(|f| FingerprintStats {
+                hash: f.hash,
                 environment_id: f.traffic.environment_id,
                 address: f.traffic.address.clone(),
                 structure: f.structure.clone(),
@@ -347,6 +350,19 @@ impl ObserveTx for InMemoryTx {
                 last_seen: f.last_seen,
             })
             .collect())
+    }
+
+    async fn sample(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Option<Value>> {
+        Ok(self
+            .work
+            .fingerprints
+            .iter()
+            .find(|f| f.traffic == *traffic && f.hash == *hash)
+            .map(|f| f.sample.clone()))
     }
 
     async fn traffic(&mut self, project: ProjectId) -> StoreResult<Vec<Traffic>> {
@@ -632,6 +648,18 @@ where
     moved.sort_by_key(|f| f.calls);
     assert_eq!(moved.len(), 2, "equal fingerprints add up");
     assert_eq!(moved[0].structure, json!({ "hash": 2 }));
+    assert_eq!(moved[0].hash, [2; 32]);
+    assert_eq!(
+        tx.sample(&traffic(&c), &[2; 32]).await.unwrap(),
+        Some(json!({ "sample": 2 })),
+        "samples move with their fingerprints"
+    );
+    assert_eq!(
+        tx.sample(&traffic(&c), &[1; 32]).await.unwrap(),
+        Some(json!({ "sample": 1 }))
+    );
+    assert_eq!(tx.sample(&traffic(&d), &[2; 32]).await.unwrap(), None);
+    assert_eq!(tx.sample(&traffic(&c), &[3; 32]).await.unwrap(), None);
     assert_eq!(
         (moved[1].calls, moved[1].first_seen, moved[1].last_seen),
         (3, at(10), at(30))

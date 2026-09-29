@@ -241,6 +241,22 @@ pub struct FieldFacts {
     pub conflict: Option<Conflict>,
 }
 
+/// One distinct structure seen for an endpoint in one environment on one
+/// address. Its sample, the first call with that structure, is kept whole
+/// and read separately through [`EndpointReader::example`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExampleSummary {
+    /// Stable within its endpoint, also after merges.
+    pub id: String,
+    pub environment_id: EnvironmentId,
+    pub address: ServiceAddress,
+    /// `None` when no response was captured.
+    pub status: Option<u16>,
+    pub calls: u64,
+    pub first_seen: DateTime<Utc>,
+    pub last_seen: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointFacts {
     pub summary: EndpointSummary,
@@ -248,6 +264,8 @@ pub struct EndpointFacts {
     pub aliases: Vec<EndpointId>,
     pub addresses: Vec<AddressUse>,
     pub fields: Vec<FieldFacts>,
+    /// Most recently seen first.
+    pub examples: Vec<ExampleSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -265,6 +283,15 @@ pub trait EndpointReader: Send + Sync {
 
     /// One endpoint. An alias resolves to the endpoint it was merged into.
     async fn get(&self, id: EndpointId) -> Result<Option<EndpointFacts>, EndpointError>;
+
+    /// The raw observation behind one of [`EndpointFacts::examples`], not
+    /// redacted: callers must keep it out of logs. An alias resolves like in
+    /// [`Self::get`].
+    async fn example(
+        &self,
+        id: EndpointId,
+        example: &str,
+    ) -> Result<Option<serde_json::Value>, EndpointError>;
 }
 
 /// Which service addresses belong to a project. Implemented by observe.

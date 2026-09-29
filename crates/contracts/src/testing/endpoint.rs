@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use nexofolio_common::{EndpointId, ProjectId};
+use serde_json::Value;
 
 use crate::endpoint::{
     AddressStatus, Decision, EndpointError, EndpointFacts, EndpointReader, EndpointSummary,
@@ -13,6 +14,7 @@ use crate::endpoint::{
 #[derive(Default)]
 pub struct InMemoryEndpoints {
     facts: Mutex<Vec<EndpointFacts>>,
+    samples: Mutex<HashMap<(EndpointId, String), Value>>,
 }
 
 impl InMemoryEndpoints {
@@ -25,6 +27,14 @@ impl InMemoryEndpoints {
         let mut all = self.facts.lock().expect("fake lock");
         all.retain(|existing| existing.summary.id != facts.summary.id);
         all.push(facts);
+    }
+
+    /// Sets the raw sample behind one of the endpoint's example IDs.
+    pub fn put_example(&self, endpoint: EndpointId, example: &str, sample: Value) {
+        self.samples
+            .lock()
+            .expect("fake lock")
+            .insert((endpoint, example.to_owned()), sample);
     }
 }
 
@@ -44,6 +54,16 @@ impl EndpointReader for InMemoryEndpoints {
         Ok(all
             .iter()
             .find(|facts| facts.summary.id == id || facts.aliases.contains(&id))
+            .cloned())
+    }
+
+    async fn example(&self, id: EndpointId, example: &str) -> Result<Option<Value>, EndpointError> {
+        let Some(facts) = self.get(id).await? else {
+            return Ok(None);
+        };
+        let samples = self.samples.lock().expect("fake lock");
+        Ok(samples
+            .get(&(facts.summary.id, example.to_owned()))
             .cloned())
     }
 }
@@ -181,7 +201,9 @@ mod tests {
             aliases: vec![old],
             addresses: Vec::new(),
             fields: Vec::new(),
+            examples: Vec::new(),
         });
+        reader.put_example(id, "e1", serde_json::json!({ "sample": 1 }));
         assert_eq!(reader.list(project).await.unwrap().len(), 1);
         assert!(reader.list(ProjectId::new()).await.unwrap().is_empty());
         assert_eq!(
@@ -189,5 +211,11 @@ mod tests {
             Some(id)
         );
         assert_eq!(reader.get(EndpointId::new()).await.unwrap(), None);
+        assert_eq!(
+            reader.example(old, "e1").await.unwrap(),
+            Some(serde_json::json!({ "sample": 1 })),
+            "examples resolve aliases too"
+        );
+        assert_eq!(reader.example(id, "e2").await.unwrap(), None);
     }
 }
