@@ -16,6 +16,7 @@ use axum::{
 use nexofolio_access_contracts::{ProjectAccess, SessionPrincipal, Sessions};
 use nexofolio_common::{EndpointId, ProjectId};
 use nexofolio_contracts::endpoint::{EndpointError, EndpointFacts, EndpointReader};
+use nexofolio_contracts::knowledge::KnowledgeReader;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -24,12 +25,14 @@ use std::sync::Arc;
 struct EndpointsHttp {
     projects: Arc<dyn ProjectAccess>,
     endpoints: Arc<dyn EndpointReader>,
+    knowledge: Arc<dyn KnowledgeReader>,
 }
 
 pub fn routes(
     sessions: Arc<dyn Sessions>,
     projects: Arc<dyn ProjectAccess>,
     endpoints: Arc<dyn EndpointReader>,
+    knowledge: Arc<dyn KnowledgeReader>,
 ) -> Router {
     Router::new()
         .route("/v1/projects/{project_id}/endpoints", get(list))
@@ -45,6 +48,7 @@ pub fn routes(
         .with_state(EndpointsHttp {
             projects,
             endpoints,
+            knowledge,
         })
         .layer(middleware::from_fn(no_store))
 }
@@ -133,7 +137,12 @@ async fn facts(
         .require_project(&principal, project)
         .await
         .map_err(AccessError::from)?;
-    Ok(Json(json!(facts_of(&s, project, endpoint).await?)))
+    let facts = facts_of(&s, project, endpoint).await?;
+    let known = s.knowledge.endpoint(facts.summary.id).await.ok();
+    Ok(Json(json!({
+        "facts": facts,
+        "knowledge": known
+    })))
 }
 
 /// Resolves an endpoint of `project`, aliases included.

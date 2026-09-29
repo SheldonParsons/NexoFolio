@@ -2,6 +2,7 @@ pub mod access;
 pub mod collect;
 pub mod downloads;
 pub mod endpoints;
+pub mod knowledge;
 pub mod service_addresses;
 pub mod sites;
 use crate::{

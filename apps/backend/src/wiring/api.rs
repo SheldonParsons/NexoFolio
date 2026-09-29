@@ -1,11 +1,12 @@
 use crate::{
-    http::{access::AccessHttp, collect, endpoints, service_addresses, sites},
+    http::{access::AccessHttp, collect, endpoints, knowledge, service_addresses, sites},
     wiring::{Config, Databases},
 };
 use nexofolio_access::LoginService;
 use nexofolio_access_adapter::{ConfiguredEmergencyPassword, PostgresAccess, Zentao};
 use nexofolio_common::Result;
 use nexofolio_intake::{Intake, SystemClock};
+use nexofolio_knowledge::Knowledge;
 use nexofolio_observe::Observe;
 use std::sync::Arc;
 
@@ -28,6 +29,10 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
         store.clone(),
     ));
     let observe = Arc::new(Observe::new(databases.observe.clone()));
+    let knowledge_svc = Arc::new(Knowledge::new(
+        databases.knowledge.clone(),
+        Observe::new(databases.observe.clone()),
+    ));
     let intake = Intake::new(
         store.clone(),
         observe.clone(),
@@ -43,6 +48,12 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
                 store.clone(),
                 store.clone(),
                 observe.clone(),
+                knowledge_svc.clone(),
+            ))
+            .merge(knowledge::routes(
+                store.clone(),
+                store.clone(),
+                knowledge_svc,
             ))
             .merge(service_addresses::routes(store.clone(), store, observe))
             .merge(collect::routes(Arc::new(intake))),
