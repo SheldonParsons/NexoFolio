@@ -1,5 +1,5 @@
 [workspace]
-members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter", "modules/knowledge/contracts", "modules/knowledge/core", "modules/knowledge/adapter", "modules/observe/contracts", "modules/observe/core", "modules/observe/adapter"]
+members = ["apps/backend", "crates/common", "crates/contracts", "modules/access/contracts", "modules/access/core", "modules/access/adapter", "modules/curate/contracts", "modules/curate/core", "modules/curate/adapter", "modules/intake/contracts", "modules/intake/core", "modules/intake/adapter", "modules/knowledge/contracts", "modules/knowledge/core", "modules/knowledge/adapter", "modules/observe/contracts", "modules/observe/core", "modules/observe/adapter"]
 resolver = "3"
 
 [workspace.package]
@@ -30,11 +30,15 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 nexofolio-common = { path = "crates/common" }
 nexofolio-contracts = { path = "crates/contracts" }
 nexofolio-access-contracts = { path = "modules/access/contracts" }
 nexofolio-access = { path = "modules/access/core" }
 nexofolio-access-adapter = { path = "modules/access/adapter" }
+nexofolio-curate-contracts = { path = "modules/curate/contracts" }
+nexofolio-curate = { path = "modules/curate/core" }
+nexofolio-curate-adapter = { path = "modules/curate/adapter" }
 nexofolio-intake-contracts = { path = "modules/intake/contracts" }
 nexofolio-intake = { path = "modules/intake/core" }
 nexofolio-intake-adapter = { path = "modules/intake/adapter" }

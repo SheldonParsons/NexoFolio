@@ -1,5 +1,6 @@
 pub mod access;
 pub mod collect;
+pub mod curate;
 pub mod downloads;
 pub mod endpoints;
 pub mod knowledge;

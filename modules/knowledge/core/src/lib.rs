@@ -24,9 +24,9 @@ use nexofolio_common::{EndpointId, FolderId, ProjectId, RoundId};
 use nexofolio_contracts::{
     endpoint::EndpointReader,
     knowledge::{
-        Author, Catalogue, Command, EndpointKnowledge, EndpointNote, Folder, KnowledgeError,
-        KnowledgeReader, KnowledgeResult, KnowledgeWriter, Link, MAX_DEPTH, Placement, Round,
-        RoundState,
+        Author, Catalogue, Command, EndpointKnowledge, EndpointNote, EndpointPage, Folder,
+        KnowledgeError, KnowledgeReader, KnowledgeResult, KnowledgeWriter, Link, MAX_DEPTH,
+        Placement, Round, RoundState,
     },
 };
 use nexofolio_knowledge_contracts::{FolderRow, KnowledgeStore, StoreError};
@@ -122,19 +122,21 @@ where
         &self,
         project: ProjectId,
         folder: Option<FolderId>,
-    ) -> KnowledgeResult<Vec<EndpointId>> {
+        page: usize,
+        limit: usize,
+    ) -> KnowledgeResult<EndpointPage> {
         let mut tx = self.store.begin().await.map_err(store_error)?;
         let placements = tx.placements(project).await.map_err(store_error)?;
-        match folder {
+        let all: Vec<EndpointId> = match folder {
             Some(folder) => {
                 if tx.folder(folder).await.map_err(store_error)?.is_none() {
                     return Err(KnowledgeError::NoSuchFolder);
                 }
-                Ok(placements
+                placements
                     .iter()
                     .filter(|p| p.folder == folder)
                     .map(|p| p.endpoint)
-                    .collect())
+                    .collect()
             }
             None => {
                 let seated: HashSet<EndpointId> = placements.iter().map(|p| p.endpoint).collect();
@@ -143,13 +145,28 @@ where
                     .list(project)
                     .await
                     .map_err(|_| KnowledgeError::Unavailable)?;
-                Ok(existing
+                existing
                     .into_iter()
                     .map(|e| e.id)
                     .filter(|id| !seated.contains(id))
-                    .collect())
+                    .collect()
             }
-        }
+        };
+        let total = all.len();
+        let page = page.max(1);
+        let limit = limit.max(1);
+        let start = (page - 1) * limit;
+        let items = if start < total {
+            all.into_iter().skip(start).take(limit).collect()
+        } else {
+            Vec::new()
+        };
+        Ok(EndpointPage {
+            items,
+            total,
+            page,
+            limit,
+        })
     }
 
     async fn endpoint(&self, endpoint: EndpointId) -> KnowledgeResult<EndpointKnowledge> {

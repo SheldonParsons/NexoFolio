@@ -17,6 +17,9 @@ pub struct Config {
     pub session_key: Option<Secret>,
     pub emergency_password_hash: Option<Secret>,
     pub collect_limits: Limits,
+    pub catalog_model_base_url: Option<String>,
+    pub catalog_model: Option<String>,
+    pub catalog_model_api_key: Option<String>,
 }
 
 impl Config {
@@ -91,6 +94,11 @@ impl Config {
                 rate_per_minute: number("NEXOFOLIO_COLLECT_RATE_PER_MINUTE", 120, 60_000)? as u32,
                 burst: number("NEXOFOLIO_COLLECT_BURST", 30, 10_000)? as u32,
             },
+            catalog_model_base_url: lookup("NEXOFOLIO_CATALOG_MODEL_BASE_URL")
+                .filter(|s| !s.trim().is_empty()),
+            catalog_model: lookup("NEXOFOLIO_CATALOG_MODEL").filter(|s| !s.trim().is_empty()),
+            catalog_model_api_key: lookup("NEXOFOLIO_CATALOG_MODEL_API_KEY")
+                .filter(|s| !s.trim().is_empty()),
         };
         if config.zentao_base_url.is_some() != config.session_key.is_some() {
             return Err(invalid(

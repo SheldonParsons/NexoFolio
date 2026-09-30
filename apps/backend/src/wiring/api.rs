@@ -1,10 +1,12 @@
 use crate::{
-    http::{access::AccessHttp, collect, endpoints, knowledge, service_addresses, sites},
+    http::{access::AccessHttp, collect, curate, endpoints, knowledge, service_addresses, sites},
     wiring::{Config, Databases},
 };
 use nexofolio_access::LoginService;
 use nexofolio_access_adapter::{ConfiguredEmergencyPassword, PostgresAccess, Zentao};
 use nexofolio_common::Result;
+use nexofolio_curate::{Completions, Describe, Organize};
+use nexofolio_curate_adapter::LlmClient;
 use nexofolio_intake::{Intake, SystemClock};
 use nexofolio_knowledge::Knowledge;
 use nexofolio_observe::Observe;
@@ -40,6 +42,34 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
         Arc::new(SystemClock),
         config.collect_limits,
     );
+
+    // Curate: LLM-powered describe and organize passes
+    let completions: Arc<dyn Completions> = Arc::new(LlmClient::new(
+        config
+            .catalog_model_base_url
+            .clone()
+            .unwrap_or_else(|| "http://localhost:11434/v1".into()),
+        config
+            .catalog_model
+            .clone()
+            .unwrap_or_else(|| "deepseek-v4-pro".into()),
+        config.catalog_model_api_key.clone().unwrap_or_default(),
+    ));
+    let describe = Arc::new(Describe::new(
+        completions.clone(),
+        config
+            .catalog_model
+            .clone()
+            .unwrap_or_else(|| "deepseek-v4-pro".into()),
+    ));
+    let organize = Arc::new(Organize::new(
+        completions,
+        config
+            .catalog_model
+            .clone()
+            .unwrap_or_else(|| "deepseek-v4-pro".into()),
+    ));
+
     let access = AccessHttp::new(login, store.clone(), store.clone(), store.clone());
     Ok(Some(
         crate::http::access::routes(access)
@@ -53,7 +83,16 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
             .merge(knowledge::routes(
                 store.clone(),
                 store.clone(),
+                knowledge_svc.clone(),
+                observe.clone(),
+            ))
+            .merge(curate::routes(
+                store.clone(),
+                store.clone(),
                 knowledge_svc,
+                observe.clone(),
+                describe,
+                organize,
             ))
             .merge(service_addresses::routes(store.clone(), store, observe))
             .merge(collect::routes(Arc::new(intake))),

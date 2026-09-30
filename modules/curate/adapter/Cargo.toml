@@ -1,0 +1,13 @@
+[package]
+name = "nexofolio-curate-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+nexofolio-curate-contracts.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+thiserror.workspace = true

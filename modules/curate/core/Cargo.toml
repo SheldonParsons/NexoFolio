@@ -1,0 +1,18 @@
+[package]
+name = "nexofolio-curate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+nexofolio-common.workspace = true
+nexofolio-contracts.workspace = true
+nexofolio-curate-contracts.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

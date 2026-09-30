@@ -227,6 +227,15 @@ pub enum KnowledgeError {
 
 pub type KnowledgeResult<T> = Result<T, KnowledgeError>;
 
+/// Paginated: `page` starts at 1, `limit` must be positive.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EndpointPage {
+    pub items: Vec<EndpointId>,
+    pub total: usize,
+    pub page: usize,
+    pub limit: usize,
+}
+
 /// Everything knowledge can be asked. Read by apps for the docs page, by curate
 /// to decide what still needs work, and later by the MCP tools.
 #[async_trait]
@@ -235,11 +244,14 @@ pub trait KnowledgeReader: Send + Sync {
     async fn catalogue(&self, project: ProjectId) -> KnowledgeResult<Catalogue>;
 
     /// Endpoints in one folder, or the unplaced ones when `folder` is `None`.
+    /// Page numbers start at 1. Returns empty items when page is beyond total.
     async fn folder_endpoints(
         &self,
         project: ProjectId,
         folder: Option<FolderId>,
-    ) -> KnowledgeResult<Vec<EndpointId>>;
+        page: usize,
+        limit: usize,
+    ) -> KnowledgeResult<EndpointPage>;
 
     /// Everything written about one endpoint. Absent parts are `None`/empty,
     /// which is the normal state before the first curation.

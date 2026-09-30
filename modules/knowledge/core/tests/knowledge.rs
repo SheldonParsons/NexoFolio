@@ -80,14 +80,12 @@ async fn unplaced_endpoints_need_no_write() {
     let catalogue = knowledge.catalogue(project).await.unwrap();
     assert_eq!(catalogue.unplaced, 47);
     assert!(catalogue.folders.is_empty());
-    assert_eq!(
-        knowledge
-            .folder_endpoints(project, None)
-            .await
-            .unwrap()
-            .len(),
-        47
-    );
+    let unplaced = knowledge
+        .folder_endpoints(project, None, 1, 100)
+        .await
+        .unwrap();
+    assert_eq!(unplaced.total, 47);
+    assert_eq!(unplaced.items.len(), 47);
 
     let round = knowledge.begin(project, curate()).await.unwrap();
     let folder = FolderId::new();
@@ -117,9 +115,10 @@ async fn unplaced_endpoints_need_no_write() {
     assert_eq!(catalogue.folders[0].endpoints, 1);
     assert_eq!(
         knowledge
-            .folder_endpoints(project, Some(folder))
+            .folder_endpoints(project, Some(folder), 1, 100)
             .await
-            .unwrap(),
+            .unwrap()
+            .items,
         vec![ids[0]]
     );
 }
