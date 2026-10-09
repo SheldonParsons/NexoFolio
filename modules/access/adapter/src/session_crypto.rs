@@ -27,9 +27,18 @@ impl SessionCrypto {
         })
     }
     pub fn generate(&self) -> Secret {
+        Self::random_token()
+    }
+    pub(crate) fn random_token() -> Secret {
+        Self::random_prefixed_token("nfi_")
+    }
+    pub(crate) fn random_mcp_token() -> Secret {
+        Self::random_prefixed_token("nfm_")
+    }
+    fn random_prefixed_token(prefix: &str) -> Secret {
         let bytes = Aes256Gcm::generate_key(&mut OsRng);
         Secret::new(format!(
-            "nfi_{}",
+            "{prefix}{}",
             bytes.iter().map(|v| format!("{v:02x}")).collect::<String>()
         ))
     }

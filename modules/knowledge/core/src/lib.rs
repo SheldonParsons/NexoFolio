@@ -32,7 +32,11 @@ use nexofolio_contracts::{
 use nexofolio_knowledge_contracts::{FolderRow, KnowledgeStore, StoreError};
 
 mod apply;
+mod candidates;
+mod protection;
 mod tree;
+mod value_reads;
+pub use candidates::CandidateSession;
 
 /// Reads the wall clock. Mirrors intake's: `chrono` runs without its `clock`
 /// feature here, and tests need to decide what "now" is.
@@ -91,6 +95,19 @@ where
     R: EndpointReader,
     C: Clock,
 {
+    async fn observed_values(
+        &self,
+        query: nexofolio_contracts::field_values::FieldValueQuery,
+    ) -> KnowledgeResult<nexofolio_contracts::field_values::ObservedValuePage> {
+        self.read_value_page(query).await
+    }
+    async fn observed_value(
+        &self,
+        query: nexofolio_contracts::field_values::FieldValueQuery,
+        value_id: &str,
+    ) -> KnowledgeResult<serde_json::Value> {
+        self.read_value(query, value_id).await
+    }
     async fn catalogue(&self, project: ProjectId) -> KnowledgeResult<Catalogue> {
         let mut tx = self.store.begin().await.map_err(store_error)?;
         let folders = tx.folders(project).await.map_err(store_error)?;
@@ -187,6 +204,7 @@ where
                 let Some(row) = by_id.get(&id) else { break };
                 path.push(Folder {
                     id: row.id,
+                    author: row.author.clone(),
                     parent: row.parent,
                     name: row.name.clone(),
                     summary: row.summary.clone(),

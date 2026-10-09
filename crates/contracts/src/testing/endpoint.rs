@@ -189,6 +189,7 @@ mod tests {
         let project = ProjectId::new();
         let (id, old) = (EndpointId::new(), EndpointId::new());
         reader.put(EndpointFacts {
+            requests: vec![],
             summary: EndpointSummary {
                 id,
                 project_id: project,

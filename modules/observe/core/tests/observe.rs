@@ -584,3 +584,194 @@ async fn shapes_for_review() {
         serde_json::to_string_pretty(&serde_json::json!({"observation": example})).unwrap()
     );
 }
+
+#[tokio::test]
+async fn header_and_root_facts_preserve_original_material_and_value_evidence() {
+    use nexofolio_contracts::observation::Headers;
+    let world = World::new();
+    let make = |name: &str, value: &str| {
+        let mut call = world.call(
+            world.prod,
+            "POST",
+            "https://fixture.test/request",
+            Body::None,
+            10,
+        );
+        let Fact::Exchange(exchange) = &mut call.fact else {
+            unreachable!()
+        };
+        exchange.request.headers = Some(Headers {
+            complete: false,
+            entries: vec![
+                (name.into(), value.into()),
+                ("X-Label".into(), "测试".into()),
+                ("X-Label".into(), "再次".into()),
+            ],
+        });
+        exchange.request.body = Body::Full {
+            media_type: Some("application/json".into()),
+            content: Content::Text("{}".into()),
+        };
+        call
+    };
+    let first = make("Authorization", "Bearer fixture-one");
+    world.send(vec![first.clone()]).await;
+    let old = world.only_endpoint().await;
+    let first_id = old.examples[0].id.clone();
+    let second = make("authorization", "Bearer fixture-two");
+    world.send(vec![second.clone()]).await;
+    world.send(vec![second]).await; // delivery idempotency, not a third call
+    let facts = world.only_endpoint().await;
+    assert_eq!(facts.summary.environments[0].calls, 2);
+    assert_eq!(facts.examples.len(), 2);
+    assert!(
+        facts
+            .examples
+            .iter()
+            .all(|e| e.structure_id == first_id && e.retained_samples == 2 && e.calls == 2)
+    );
+    assert!(facts.fields.iter().any(
+        |f| f.location == FieldLocation::RequestHeader && f.path.to_string() == "authorization"
+    ));
+    assert!(
+        facts
+            .fields
+            .iter()
+            .any(|f| f.location == FieldLocation::RequestBody && f.path.0.is_empty())
+    );
+    assert_eq!(facts.requests.len(), 2);
+    assert!(
+        facts
+            .requests
+            .iter()
+            .all(|r| r.body_root == Some(serde_json::json!({})))
+    );
+    let original = world
+        .observe
+        .example(facts.summary.id, &first_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        original["fact"]["request"]["headers"]["entries"][0][0],
+        "Authorization"
+    );
+    assert_eq!(
+        original["fact"]["request"]["headers"]["entries"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert_eq!(facts.requests[0].authentication[0].required, None);
+    assert_eq!(
+        facts.requests[0].authentication[0].current_validity,
+        "unknown_historical_observation"
+    );
+    let events = world.store.read(Cursor::START, 100).await.unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e.event.change, EndpointChange::EvidenceChanged { .. }))
+    );
+}
+
+#[tokio::test]
+async fn representatives_are_bounded_but_keep_first_identity_and_exact_counts() {
+    let world = World::new();
+    for value in 0..22 {
+        world
+            .send(vec![world.call(
+                world.prod,
+                "GET",
+                "https://fixture.test/values",
+                Body::Full {
+                    media_type: Some("application/json".into()),
+                    content: Content::Text(format!("{{\"code\":{value}}}")),
+                },
+                value,
+            )])
+            .await;
+    }
+    let facts = world.only_endpoint().await;
+    assert_eq!(facts.summary.environments[0].calls, 22);
+    assert_eq!(facts.examples.len(), 16);
+    assert!(facts.examples.iter().all(|e| e.retained_samples == 16));
+    assert!(facts.examples.iter().any(|e| !e.id.contains(':')));
+    let newest = facts.examples.iter().find(|e| e.id.contains(':')).unwrap();
+    assert!(
+        world
+            .observe
+            .example(facts.summary.id, &newest.id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn old_structure_rows_reproject_idempotently_and_reuse_their_stable_identity() {
+    use nexofolio_contracts::observation::Headers;
+    use nexofolio_observe_contracts::{EndpointRow, NewFingerprint, ObserveStore, Traffic};
+    let world = World::new();
+    let endpoint = EndpointId::new();
+    let mut first = world.call(
+        world.prod,
+        "POST",
+        "https://fixture.test/legacy",
+        Body::None,
+        1,
+    );
+    let Fact::Exchange(exchange) = &mut first.fact else {
+        unreachable!()
+    };
+    exchange.request.headers = Some(Headers {
+        complete: false,
+        entries: vec![("Authorization".into(), "Bearer first-fixture".into())],
+    });
+    exchange.request.body = Body::Full {
+        media_type: Some("application/json".into()),
+        content: Content::Text("{}".into()),
+    };
+    let mut tx = world.store.begin().await.unwrap();
+    tx.create_endpoint(&EndpointRow {
+        id: endpoint,
+        project_id: world.project,
+        method: "POST".into(),
+        path_template: "/legacy".into(),
+    })
+    .await
+    .unwrap();
+    // Pre-upgrade rows had no Header projection or body-state tags.
+    tx.insert_fingerprint(&NewFingerprint {traffic:Traffic {endpoint,environment_id:world.prod,address:ServiceAddress::parse("https://fixture.test").unwrap()},hash:[42;32],structure:serde_json::json!({"status":200,"query":{"media_type":null,"shape":{},"complete":true},"request":{"media_type":"application/json","shape":{"types":["object"]},"complete":true},"response":{"media_type":null,"shape":{},"complete":false}}),sample:serde_json::to_value(&first).unwrap(),seen:first.observed_at}).await.unwrap();
+    tx.commit().await.unwrap();
+    let before = world.get(endpoint).await;
+    assert_eq!(
+        before,
+        world.get(endpoint).await,
+        "read repair is repeatable without writes"
+    );
+    assert_eq!(before.requests[0].body_root, Some(serde_json::json!({})));
+    assert!(
+        before
+            .fields
+            .iter()
+            .any(|f| f.location == FieldLocation::RequestHeader)
+    );
+    let mut next = first;
+    next.key.batch_id = Uuid::new_v4();
+    next.key.record_id = Uuid::new_v4();
+    if let Fact::Exchange(exchange) = &mut next.fact {
+        exchange.request.headers.as_mut().unwrap().entries[0].1 = "Bearer next-fixture".into();
+    }
+    world.send(vec![next]).await;
+    let after = world.get(endpoint).await;
+    assert_eq!(after.summary.environments[0].calls, 2);
+    assert_eq!(after.examples.len(), 2);
+    assert!(
+        after
+            .examples
+            .iter()
+            .all(|e| e.structure_id == before.examples[0].id)
+    );
+}

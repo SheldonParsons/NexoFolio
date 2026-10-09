@@ -34,6 +34,7 @@ struct StoredFingerprint {
     hash: FingerprintHash,
     structure: Value,
     sample: Value,
+    representatives: Vec<Value>,
     calls: u64,
     first_seen: DateTime<Utc>,
     last_seen: DateTime<Utc>,
@@ -327,6 +328,7 @@ impl ObserveTx for InMemoryTx {
             hash: fingerprint.hash,
             structure: fingerprint.structure.clone(),
             sample: fingerprint.sample.clone(),
+            representatives: vec![],
             calls: 1,
             first_seen: fingerprint.seen,
             last_seen: fingerprint.seen,
@@ -352,6 +354,34 @@ impl ObserveTx for InMemoryTx {
             .collect())
     }
 
+    async fn representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Vec<Value>> {
+        Ok(self
+            .work
+            .fingerprints
+            .iter()
+            .find(|f| f.traffic == *traffic && f.hash == *hash)
+            .map(|f| f.representatives.clone())
+            .unwrap_or_default())
+    }
+    async fn put_representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+        samples: &[Value],
+    ) -> StoreResult<()> {
+        let f = self
+            .work
+            .fingerprints
+            .iter_mut()
+            .find(|f| f.traffic == *traffic && f.hash == *hash)
+            .ok_or(StoreError::Unavailable)?;
+        f.representatives = samples.to_vec();
+        Ok(())
+    }
     async fn sample(
         &mut self,
         traffic: &Traffic,
@@ -427,6 +457,19 @@ impl ObserveTx for InMemoryTx {
                 .find(|f| f.traffic == target && f.hash == fingerprint.hash)
             {
                 Some(existing) => {
+                    for value in fingerprint.representatives {
+                        if !existing
+                            .representatives
+                            .iter()
+                            .any(|v| v["id"] == value["id"])
+                        {
+                            existing.representatives.push(value);
+                        }
+                    }
+                    existing
+                        .representatives
+                        .sort_by_key(|v| v["id"].to_string());
+                    existing.representatives.truncate(15);
                     existing.calls += fingerprint.calls;
                     existing.first_seen = existing.first_seen.min(fingerprint.first_seen);
                     existing.last_seen = existing.last_seen.max(fingerprint.last_seen);
@@ -642,7 +685,23 @@ where
         .await
         .unwrap();
     assert_eq!(tx.traffic(project).await.unwrap().len(), 2);
+    let representative = json!({"id":"fixture-value","sample":{"value":"second"}});
+    tx.put_representatives(
+        &traffic(&d),
+        &[1; 32],
+        std::slice::from_ref(&representative),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        tx.representatives(&traffic(&d), &[1; 32]).await.unwrap(),
+        vec![representative.clone()]
+    );
     tx.move_traffic(&traffic(&d), c.id).await.unwrap();
+    assert_eq!(
+        tx.representatives(&traffic(&c), &[1; 32]).await.unwrap(),
+        vec![representative]
+    );
     assert!(tx.fingerprints(d.id).await.unwrap().is_empty());
     let mut moved = tx.fingerprints(c.id).await.unwrap();
     moved.sort_by_key(|f| f.calls);

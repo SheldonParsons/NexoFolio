@@ -1,5 +1,6 @@
 use crate::{
     http::{access::AccessHttp, collect, curate, endpoints, knowledge, service_addresses, sites},
+    runtime::curation::Curation,
     wiring::{Config, Databases},
 };
 use nexofolio_access::LoginService;
@@ -44,17 +45,21 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
     );
 
     // Curate: LLM-powered describe and organize passes
-    let completions: Arc<dyn Completions> = Arc::new(LlmClient::new(
-        config
-            .catalog_model_base_url
-            .clone()
-            .unwrap_or_else(|| "http://localhost:11434/v1".into()),
-        config
-            .catalog_model
-            .clone()
-            .unwrap_or_else(|| "deepseek-v4-pro".into()),
-        config.catalog_model_api_key.clone().unwrap_or_default(),
-    ));
+    let completions: Arc<dyn Completions> = Arc::new(
+        LlmClient::new(
+            config
+                .catalog_model_base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:11434/v1".into()),
+            config
+                .catalog_model
+                .clone()
+                .unwrap_or_else(|| "deepseek-v4-pro".into()),
+            config.catalog_model_api_key.clone().unwrap_or_default(),
+        )
+        .with_concurrency(config.model_max_concurrency)
+        .with_options(config.model_options),
+    );
     let describe = Arc::new(Describe::new(
         completions.clone(),
         config
@@ -69,11 +74,34 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
             .clone()
             .unwrap_or_else(|| "deepseek-v4-pro".into()),
     ));
+    let curation = Curation::new(
+        knowledge_svc.clone(),
+        knowledge_svc.clone(),
+        observe.clone(),
+        describe,
+        organize,
+    )
+    .with_candidates(knowledge_svc.clone())
+    .with_concurrency(
+        config.field_concurrency.min(config.model_max_concurrency),
+        config
+            .description_concurrency
+            .min(config.model_max_concurrency),
+    )
+    .with_idle_timeout(config.curation_idle_timeout);
 
     let access = AccessHttp::new(login, store.clone(), store.clone(), store.clone());
     Ok(Some(
         crate::http::access::routes(access)
+            .merge(crate::http::mcp_tokens::routes(
+                store.clone(),
+                Arc::new(databases.access.clone()),
+            ))
             .merge(sites::routes(store.clone(), store.clone(), store.clone()))
+            .merge(crate::http::profile::routes(
+                store.clone(),
+                Arc::new(nexofolio_access::ProfileService::new(store.clone())),
+            ))
             .merge(endpoints::routes(
                 store.clone(),
                 store.clone(),
@@ -86,15 +114,26 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
                 knowledge_svc.clone(),
                 observe.clone(),
             ))
-            .merge(curate::routes(
+            .merge(curate::routes(store.clone(), store.clone(), curation))
+            .merge(crate::http::curation_review::routes(
                 store.clone(),
                 store.clone(),
                 knowledge_svc,
-                observe.clone(),
-                describe,
-                organize,
+                store.clone(),
             ))
             .merge(service_addresses::routes(store.clone(), store, observe))
             .merge(collect::routes(Arc::new(intake))),
     ))
+}
+
+/// MCP composes saved knowledge and access ports, independently of business model configuration.
+pub fn build_navigation(databases: &Databases) -> crate::mcp::Navigation {
+    crate::mcp::Navigation::new(
+        Arc::new(databases.access.clone()),
+        Arc::new(Observe::new(databases.observe.clone())),
+        Arc::new(Knowledge::new(
+            databases.knowledge.clone(),
+            Observe::new(databases.observe.clone()),
+        )),
+    )
 }

@@ -56,6 +56,7 @@ nexofolio-observe-contracts.workspace = true
 nexofolio-observe.workspace = true
 nexofolio-observe-adapter.workspace = true
 async-trait.workspace = true
+thiserror.workspace = true
 chrono.workspace = true
 axum.workspace = true
 clap.workspace = true
@@ -72,8 +73,31 @@ tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+base64.workspace = true
+
+[[test]]
+name = "navigation_mcp"
+path = "../../tests/integration/navigation_mcp.rs"
+
+[[test]]
+name = "directory_curation"
+path = "../../tests/integration/directory_curation.rs"
+
+[[test]]
+name = "candidate_review"
+path = "../../tests/integration/candidate_review.rs"
+
+[[test]]
+name = "profile"
+path = "../../tests/integration/profile.rs"
+
+[[test]]
+name = "mcp_tokens"
+path = "../../tests/integration/mcp_tokens.rs"
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+nexofolio-knowledge-contracts = { workspace = true, features = ["testing"] }
 nexofolio-intake-contracts = { workspace = true, features = ["testing"] }
 nexofolio-observe-contracts = { workspace = true, features = ["testing"] }
 sqlx.workspace = true
@@ -81,7 +105,16 @@ argon2 = "0.5"
 http-body-util.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 jsonschema = { version = "0.57", default-features = false }
+image = { version = "=0.25.8", default-features = false, features = ["webp"] }
 sha2 = "0.11"
+
+[[test]]
+name = "candidate_operations"
+path = "../../tests/integration/candidate_operations.rs"
 
 [lints]
 workspace = true
+
+[[test]]
+name = "field_values"
+path = "../../tests/integration/field_values.rs"

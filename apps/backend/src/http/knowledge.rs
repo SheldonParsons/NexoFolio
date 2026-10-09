@@ -12,9 +12,7 @@ use axum::{
 };
 use nexofolio_access_contracts::{ProjectAccess, SessionPrincipal, Sessions};
 use nexofolio_common::{FolderId, ProjectId};
-use nexofolio_contracts::knowledge::{
-    Author, EndpointPage, KnowledgeError, KnowledgeReader,
-};
+use nexofolio_contracts::knowledge::{Author, EndpointPage, KnowledgeError, KnowledgeReader};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -60,8 +58,14 @@ pub fn routes(
 ) -> Router {
     Router::new()
         .route("/v1/projects/{project_id}/catalog", get(catalog))
-        .route("/v1/projects/{project_id}/catalog/interfaces", get(interfaces))
-        .route("/v1/projects/{project_id}/catalog/unclassified", get(unclassified))
+        .route(
+            "/v1/projects/{project_id}/catalog/interfaces",
+            get(interfaces),
+        )
+        .route(
+            "/v1/projects/{project_id}/catalog/unclassified",
+            get(unclassified),
+        )
         .route_layer(middleware::from_fn_with_state(sessions, session_auth))
         .with_state(KnowledgeHttp {
             projects,

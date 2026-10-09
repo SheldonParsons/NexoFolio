@@ -753,12 +753,15 @@ async fn documented(client: &reqwest::Client, url: &str, token: &str, a: &str, b
     let matched: Value = found("nothing").await.unwrap().json().await.unwrap();
     assert!(matched["endpoints"].as_array().unwrap().is_empty());
 
-    let facts: Value = get(format!("{}/{id}", endpoints(a)))
+    let detail: Value = get(format!("{}/{id}", endpoints(a)))
         .await
         .unwrap()
         .json()
         .await
         .unwrap();
+    // The current endpoint detail contract separates traffic facts from saved knowledge.
+    let facts = &detail["facts"];
+    assert!(detail.get("knowledge").is_some());
     assert_eq!(facts["summary"]["id"], id.as_str());
     assert_eq!(facts["addresses"][0]["address"], "https://shop.example.com");
     let examples = facts["examples"].as_array().unwrap();

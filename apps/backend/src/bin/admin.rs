@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use nexofolio_backend::wiring::{Config, Databases, build_api, init_logging, observe_report};
-use nexofolio_common::ProjectId;
+use nexofolio_common::{ProjectId, TokenId, UserId};
 use nexofolio_observe::Observe;
 
 #[derive(Parser)]
@@ -13,6 +13,19 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     CheckConfig,
+    /// Write a new MCP credential to a protected local file; stdout contains only its ID.
+    IssueMcpToken {
+        #[arg(long)]
+        user: UserId,
+        #[arg(long)]
+        output: std::path::PathBuf,
+        #[arg(long, default_value = "7")]
+        days: u32,
+    },
+    RevokeMcpToken {
+        #[arg(long)]
+        id: TokenId,
+    },
     Migrate,
     /// What observe knows.
     Observe {
@@ -38,6 +51,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let databases = Databases::new(&config)?;
     let _api = build_api(&config, &databases)?;
     match cli.command {
+        Command::IssueMcpToken { user, output, days } => {
+            use std::io::Write;
+            // Create the file first: an existing file never gets overwritten.
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut file = options.open(&output)?;
+            match databases.access.issue_mcp_token(user, days).await {
+                Ok((id, token)) => {
+                    if let Err(error) = file.write_all(token.expose().as_bytes()) {
+                        let _ = databases.access.revoke_mcp_token(id).await;
+                        let _ = std::fs::remove_file(&output);
+                        return Err(error.into());
+                    }
+                    println!("MCP token {id} saved to protected file.");
+                }
+                Err(error) => {
+                    let _ = std::fs::remove_file(&output);
+                    return Err(error.into());
+                }
+            }
+        }
+        Command::RevokeMcpToken { id } => {
+            databases.access.revoke_mcp_token(id).await?;
+            println!("MCP token revoked.");
+        }
         Command::CheckConfig => {
             println!("Configuration valid (database connectivity not checked).")
         }

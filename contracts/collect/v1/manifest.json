@@ -1,6 +1,6 @@
 {
   "contract": "collect",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "kinds": {
     "http_exchange": [
       1
@@ -15,8 +15,8 @@
     "record_bytes": 4194304
   },
   "files": {
-    "README.md": "aad1d6694cfe9892e499a5939b6e4e1f644f46049180935c9e43226eb7570092",
-    "batch.schema.json": "e178b5fc51658a9f8fed56f978fc47a03abedb97bef1358825179d82f962fc04",
+    "README.md": "e1456c2ad23e49be32887bf44eb4d469e010c7c2284e817f001186ed6ef39584",
+    "batch.schema.json": "c850996b10fd3e4beb8696c116db027fb704006f8b82a2fff2d1ab54ccabeeb7",
     "error.schema.json": "4a5694534a79e350a1bb22d20171f383c6c6a358ca26d8f86e01c29b6bdefff8",
     "fixtures/batch/invalid/declaration-bad-response-code.json": "4d0115e17b15ba45834b127f07d6263bafbd50eec5c37d3150ed80acc2515a14",
     "fixtures/batch/invalid/declaration-path-with-query.json": "e05d4d638799226b33943cf8c269707670a73263abec3c2723f0d8969d532b1f",
@@ -46,6 +46,7 @@
     "fixtures/batch/valid/declaration-with-environment-name.json": "b035c4dc937ef46f7cf9b597565ebaeba9021157c61e425ef0a0fe2d9b1c7ed5",
     "fixtures/batch/valid/exchange-without-context-or-response.json": "40c0bf1ac99105ae464c05e3af14f7c9128cbb082948dd19c080df1428ce57d0",
     "fixtures/batch/valid/fetcher-exchanges.json": "84854378ffe46793cae015152b6426af356d0246c4f15a019ebf8a6ad6b674e7",
+    "fixtures/batch/valid/multipart-summary.json": "9854d3e526720834bf6b4425143d61acfbdc3e0ef7152d089d5d56b0db32b8a6",
     "fixtures/batch/valid/swagger-declarations-without-environment.json": "1ea822a3e23b6edfb18d1d6ad025f74e2c11e3bc818aa8efc2bda18784b084aa",
     "fixtures/error/valid/rate-limited.json": "fbd687419c3865cfce51e5335c5ee6eff6bc65bea2274c0144805b4d0ff20b03",
     "fixtures/error/valid/unknown-project.json": "d867686fb5562a9c902eba3d045c90f64c26187d7d2bf964eaed126120c29f63",

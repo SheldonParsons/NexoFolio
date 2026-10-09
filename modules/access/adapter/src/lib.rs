@@ -18,3 +18,7 @@ pub use zentao::Zentao;
 /// fn bypass(store: nexofolio_access_adapter::Postgres) { let _ = store.pool; }
 /// ```
 const _: () = ();
+
+mod mcp_discovery;
+mod mcp_token_management;
+mod mcp_tokens;

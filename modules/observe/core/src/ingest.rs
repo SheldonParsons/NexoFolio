@@ -113,17 +113,66 @@ impl<'a> Ingest<'a> {
             ensure_endpoint(self.tx, project, &method, &path_template, &mut self.events).await?;
 
         let structure = Structure::of(exchange);
-        let hash = structure.hash();
+        let mut hash = structure.hash();
         let traffic = Traffic {
             endpoint,
             environment_id: environment,
             address,
         };
-        if self
+        let mut known = self
             .tx
             .count_fingerprint(&traffic, &hash, observation.observed_at)
-            .await?
-        {
+            .await?;
+        if !known {
+            // Upgrade-on-read preserves public IDs/counts of old fingerprints. Reuse only when the
+            // retained original proves equality under the current Header/body-state rules.
+            for existing in self
+                .tx
+                .fingerprints(endpoint)
+                .await?
+                .into_iter()
+                .filter(|f| f.environment_id == environment && f.address == traffic.address)
+            {
+                let Some(raw) = self.tx.sample(&traffic, &existing.hash).await? else {
+                    continue;
+                };
+                let Ok(previous) = serde_json::from_value::<CanonicalObservation>(raw) else {
+                    continue;
+                };
+                if let Fact::Exchange(exchange) = previous.fact
+                    && Structure::of(&exchange).hash() == hash
+                {
+                    hash = existing.hash;
+                    known = self
+                        .tx
+                        .count_fingerprint(&traffic, &hash, observation.observed_at)
+                        .await?;
+                    break;
+                }
+            }
+        }
+        if known {
+            let first = self
+                .tx
+                .sample(&traffic, &hash)
+                .await?
+                .ok_or(StoreError::Unavailable)?;
+            let mut saved = self.tx.representatives(&traffic, &hash).await?;
+            if crate::representatives::retain(
+                &first,
+                &mut saved,
+                serde_json::to_value(observation)
+                    .map_err(|_| Failure::Skip("observation does not serialise"))?,
+            ) {
+                self.tx.put_representatives(&traffic, &hash, &saved).await?;
+                self.events.push(EndpointEvent {
+                    project_id: project,
+                    endpoint,
+                    change: EndpointChange::EvidenceChanged {
+                        environment_id: environment,
+                    },
+                });
+            }
             return Ok(());
         }
         let fingerprint = NewFingerprint {

@@ -20,6 +20,11 @@ pub struct Config {
     pub catalog_model_base_url: Option<String>,
     pub catalog_model: Option<String>,
     pub catalog_model_api_key: Option<String>,
+    pub model_options: nexofolio_curate_adapter::ModelOptions,
+    pub model_max_concurrency: usize,
+    pub field_concurrency: usize,
+    pub curation_idle_timeout: Duration,
+    pub description_concurrency: usize,
 }
 
 impl Config {
@@ -99,6 +104,25 @@ impl Config {
             catalog_model: lookup("NEXOFOLIO_CATALOG_MODEL").filter(|s| !s.trim().is_empty()),
             catalog_model_api_key: lookup("NEXOFOLIO_CATALOG_MODEL_API_KEY")
                 .filter(|s| !s.trim().is_empty()),
+            curation_idle_timeout: Duration::from_secs(number(
+                "NEXOFOLIO_CURATION_IDLE_SECONDS",
+                900,
+                7200,
+            )?),
+            model_options: nexofolio_curate_adapter::ModelOptions {
+                thinking: nexofolio_curate_adapter::Thinking::parse(
+                    &lookup("NEXOFOLIO_MODEL_THINKING").unwrap_or_else(|| "provider".into()),
+                )
+                .ok_or_else(|| invalid("NEXOFOLIO_MODEL_THINKING"))?,
+                json_output: match lookup("NEXOFOLIO_MODEL_JSON_OUTPUT").as_deref() {
+                    None | Some("false") => false,
+                    Some("true") => true,
+                    _ => return Err(invalid("NEXOFOLIO_MODEL_JSON_OUTPUT")),
+                },
+            },
+            model_max_concurrency: number("NEXOFOLIO_MODEL_MAX_CONCURRENCY", 8, 16)? as usize,
+            field_concurrency: number("NEXOFOLIO_FIELD_CONCURRENCY", 8, 16)? as usize,
+            description_concurrency: number("NEXOFOLIO_DESCRIPTION_CONCURRENCY", 4, 8)? as usize,
         };
         if config.zentao_base_url.is_some() != config.session_key.is_some() {
             return Err(invalid(
@@ -138,6 +162,23 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().contains("NEXOFOLIO_DB_MAX_CONNECTIONS"));
         assert!(!err.to_string().contains("password"));
+    }
+    #[test]
+    fn provider_controls_are_explicit_and_invalid_modes_fail_closed() {
+        let lookup = |mode: &str| {
+            Config::from_lookup(|key| match key {
+                "DATABASE_URL" => Some("postgres://localhost/db".into()),
+                "NEXOFOLIO_MODEL_THINKING" => Some(mode.into()),
+                "NEXOFOLIO_MODEL_JSON_OUTPUT" => Some("true".into()),
+                _ => None,
+            })
+        };
+        assert!(lookup("low").unwrap().model_options.json_output);
+        assert_eq!(
+            lookup("disabled").unwrap().model_options.thinking,
+            nexofolio_curate_adapter::Thinking::Disabled
+        );
+        assert!(lookup("typo").is_err());
     }
     #[test]
     fn debug_configuration_redacts_database_url() {

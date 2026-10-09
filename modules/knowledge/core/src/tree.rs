@@ -49,6 +49,14 @@ fn height_of(folder: FolderId, children: &HashMap<Option<FolderId>, Vec<FolderId
         .unwrap_or(1)
 }
 
+fn subtree_height(folder: FolderId, folders: &[FolderRow]) -> usize {
+    let mut children: HashMap<Option<FolderId>, Vec<FolderId>> = HashMap::new();
+    for f in folders {
+        children.entry(f.parent).or_default().push(f.id);
+    }
+    height_of(folder, &children)
+}
+
 /// Checks that putting `folder` under `parent` keeps the tree valid: the parent
 /// exists, the move does not put the folder inside its own subtree, and nothing
 /// ends up deeper than [`MAX_DEPTH`].
@@ -60,7 +68,13 @@ pub fn check_move(
     folders: &[FolderRow],
 ) -> KnowledgeResult<()> {
     let Some(parent) = parent else {
-        return Ok(());
+        return if subtree_height(folder, folders) <= MAX_DEPTH {
+            Ok(())
+        } else {
+            Err(KnowledgeError::InvalidTree(
+                "rooting this subtree still exceeds two levels".into(),
+            ))
+        };
     };
     if parent == folder {
         return Err(KnowledgeError::InvalidTree(
@@ -90,15 +104,7 @@ pub fn check_move(
 
     let parent_depth = depth_of(parent, &parents)
         .ok_or_else(|| KnowledgeError::InvalidTree("the tree has a cycle".into()))?;
-    let mut children: HashMap<Option<FolderId>, Vec<FolderId>> = HashMap::new();
-    for f in folders {
-        children.entry(f.parent).or_default().push(f.id);
-    }
-    let subtree = if folders.iter().any(|f| f.id == folder) {
-        height_of(folder, &children)
-    } else {
-        1
-    };
+    let subtree = subtree_height(folder, folders);
     if parent_depth + subtree > MAX_DEPTH {
         return Err(KnowledgeError::InvalidTree(format!(
             "the catalogue is at most {MAX_DEPTH} levels deep"
@@ -140,6 +146,7 @@ fn walk(
         let at = out.len();
         out.push(Folder {
             id: row.id,
+            author: row.author.clone(),
             parent: row.parent,
             name: row.name.clone(),
             summary: row.summary.clone(),

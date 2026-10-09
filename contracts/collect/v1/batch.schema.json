@@ -113,7 +113,7 @@
     "Body": {
       "type": "object",
       "required": ["state"],
-      "properties": { "state": { "enum": ["full", "truncated", "unreadable", "none"] } },
+      "properties": { "state": { "enum": ["full", "truncated", "partial", "unreadable", "none"] } },
       "allOf": [
         {
           "if": { "properties": { "state": { "enum": ["full", "truncated"] } } },
@@ -126,6 +126,20 @@
               "encoding": { "enum": ["utf8", "base64"] },
               "content": { "type": "string" },
               "bytes": { "type": "integer", "minimum": 0, "description": "原始字节数（已知时填写）。truncated 时表示截断前的大小。" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "state": { "const": "partial" } } },
+          "then": {
+            "additionalProperties": false,
+            "required": ["state", "encoding", "content"],
+            "properties": {
+              "state": true,
+              "media_type": { "type": "string", "maxLength": 255 },
+              "encoding": { "enum": ["utf8", "base64"] },
+              "content": { "type": "string" },
+              "note": { "type": "string", "maxLength": 1024 }
             }
           }
         },

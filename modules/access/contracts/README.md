@@ -1,6 +1,6 @@
 # 登录和项目 HTTP API
 
-状态：已实现。真实禅道使用已验证的 REST API v1 适配器；未来独立同步接口、MCP Token 签发、知识业务和裁决不在本次范围。
+状态：已实现。真实禅道使用已验证的 REST API v1 适配器。账号级 MCP Token 管理见下文；独立同步接口不在本次范围。
 
 ## 配置与迁移
 
@@ -67,7 +67,31 @@
 
 后续请求使用 `Authorization: Bearer <内部Token>`。只查询本地会话有效期、撤销状态、用户状态和项目授权，不请求禅道。
 权限依照最近一次成功同步的本地记录，禅道变更不实时生效；没有权限快照 TTL 或后台自动刷新。
-专用 MCP Token 与该 Token 分开，内部 Token 不能访问 `/mcp`。本次 MCP Token 签发仍未实现。
+专用 MCP Token 与该 Token 分开，内部 Token 不能访问 `/mcp`，MCP Token 也不能用于网页登录或管理凭证。
+
+## 账号级 MCP 凭证
+
+前端 `/settings/mcp` 的头像菜单和顶部接口文档菜单入口共用同一页面。用户只能管理自己创建的凭证；不绑定项目、不复制权限快照。访问所有项目时仍按该账号当前本地授权检查，禅道侧变更沿用上文的登录同步机制。
+
+- `GET /v1/auth/mcp-tokens?page=1&limit=20`：仅返回当前账号的凭证元数据，包含 `items/total/page/limit`。page 范围 1..100000，limit 范围 1..100。
+- `GET /v1/auth/mcp-connection`：返回 `transport`、MCP handler 声明支持的 `protocol_versions`，以及当前账号的 `accessible_projects` 数量。未建立权限快照时数量为 null，不等同于 0；只计入同实例且已授权项目。前端服务地址沿用实际 API 基础地址及其代理前缀，追加 `/mcp`。
+- `POST /v1/auth/mcp-tokens`：请求为 `name`、`starts_at`、`expires_at`，拒绝 `user_id`、项目选择等未知字段。名称为 1～64 字；时间使用带时区的 RFC 3339。`starts_at` 缺省或 null 表示立即生效，`expires_at` 缺省或 null 表示无限期；结束时间必须晚于开始时间及服务端当前时间。
+- 创建返回 HTTP 201，含 `credential` 元数据、`token` 和 `token_type: Bearer`。完整 token 仅此时返回，之后无法取回。前端仅保存在当前弹窗内存中，关闭、退出账号或离开页面即清除；创建超时不会自动重试。
+- `DELETE /v1/auth/mcp-tokens/{id}`：撤销自己的凭证，成功返回 204，重复撤销仍返回 204；不存在或属于他人的凭证返回 404。撤销不会影响其他 token。
+
+元数据包含 `id/name/issued_at/starts_at/expires_at/revoked_at/status`，状态为 `scheduled/active/expired/revoked`。列表不返回原文、摘要或业务系统凭据。所有管理接口要求有效网页登录态，响应设 `Cache-Control: no-store`。
+
+新 token 使用 `nfm_` 前缀和 256 bit 随机秘密，只保存 SHA-256 摘要。旧 MCP token 仍通过独立凭证表校验，不根据前缀将网页登录 token 当作 MCP token。未生效、到期、撤销、账号禁用或权限未建立时拒绝 MCP 访问；每次工具调用也重新检查项目权限和凭证状态。
+
+部署本功能需先执行 access 迁移 `202610090001_mcp_token_management.sql`，再更新后端；API 不自动迁移。该迁移保留旧凭证，以原签发时间回填生效时间，并允许无到期时间。开发验证仅使用独立测试库，不代表运行中的实例已经迁移或部署。
+
+### MCP 项目与环境发现
+
+客户端连接 `/mcp` 后可从 `list_projects` 开始，无需已知项目 ID。它只返回 token 所属账号当前已授权、同一实例的项目，字段为 `project_id/name/status`。按名称确认项目后调用 `list_project_environments`，传入 `project_id`，返回 `project_id/environment_id/name`。这些 ID 可以直接传给后续接口工具；不会通过项目名称或环境名称猜测 UUID。
+
+两个工具均接受 `offset`（默认 0）、`limit`（默认 20、范围 1～50），返回 `items/total/offset/limit/has_more/next_offset`。`has_more=true` 时使用返回的 `next_offset` 续读。查询使用一致的只读事务，且每次重新检查 token 生效时间、到期、撤销、账号状态与当前授权；权限缺失、存储故障与成功的空列表是不同结果。无权项目与不存在项目统一拒绝环境读取，不泄露环境数量或名称。
+
+环境列表来自项目配置，可能尚无采集数据。多个名称匹配时由用户选择；这两个发现工具不创建项目、环境，不同步外部权限，也不读取业务认证凭据。此扩展无需新增数据库迁移。
 
 ## GET /v1/auth/me
 

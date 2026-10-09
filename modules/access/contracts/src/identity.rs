@@ -21,4 +21,6 @@ pub struct UserProfile {
     pub account: String,
     pub display_name: String,
     pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar_url: Option<String>,
 }

@@ -59,6 +59,17 @@ pub fn fields(
     }
     for fingerprint in seen {
         for (location, part) in fingerprint.structure.parts() {
+            if matches!(
+                location,
+                FieldLocation::RequestBody | FieldLocation::ResponseBody { .. }
+            ) && (!part.shape.types.is_empty()
+                || matches!(
+                    part.state.as_deref(),
+                    Some("full" | "partial" | "truncated" | "unreadable")
+                ))
+            {
+                keys.insert((location, FieldPath::default()));
+            }
             keys.extend(
                 part.shape
                     .paths()
@@ -120,6 +131,15 @@ fn field(key: &Key, seen: &[Seen], declared: Option<DeclaredField>) -> FieldFact
 /// a missing parent, or an incomplete part that cannot prove absence.
 fn sighting(seen: &Seen, location: FieldLocation, path: &[PathSegment]) -> Option<Sighting> {
     let part = seen.structure.part(location)?;
+    if path.is_empty()
+        && part.shape.types.is_empty()
+        && !matches!(
+            part.state.as_deref(),
+            Some("full" | "partial" | "truncated" | "unreadable")
+        )
+    {
+        return None;
+    }
     let (presence, shape) = part.shape.at(path);
     let presence = match presence {
         Presence::Absent if !part.complete => return None,

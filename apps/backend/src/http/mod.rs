@@ -1,13 +1,18 @@
 pub mod access;
 pub mod collect;
 pub mod curate;
+mod curation_actor;
+mod curation_operations;
+pub(crate) mod curation_review;
 pub mod downloads;
 pub mod endpoints;
 pub mod knowledge;
+pub mod mcp_tokens;
+pub(crate) mod profile;
 pub mod service_addresses;
 pub mod sites;
 use crate::{
-    mcp::{FoundationMcp, require_token},
+    mcp::{KnowledgeMcp, Navigation, require_token},
     wiring::Config,
 };
 use axum::{
@@ -26,7 +31,7 @@ use rmcp::transport::streamable_http_server::{
 use std::{future::IntoFuture, io, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
-use tower_http::{catch_panic::CatchPanicLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tower_http::{catch_panic::CatchPanicLayer, trace::TraceLayer};
 
 #[derive(Clone)]
 pub struct RequestId(pub String);
@@ -62,6 +67,26 @@ async fn identify(mut request: Request, next: Next) -> Response {
     response
 }
 
+fn request_deadline(path: &str, normal: Duration) -> Duration {
+    if path.starts_with("/v1/projects/") && path.split('/').nth(4) == Some("curate") {
+        Duration::from_secs(180)
+    } else {
+        normal
+    }
+}
+
+async fn request_timeout(
+    State(normal): State<Duration>,
+    request: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, Json<serde_json::Value>)> {
+    let duration = request_deadline(request.uri().path(), normal);
+    tokio::time::timeout(duration, next.run(request)).await.map_err(|_| (
+        StatusCode::REQUEST_TIMEOUT,
+        Json(serde_json::json!({"error":{"code":"REQUEST_TIMEOUT","message":"处理超时，请稍后重试。"}})),
+    ))
+}
+
 pub fn router(
     config: &Config,
     database: Arc<dyn DatabaseProbe>,
@@ -78,9 +103,20 @@ pub fn router_with_access(
     shutdown: CancellationToken,
     access: Option<Router>,
 ) -> Router {
+    router_with_navigation(config, database, verifier, shutdown, access, None)
+}
+
+pub fn router_with_navigation(
+    config: &Config,
+    database: Arc<dyn DatabaseProbe>,
+    verifier: Arc<dyn McpTokenVerifier>,
+    shutdown: CancellationToken,
+    access: Option<Router>,
+    navigation: Option<Navigation>,
+) -> Router {
     let access_router = access.unwrap_or_default();
     let transport = StreamableHttpService::new(
-        || Ok(FoundationMcp),
+        move || Ok(KnowledgeMcp::new(navigation.clone())),
         Arc::new(LocalSessionManager::default()),
         StreamableHttpServerConfig::default()
             .with_legacy_session_mode(false)
@@ -98,7 +134,7 @@ pub fn router_with_access(
 
         .merge(downloads::routes())
         .layer(CatchPanicLayer::new())
-        .layer(TimeoutLayer::with_status_code(StatusCode::REQUEST_TIMEOUT, config.request_timeout))
+        .layer(middleware::from_fn_with_state(config.request_timeout, request_timeout))
         .layer(TraceLayer::new_for_http().make_span_with(|request: &Request| {
             let id = request.extensions().get::<RequestId>().map(|i| i.0.as_str()).unwrap_or("unknown");
             // Never log query strings, bodies or Authorization headers.
@@ -123,5 +159,25 @@ pub async fn serve(
             tokio::time::timeout(grace, &mut serving).await
                 .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "HTTP shutdown deadline exceeded"))?
         }
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn only_curation_gets_a_model_deadline() {
+        let normal = Duration::from_secs(60);
+        assert_eq!(
+            request_deadline("/v1/projects/p/curate/organize", normal),
+            Duration::from_secs(180)
+        );
+        assert_eq!(
+            request_deadline("/v1/projects/p/curate/describe/e", normal),
+            Duration::from_secs(180)
+        );
+        assert_eq!(request_deadline("/v1/projects/p/endpoints", normal), normal);
+        assert_eq!(request_deadline("/health/ready", normal), normal);
     }
 }

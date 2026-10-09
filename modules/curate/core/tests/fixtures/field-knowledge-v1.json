@@ -1,0 +1,449 @@
+{
+  "expected_hashes": [
+    "d8441b1b4d96e4bc502c21d4806b15f995174b1e907ad2bf34727a36a3cb4c19",
+    "ef02cf953de29672aa145ec34e9c5410420a3a401330ae9a71af38ba075ab8a0",
+    "48480b711ef3074270d71689e05bc49298f808eaa8056aea5613713664b93ff6",
+    "d6907a84e8ed960e6b28137fd5283fa1e6f40c6099ae34459b4a3f8648c43ff6"
+  ],
+  "expected_inputs": [
+    {
+      "evidence": [
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000001",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "status",
+          "kind": "observation",
+          "options": [
+            {
+              "label": null,
+              "value": "2"
+            }
+          ],
+          "text": "真实调用样本中的观测值；不是完整枚举或业务约束"
+        },
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000002",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "dictCode",
+          "kind": "related_interface",
+          "options": [
+            {
+              "label": "已完成",
+              "value": "2"
+            },
+            {
+              "label": "已取消",
+              "value": "3"
+            }
+          ],
+          "text": "字典接口 /dict/options 的 dictCode 参数与字段名匹配；提供候选值，适用关系仍待业务确认"
+        }
+      ],
+      "key": "response_body:200:status",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "path": "status",
+      "types": [
+        "string"
+      ],
+      "values": [
+        "2"
+      ]
+    },
+    {
+      "evidence": [
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000001",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "status",
+          "kind": "observation",
+          "options": [
+            {
+              "label": null,
+              "value": "sent"
+            }
+          ],
+          "text": "真实调用样本中的观测值；不是完整枚举或业务约束"
+        },
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000002",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "dictCode",
+          "kind": "related_interface",
+          "options": [
+            {
+              "label": "已完成",
+              "value": "2"
+            },
+            {
+              "label": "已取消",
+              "value": "3"
+            }
+          ],
+          "text": "字典接口 /dict/options 的 dictCode 参数与字段名匹配；提供候选值，适用关系仍待业务确认"
+        }
+      ],
+      "key": "request_body:status",
+      "location": {
+        "in": "request_body"
+      },
+      "path": "status",
+      "types": [
+        "string"
+      ],
+      "values": [
+        "sent"
+      ]
+    },
+    {
+      "evidence": [
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000001",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "data.processInstanceId",
+          "kind": "observation",
+          "options": [
+            {
+              "label": null,
+              "value": "flow-123"
+            }
+          ],
+          "text": "真实调用样本中的观测值；不是完整枚举或业务约束"
+        },
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000004",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "task.processInstanceId",
+          "kind": "related_interface",
+          "options": [],
+          "text": "与 /workflow/tasks 的 task.processInstanceId 观测到同名同值；候选关联，未确认值来源或调用依赖"
+        }
+      ],
+      "key": "response_body:200:data.processInstanceId",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "path": "data.processInstanceId",
+      "types": [
+        "string"
+      ],
+      "values": [
+        "flow-123"
+      ]
+    },
+    {
+      "evidence": [
+        {
+          "endpoint": "00000000-0000-0000-0000-000000000001",
+          "environment": "00000000-0000-0000-0000-000000000003",
+          "example": "sample",
+          "field": "name",
+          "kind": "observation",
+          "options": [
+            {
+              "label": null,
+              "value": "订单"
+            }
+          ],
+          "text": "真实调用样本中的观测值；不是完整枚举或业务约束"
+        }
+      ],
+      "key": "response_body:200:name",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "path": "name",
+      "types": [
+        "string"
+      ],
+      "values": [
+        "订单"
+      ]
+    }
+  ],
+  "facts": {
+    "addresses": [],
+    "aliases": [],
+    "examples": [],
+    "fields": [
+      {
+        "conflict": null,
+        "declared": null,
+        "differs_between_environments": false,
+        "labels": [],
+        "location": {
+          "in": "response_body",
+          "status": 200
+        },
+        "path": [
+          {
+            "key": "status"
+          }
+        ],
+        "types": [
+          "string"
+        ]
+      },
+      {
+        "conflict": null,
+        "declared": null,
+        "differs_between_environments": false,
+        "labels": [],
+        "location": {
+          "in": "request_body"
+        },
+        "path": [
+          {
+            "key": "status"
+          }
+        ],
+        "types": [
+          "string"
+        ]
+      },
+      {
+        "conflict": null,
+        "declared": null,
+        "differs_between_environments": false,
+        "labels": [],
+        "location": {
+          "in": "response_body",
+          "status": 200
+        },
+        "path": [
+          {
+            "key": "data"
+          },
+          {
+            "key": "processInstanceId"
+          }
+        ],
+        "types": [
+          "string"
+        ]
+      },
+      {
+        "conflict": null,
+        "declared": null,
+        "differs_between_environments": false,
+        "labels": [],
+        "location": {
+          "in": "response_body",
+          "status": 200
+        },
+        "path": [
+          {
+            "key": "name"
+          }
+        ],
+        "types": [
+          "string"
+        ]
+      }
+    ],
+    "summary": {
+      "declared": false,
+      "environments": [],
+      "external": false,
+      "id": "00000000-0000-0000-0000-000000000001",
+      "method": "GET",
+      "path_template": "/orders/detail",
+      "project_id": "00000000-0000-0000-0000-000000000009"
+    }
+  },
+  "signals": [
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000001",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "status",
+      "path": "status",
+      "row": "",
+      "value": "2"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000001",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "request_body"
+      },
+      "name": "status",
+      "path": "status",
+      "row": "",
+      "value": "sent"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000001",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "processInstanceId",
+      "path": "data.processInstanceId",
+      "row": "",
+      "value": "flow-123"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000001",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "name",
+      "path": "name",
+      "row": "",
+      "value": "订单"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000002",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "query"
+      },
+      "name": "dictCode",
+      "path": "dictCode",
+      "row": "",
+      "value": "status"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000002",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "value",
+      "path": "value",
+      "row": "/data/0",
+      "value": "2"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000002",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "label",
+      "path": "label",
+      "row": "/data/0",
+      "value": "已完成"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000002",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "value",
+      "path": "value",
+      "row": "/data/1",
+      "value": "3"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000002",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "label",
+      "path": "label",
+      "row": "/data/1",
+      "value": "已取消"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000004",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "processInstanceId",
+      "path": "task.processInstanceId",
+      "row": "",
+      "value": "flow-123"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000004",
+      "environment": "00000000-0000-0000-0000-000000000005",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "processInstanceId",
+      "path": "task.processInstanceId",
+      "row": "",
+      "value": "flow-123"
+    },
+    {
+      "endpoint": "00000000-0000-0000-0000-000000000004",
+      "environment": "00000000-0000-0000-0000-000000000003",
+      "example": "sample",
+      "location": {
+        "in": "response_body",
+        "status": 200
+      },
+      "name": "name",
+      "path": "name",
+      "row": "",
+      "value": "订单"
+    }
+  ],
+  "summaries": [
+    {
+      "declared": false,
+      "environments": [],
+      "external": false,
+      "id": "00000000-0000-0000-0000-000000000001",
+      "method": "GET",
+      "path_template": "/orders/detail",
+      "project_id": "00000000-0000-0000-0000-000000000009"
+    },
+    {
+      "declared": false,
+      "environments": [],
+      "external": false,
+      "id": "00000000-0000-0000-0000-000000000002",
+      "method": "GET",
+      "path_template": "/dict/options",
+      "project_id": "00000000-0000-0000-0000-000000000009"
+    },
+    {
+      "declared": false,
+      "environments": [],
+      "external": false,
+      "id": "00000000-0000-0000-0000-000000000004",
+      "method": "GET",
+      "path_template": "/workflow/tasks",
+      "project_id": "00000000-0000-0000-0000-000000000009"
+    }
+  ]
+}

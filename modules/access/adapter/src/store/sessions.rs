@@ -19,7 +19,7 @@ impl Sessions for PostgresAccess {
         })
     }
     async fn me(&self, p: &SessionPrincipal) -> Result<UserProfile> {
-        let row=sqlx::query("SELECT id,account,display_name,enabled FROM users WHERE id=$1 AND instance=$2 AND enabled").bind(uuid(p.user_id)).bind(&p.instance).fetch_optional(&self.database.pool).await.map_err(db_error)?.ok_or(Error::Unauthenticated)?;
+        let row=sqlx::query("SELECT u.id,u.account,coalesce(p.display_name,u.display_name) AS display_name,u.enabled,p.avatar_url FROM users u LEFT JOIN profile_preferences p ON p.user_id=u.id WHERE u.id=$1 AND u.instance=$2 AND u.enabled").bind(uuid(p.user_id)).bind(&p.instance).fetch_optional(&self.database.pool).await.map_err(db_error)?.ok_or(Error::Unauthenticated)?;
         profile(&row)
     }
 }

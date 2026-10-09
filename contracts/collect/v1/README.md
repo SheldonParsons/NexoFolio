@@ -51,9 +51,10 @@ Content-Type: application/json
 - `body.state`：
   - `full`：内容完整，必须带 `encoding` 和 `content`。
   - `truncated`：只有前面一部分，必须带 `encoding` 和 `content`，`bytes` 可以写原始长度。
+  - `partial`：可用的局部摘要，含 `encoding`、`content` 和可选 `note`；例如 multipart 文字与文件名称/类型/大小，不代表原始 multipart 或文件字节。
   - `unreadable`：有内容但读不到，原因写在 `note`。
   - `none`：确实没有 body。
-- 只有 `full` 的 body 能证明"某个字段不存在"；`truncated` 只能补充结构。
+- 只有 `full` 的 body 能证明"某个字段不存在"；`truncated`、`partial` 只能补充结构。旧版队列保持原有状态，新采集可使用 partial。
 - `http_exchange.response` 可以省略，表示没有采集到响应。
 - `http_declaration` 中的 schema 必须已经展开所有 `$ref`。
 

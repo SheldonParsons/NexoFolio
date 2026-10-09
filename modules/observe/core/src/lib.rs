@@ -15,9 +15,12 @@ mod declaration;
 mod facts;
 mod identity;
 mod ingest;
+mod representatives;
 mod shape;
 mod structure;
 mod template;
+mod values;
+pub use values::{archive_values, value_field_key, value_summary};
 
 use std::collections::HashSet;
 
@@ -180,10 +183,75 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
         let mut addresses: Vec<AddressUse> = Vec::new();
         let mut seen: Vec<Seen> = Vec::new();
         let mut examples: Vec<ExampleSummary> = Vec::new();
+        let mut requests = Vec::new();
         for fingerprint in fingerprints {
-            let structure = serde_json::from_value::<Structure>(fingerprint.structure.clone());
+            let traffic = Traffic {
+                endpoint: row.id,
+                environment_id: fingerprint.environment_id,
+                address: fingerprint.address.clone(),
+            };
+            let first = tx
+                .sample(&traffic, &fingerprint.hash)
+                .await
+                .map_err(unavailable)?;
+            let retained = tx
+                .representatives(&traffic, &fingerprint.hash)
+                .await
+                .map_err(unavailable)?;
+            let structure_id = example_id(&fingerprint);
+            let mut samples = Vec::new();
+            if let Some(first) = first {
+                samples.push((structure_id.clone(), first));
+            }
+            samples.extend(retained.iter().filter_map(|r| {
+                Some((
+                    format!("{structure_id}:{}", r["id"].as_str()?),
+                    r.get("sample")?.clone(),
+                ))
+            }));
+            let structure = samples
+                .first()
+                .and_then(|(_, raw)| {
+                    serde_json::from_value::<CanonicalObservation>(raw.clone()).ok()
+                })
+                .and_then(|o| match o.fact {
+                    nexofolio_contracts::observation::Fact::Exchange(e) => Some(Structure::of(&e)),
+                    _ => None,
+                })
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    serde_json::from_value::<Structure>(fingerprint.structure.clone())
+                });
+            let retained_count = samples.len();
+            for (sample_id, raw) in samples {
+                if let Ok(observation) = serde_json::from_value::<CanonicalObservation>(raw) {
+                    if let Some(material) =
+                        nexofolio_contracts::request::RequestMaterial::from_observation(
+                            &sample_id,
+                            &observation,
+                        )
+                    {
+                        requests.push(material);
+                    }
+                    if sample_id != structure_id {
+                        examples.push(ExampleSummary {
+                            id: sample_id,
+                            environment_id: fingerprint.environment_id,
+                            address: fingerprint.address.clone(),
+                            status: structure.as_ref().ok().and_then(|s| s.status),
+                            calls: fingerprint.calls,
+                            structure_id: structure_id.clone(),
+                            retained_samples: retained_count,
+                            first_seen: observation.observed_at,
+                            last_seen: observation.observed_at,
+                        });
+                    }
+                }
+            }
             examples.push(ExampleSummary {
-                id: example_id(&fingerprint),
+                id: structure_id.clone(),
+                structure_id,
+                retained_samples: retained_count,
                 environment_id: fingerprint.environment_id,
                 address: fingerprint.address.clone(),
                 status: structure
@@ -237,6 +305,11 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             }
         }
         environments.sort_by_key(|usage| usage.environment_id.to_string());
+        requests.sort_by(|a, b| {
+            b.observed_at
+                .cmp(&a.observed_at)
+                .then_with(|| a.example_id.cmp(&b.example_id))
+        });
         examples.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then_with(|| a.id.cmp(&b.id)));
         addresses.sort_by(|a, b| {
             (a.environment_id.to_string(), &a.address)
@@ -274,6 +347,7 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             addresses,
             fields,
             examples,
+            requests,
         }))
     }
 
@@ -283,7 +357,10 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             return Ok(None);
         };
         let fingerprints = tx.fingerprints(row.id).await.map_err(unavailable)?;
-        let Some(fingerprint) = fingerprints.iter().find(|f| example_id(f) == example) else {
+        let (structure_id, value_id) = example
+            .split_once(':')
+            .map_or((example, None), |(s, v)| (s, Some(v)));
+        let Some(fingerprint) = fingerprints.iter().find(|f| example_id(f) == structure_id) else {
             return Ok(None);
         };
         let traffic = Traffic {
@@ -291,6 +368,15 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
             environment_id: fingerprint.environment_id,
             address: fingerprint.address.clone(),
         };
+        if let Some(value_id) = value_id {
+            return Ok(tx
+                .representatives(&traffic, &fingerprint.hash)
+                .await
+                .map_err(unavailable)?
+                .into_iter()
+                .find(|r| r["id"].as_str() == Some(value_id))
+                .and_then(|r| r.get("sample").cloned()));
+        }
         tx.sample(&traffic, &fingerprint.hash)
             .await
             .map_err(unavailable)

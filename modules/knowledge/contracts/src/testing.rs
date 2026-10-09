@@ -23,6 +23,9 @@ use crate::{
 
 #[derive(Clone, Default)]
 struct State {
+    value_archives:
+        HashMap<(ProjectId, uuid::Uuid), nexofolio_contracts::field_values::FieldValueArchive>,
+    candidates: HashMap<uuid::Uuid, nexofolio_contracts::knowledge::Candidate>,
     rounds: HashMap<RoundId, Round>,
     revisions: Vec<Revision>,
     folders: HashMap<FolderId, FolderRow>,
@@ -34,13 +37,7 @@ struct State {
 
 impl State {
     fn identity(link: &Link) -> LinkIdentity {
-        LinkIdentity {
-            from: link.from,
-            from_field: link.from_field.clone(),
-            to: link.to,
-            to_field: link.to_field.clone(),
-            relation: link.relation,
-        }
+        link.identity()
     }
 
     /// Folders of a project reachable from `id` downwards, for cascading removal.
@@ -124,6 +121,131 @@ struct InMemoryTx {
 
 #[async_trait]
 impl KnowledgeTx for InMemoryTx {
+    async fn value_archive(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::field_values::FieldValueArchive>> {
+        Ok(self
+            .working
+            .value_archives
+            .get(&(project, candidate))
+            .cloned())
+    }
+    async fn put_value_archive(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        archive: &nexofolio_contracts::field_values::FieldValueArchive,
+    ) -> StoreResult<()> {
+        self.working
+            .value_archives
+            .insert((project, candidate), archive.clone());
+        Ok(())
+    }
+
+    async fn active_candidate(
+        &mut self,
+        project: ProjectId,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateSummary>> {
+        Ok(self
+            .working
+            .candidates
+            .values()
+            .find(|c| {
+                c.project_id == project
+                    && c.state == nexofolio_contracts::knowledge::CandidateState::Running
+            })
+            .map(|c| c.summary()))
+    }
+    async fn checkpoint_candidate(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        state: nexofolio_contracts::knowledge::CandidateState,
+        progress: &Value,
+        at: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        let candidate = self
+            .working
+            .candidates
+            .get_mut(&id)
+            .filter(|c| c.project_id == project)
+            .ok_or(StoreError::Unavailable)?;
+        candidate.state = state;
+        candidate.progress = progress.clone();
+        candidate.updated_at = at;
+        Ok(())
+    }
+    async fn candidate(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::Candidate>> {
+        Ok(self
+            .working
+            .candidates
+            .get(&id)
+            .filter(|c| c.project_id == project)
+            .cloned())
+    }
+    async fn candidates(
+        &mut self,
+        project: ProjectId,
+        limit: usize,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateSummary>> {
+        let mut list: Vec<_> = self
+            .working
+            .candidates
+            .values()
+            .filter(|c| c.project_id == project)
+            .map(|c| c.summary())
+            .collect();
+        list.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        list.truncate(limit);
+        Ok(list)
+    }
+    async fn entry_candidates(
+        &mut self,
+        project: ProjectId,
+        kind: nexofolio_contracts::knowledge::CandidateEntryKind,
+        selected: Option<uuid::Uuid>,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateSummary>> {
+        use nexofolio_contracts::knowledge::{CandidateEntryKind, CandidateState::*};
+        let preferred = self
+            .working
+            .candidates
+            .values()
+            .filter(|c| c.project_id == project)
+            .map(|c| c.summary())
+            .max_by_key(|c| {
+                let rank = match (kind, c.state) {
+                    (CandidateEntryKind::Panel, Running) => 0,
+                    (_, Ready | Partial) | (CandidateEntryKind::Panel, Interrupted) => 1,
+                    (CandidateEntryKind::Panel, Applied) => 2,
+                    (CandidateEntryKind::Panel, Discarded) => 3,
+                    _ => 4,
+                };
+                (-rank, c.created_at, c.id)
+            });
+        let mut rows: Vec<_> = preferred.into_iter().collect();
+        if let Some(c) = selected
+            .and_then(|id| self.working.candidates.get(&id))
+            .filter(|c| c.project_id == project && rows.iter().all(|r| r.id != c.id))
+        {
+            rows.push(c.summary());
+        }
+        Ok(rows)
+    }
+    async fn put_candidate(
+        &mut self,
+        candidate: &nexofolio_contracts::knowledge::Candidate,
+    ) -> StoreResult<()> {
+        self.working
+            .candidates
+            .insert(candidate.id, candidate.clone());
+        Ok(())
+    }
     async fn commit(self: Box<Self>) -> StoreResult<()> {
         *self.shared.lock().expect("fake lock") = self.working;
         Ok(())
@@ -393,6 +515,7 @@ impl KnowledgeTx for InMemoryTx {
                 let row: KeptFolder = kept(before)?;
                 self.put_folder(&FolderRow {
                     id: *id,
+                    author: row.author,
                     project_id: project,
                     parent: row.parent,
                     name: row.name,
@@ -420,6 +543,7 @@ impl KnowledgeTx for InMemoryTx {
                         endpoint: *endpoint,
                         name: row.name,
                         purpose: row.purpose,
+                        context: row.context,
                         author: row.author,
                         at: row.at,
                     },
@@ -435,6 +559,7 @@ impl KnowledgeTx for InMemoryTx {
                         path: path.clone(),
                         text: row.text,
                         values: row.values,
+                        context: row.context,
                         author: row.author,
                         at: row.at,
                     },
@@ -453,6 +578,7 @@ impl KnowledgeTx for InMemoryTx {
                         to_field: row.to_field,
                         relation: row.relation,
                         evidence: row.evidence,
+                        context: row.context,
                         author: row.author,
                         at: row.at,
                     },
@@ -467,6 +593,8 @@ impl KnowledgeTx for InMemoryTx {
 
 #[derive(Deserialize)]
 struct KeptFolder {
+    #[serde(default)]
+    author: Option<Author>,
     parent: Option<FolderId>,
     name: String,
     summary: Option<String>,
@@ -484,6 +612,8 @@ struct KeptPlacement {
 struct KeptEndpointNote {
     name: Option<String>,
     purpose: Option<String>,
+    #[serde(default)]
+    context: nexofolio_contracts::knowledge::EndpointContext,
     author: Author,
     at: DateTime<Utc>,
 }
@@ -492,6 +622,8 @@ struct KeptEndpointNote {
 struct KeptFieldNote {
     text: String,
     values: Vec<String>,
+    #[serde(default)]
+    context: nexofolio_contracts::knowledge::FieldContext,
     author: Author,
     at: DateTime<Utc>,
 }
@@ -504,6 +636,8 @@ struct KeptLink {
     to_field: Option<String>,
     relation: Relation,
     evidence: String,
+    #[serde(default)]
+    context: nexofolio_contracts::knowledge::LinkContext,
     author: Author,
     at: DateTime<Utc>,
 }

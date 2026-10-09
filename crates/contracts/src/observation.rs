@@ -100,6 +100,12 @@ pub enum Body {
         content: Content,
         original_bytes: Option<u64>,
     },
+    /// Usable summary, not original bytes (e.g. multipart without file bytes).
+    Partial {
+        media_type: Option<String>,
+        content: Content,
+        note: Option<String>,
+    },
     /// There was a body but it could not be read.
     Unreadable {
         media_type: Option<String>,

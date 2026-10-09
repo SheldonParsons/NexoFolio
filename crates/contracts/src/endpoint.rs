@@ -35,6 +35,8 @@ pub enum EndpointChange {
     StructureChanged {
         environment_id: Option<EnvironmentId>,
     },
+    /// New representative values with an unchanged structure.
+    EvidenceChanged { environment_id: EnvironmentId },
     /// `endpoint` is now an alias of `into`; references should move over.
     /// A renamed identity shows up as `Created` for the new one plus this.
     MergedInto { into: EndpointId },
@@ -144,6 +146,8 @@ pub struct AddressUse {
 pub enum FieldLocation {
     Path,
     Query,
+    RequestHeader,
+    ResponseHeader { status: u16 },
     RequestBody,
     ResponseBody { status: u16 },
 }
@@ -252,7 +256,12 @@ pub struct ExampleSummary {
     pub address: ServiceAddress,
     /// `None` when no response was captured.
     pub status: Option<u16>,
+    /// Calls of this structure, not the number of saved raw observations.
     pub calls: u64,
+    #[serde(default)]
+    pub structure_id: String,
+    #[serde(default)]
+    pub retained_samples: usize,
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
 }
@@ -266,6 +275,9 @@ pub struct EndpointFacts {
     pub fields: Vec<FieldFacts>,
     /// Most recently seen first.
     pub examples: Vec<ExampleSummary>,
+    /// Captured request material, separate from interpreted business knowledge.
+    #[serde(default)]
+    pub requests: Vec<crate::request::RequestMaterial>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

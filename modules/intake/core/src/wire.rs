@@ -419,6 +419,14 @@ enum WireBody {
         #[serde(default, deserialize_with = "present")]
         bytes: Option<u64>,
     },
+    Partial {
+        #[serde(default, deserialize_with = "present")]
+        media_type: Option<String>,
+        encoding: Encoding,
+        content: String,
+        #[serde(default, deserialize_with = "present")]
+        note: Option<String>,
+    },
     Unreadable {
         #[serde(default, deserialize_with = "present")]
         media_type: Option<String>,
@@ -514,6 +522,20 @@ impl WireBody {
                     media_type,
                     content: decode(encoding, content)?,
                     original_bytes: bytes,
+                }
+            }
+            Self::Partial {
+                media_type,
+                encoding,
+                content,
+                note,
+            } => {
+                media(&media_type)?;
+                optional_len("body.note", &note, 1024)?;
+                Body::Partial {
+                    media_type,
+                    content: decode(encoding, content)?,
+                    note,
                 }
             }
             Self::Unreadable { media_type, note } => {

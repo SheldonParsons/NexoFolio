@@ -17,8 +17,10 @@
 
 pub mod endpoint;
 pub mod feed;
+pub mod field_values;
 pub mod knowledge;
 pub mod observation;
+pub mod request;
 pub mod scope;
 
 #[cfg(feature = "testing")]

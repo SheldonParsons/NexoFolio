@@ -1,0 +1,90 @@
+# Target hosts import the release image with docker load. Never build or pull here.
+x-backend: &backend
+  image: ${BACKEND_IMAGE:?Set the exact release image in the environment file}
+  platform: ${NEXOFOLIO_PLATFORM:?Set the verified target platform}
+  pull_policy: never
+  environment: &backend_env
+    DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in the environment file}
+    NEXOFOLIO_BIND_ADDR: 0.0.0.0:8080
+    NEXOFOLIO_LOG: ${NEXOFOLIO_LOG:-info}
+    NEXOFOLIO_DB_MAX_CONNECTIONS: ${NEXOFOLIO_DB_MAX_CONNECTIONS:-5}
+    NEXOFOLIO_DB_TIMEOUT_MS: ${NEXOFOLIO_DB_TIMEOUT_MS:-1500}
+    NEXOFOLIO_REQUEST_TIMEOUT_MS: ${NEXOFOLIO_REQUEST_TIMEOUT_MS:-60000}
+    NEXOFOLIO_SHUTDOWN_TIMEOUT_MS: ${NEXOFOLIO_SHUTDOWN_TIMEOUT_MS:-5000}
+    NEXOFOLIO_ZENTAO_BASE_URL: ${NEXOFOLIO_ZENTAO_BASE_URL:-}
+    NEXOFOLIO_SESSION_KEY: ${NEXOFOLIO_SESSION_KEY:-}
+    NEXOFOLIO_EMERGENCY_PASSWORD_HASH: ${NEXOFOLIO_EMERGENCY_PASSWORD_HASH:-}
+    NEXOFOLIO_CATALOG_MODEL_BASE_URL: ${NEXOFOLIO_CATALOG_MODEL_BASE_URL:-}
+    NEXOFOLIO_CATALOG_MODEL: ${NEXOFOLIO_CATALOG_MODEL:-}
+    NEXOFOLIO_CATALOG_MODEL_API_KEY: ${NEXOFOLIO_CATALOG_MODEL_API_KEY:-}
+    NEXOFOLIO_MODEL_THINKING: ${NEXOFOLIO_MODEL_THINKING:-provider}
+    NEXOFOLIO_MODEL_JSON_OUTPUT: ${NEXOFOLIO_MODEL_JSON_OUTPUT:-false}
+    NEXOFOLIO_CURATION_IDLE_SECONDS: ${NEXOFOLIO_CURATION_IDLE_SECONDS:-900}
+    NEXOFOLIO_MODEL_MAX_CONCURRENCY: ${NEXOFOLIO_MODEL_MAX_CONCURRENCY:-4}
+    NEXOFOLIO_FIELD_CONCURRENCY: ${NEXOFOLIO_FIELD_CONCURRENCY:-4}
+    NEXOFOLIO_DESCRIPTION_CONCURRENCY: ${NEXOFOLIO_DESCRIPTION_CONCURRENCY:-2}
+    NEXOFOLIO_COLLECT_RATE_PER_MINUTE: ${NEXOFOLIO_COLLECT_RATE_PER_MINUTE:-120}
+    NEXOFOLIO_COLLECT_BURST: ${NEXOFOLIO_COLLECT_BURST:-30}
+    NEXOFOLIO_MCP_ALLOWED_HOSTS: ${NEXOFOLIO_MCP_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+    NEXOFOLIO_MCP_ALLOWED_ORIGINS: ${NEXOFOLIO_MCP_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1}
+    NEXOFOLIO_FETCHER_RELEASE_DIR: ${NEXOFOLIO_FETCHER_RELEASE_DIR:-}
+    NEXOFOLIO_DESKTOP_INTERNAL_RELEASE_DIR: ${NEXOFOLIO_DESKTOP_INTERNAL_RELEASE_DIR:-}
+    NEXOFOLIO_DESKTOP_PUBLIC_RELEASE_DIR: ${NEXOFOLIO_DESKTOP_PUBLIC_RELEASE_DIR:-}
+  depends_on:
+    db:
+      condition: service_healthy
+  security_opt:
+    - no-new-privileges:true
+  logging: &bounded_logs
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  db:
+    image: ${POSTGRES_IMAGE:-postgres:17.4}
+    platform: ${NEXOFOLIO_PLATFORM:?Set the verified target platform}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexofolio
+      POSTGRES_DB: nexofolio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the environment file}
+    # The database is reachable only on this Compose network; no host port.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexofolio -d nexofolio"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 60s
+    logging: *bounded_logs
+
+  api:
+    <<: *backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${NEXOFOLIO_HTTP_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "2", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    stop_grace_period: 30s
+
+  migrate:
+    <<: *backend
+    profiles: ["tools"]
+    restart: "no"
+    command: ["nexofolio-admin", "migrate"]
+
+volumes:
+  postgres_data:
+    # Provision explicitly after confirming the destination is a new empty volume.
+    # Compose will neither create it implicitly nor delete it with down -v.
+    external: true
+    name: ${NEXOFOLIO_PG_VOLUME:?Set the dedicated PostgreSQL volume name}

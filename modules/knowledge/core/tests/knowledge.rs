@@ -34,6 +34,7 @@ fn observed(project: ProjectId, count: usize) -> (InMemoryEndpoints, Vec<Endpoin
         let id = EndpointId::new();
         ids.push(id);
         endpoints.put(EndpointFacts {
+            requests: vec![],
             summary: EndpointSummary {
                 id,
                 project_id: project,
@@ -224,8 +225,8 @@ async fn the_tree_stays_shallow_and_acyclic() {
 
     let mut chain = Vec::new();
     let mut parent = None;
-    // Three levels are allowed.
-    for level in 0..3 {
+    // Two levels are allowed.
+    for level in 0..2 {
         let id = FolderId::new();
         chain.push(id);
         knowledge
@@ -244,14 +245,14 @@ async fn the_tree_stays_shallow_and_acyclic() {
         parent = Some(id);
     }
 
-    // A fourth is not.
+    // A third is not.
     let too_deep = knowledge
         .apply(
             round,
             &[Command::PutFolder {
                 id: FolderId::new(),
                 parent,
-                name: "第四层".into(),
+                name: "第三层".into(),
                 summary: None,
                 position: 0,
             }],
@@ -265,7 +266,7 @@ async fn the_tree_stays_shallow_and_acyclic() {
             round,
             &[Command::PutFolder {
                 id: chain[0],
-                parent: Some(chain[2]),
+                parent: Some(chain[1]),
                 name: "层0".into(),
                 summary: None,
                 position: 0,
@@ -302,7 +303,7 @@ async fn the_tree_stays_shallow_and_acyclic() {
         nowhere,
         Err(KnowledgeError::WrongProject | KnowledgeError::NoSuchFolder)
     ));
-    assert_eq!(knowledge.catalogue(project).await.unwrap().folders.len(), 3);
+    assert_eq!(knowledge.catalogue(project).await.unwrap().folders.len(), 2);
 }
 
 /// A name written without a purpose must not erase a purpose someone wrote.
@@ -319,6 +320,8 @@ async fn writing_one_note_field_keeps_the_other() {
                 endpoint: ids[0],
                 name: Some("订单分页".into()),
                 purpose: Some("手写的用途".into()),
+
+                context: Default::default(),
             }],
         )
         .await
@@ -330,6 +333,8 @@ async fn writing_one_note_field_keeps_the_other() {
                 endpoint: ids[0],
                 name: Some("订单分页查询".into()),
                 purpose: None,
+
+                context: Default::default(),
             }],
         )
         .await
@@ -358,6 +363,8 @@ async fn links_have_one_row_per_identity() {
                     to_field: None,
                     relation: Relation::Dictionary,
                     evidence: evidence.into(),
+
+                    context: Default::default(),
                 }],
             )
             .await
@@ -399,6 +406,8 @@ async fn rolling_back_restores_what_was_there() {
                     endpoint: ids[0],
                     name: Some("原名".into()),
                     purpose: None,
+
+                    context: Default::default(),
                 },
             ],
         )
@@ -426,6 +435,8 @@ async fn rolling_back_restores_what_was_there() {
                     endpoint: ids[0],
                     name: Some("改名".into()),
                     purpose: None,
+
+                    context: Default::default(),
                 },
                 Command::Place {
                     endpoint: ids[1],
@@ -438,6 +449,8 @@ async fn rolling_back_restores_what_was_there() {
                     to_field: None,
                     relation: Relation::ListToDetail,
                     evidence: "id 对得上".into(),
+
+                    context: Default::default(),
                 },
             ],
         )
@@ -496,6 +509,8 @@ async fn a_finished_round_takes_no_more_writes() {
                 endpoint: ids[0],
                 name: Some("迟到的写入".into()),
                 purpose: None,
+
+                context: Default::default(),
             }],
         )
         .await;
@@ -530,6 +545,8 @@ async fn writes_stay_inside_the_project() {
                 endpoint: EndpointId::new(),
                 name: Some("别的项目".into()),
                 purpose: None,
+
+                context: Default::default(),
             }],
         )
         .await;
@@ -575,6 +592,7 @@ async fn endpoint_detail_knows_its_path() {
                     path: "data.list[].status".into(),
                     text: "订单状态".into(),
                     values: vec!["1".into(), "2".into()],
+                    context: Default::default(),
                 },
             ],
         )

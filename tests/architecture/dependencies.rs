@@ -8,6 +8,7 @@
 use serde_json::{Value, json};
 use std::{collections::HashSet, process::Command};
 
+mod curation_structure;
 mod sql_ownership;
 
 /// Registered backend modules. A crate or directory outside this list is an

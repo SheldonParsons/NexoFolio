@@ -54,6 +54,8 @@ async fn real_postgres_connects_and_migrations_are_repeatable() {
             "environments",
             "internal_sessions",
             "login_audit",
+            "mcp_tokens",
+            "profile_preferences",
             "projects",
             "sites",
             "user_project_access",

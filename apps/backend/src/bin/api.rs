@@ -1,8 +1,8 @@
-use nexofolio_access_adapter::Unconfigured;
 use nexofolio_backend::{
     http,
     wiring::{
-        Config, Databases, build_api, init_logging, install_shutdown_handler, run_housekeeping,
+        Config, Databases, build_api, build_navigation, init_logging, install_shutdown_handler,
+        run_housekeeping,
     },
 };
 use std::sync::Arc;
@@ -18,12 +18,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shutdown = CancellationToken::new();
     let signals = install_shutdown_handler(shutdown.clone())?;
     let api = build_api(&config, &databases)?;
-    let router = http::router_with_access(
+    let router = http::router_with_navigation(
         &config,
         Arc::new(databases.access.clone()),
-        Arc::new(Unconfigured),
+        Arc::new(databases.access.clone()),
         shutdown.clone(),
         api,
+        Some(build_navigation(&databases)),
     );
     tracing::info!(address = %listener.local_addr()?, "api_started");
     let housekeeping = tokio::spawn(run_housekeeping(

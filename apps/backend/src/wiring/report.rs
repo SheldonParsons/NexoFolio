@@ -256,6 +256,8 @@ fn location(location: FieldLocation) -> String {
     match location {
         FieldLocation::Path => "路径".into(),
         FieldLocation::Query => "查询".into(),
+        FieldLocation::RequestHeader => "请求 Header".into(),
+        FieldLocation::ResponseHeader { status } => format!("响应 Header {status}"),
         FieldLocation::RequestBody => "请求体".into(),
         FieldLocation::ResponseBody { status } => format!("响应 {status}"),
     }

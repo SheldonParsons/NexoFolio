@@ -21,6 +21,7 @@ impl DeclaredFields {
         let parameters = [
             (FieldLocation::Path, &declaration.request.path_params),
             (FieldLocation::Query, &declaration.request.query),
+            (FieldLocation::RequestHeader, &declaration.request.headers),
         ];
         for (location, parameters) in parameters {
             for (name, parameter) in parameters {
@@ -33,6 +34,17 @@ impl DeclaredFields {
             .as_ref()
             .and_then(|b| b.schema.as_ref())
         {
+            record(
+                &mut fields,
+                FieldLocation::RequestBody,
+                &[],
+                schema,
+                declaration
+                    .request
+                    .body
+                    .as_ref()
+                    .is_some_and(|b| b.required),
+            );
             walk(
                 &mut fields,
                 FieldLocation::RequestBody,
@@ -44,6 +56,13 @@ impl DeclaredFields {
             let (Ok(status), Some(schema)) = (status.parse::<u16>(), &response.schema) else {
                 continue;
             };
+            record(
+                &mut fields,
+                FieldLocation::ResponseBody { status },
+                &[],
+                schema,
+                false,
+            );
             walk(
                 &mut fields,
                 FieldLocation::ResponseBody { status },
@@ -81,7 +100,12 @@ fn parameter_field(
     name: &str,
     parameter: &DeclaredParameter,
 ) {
-    let path = FieldPath(vec![PathSegment::Key(name.to_owned())]);
+    let name = if location == FieldLocation::RequestHeader {
+        name.to_ascii_lowercase()
+    } else {
+        name.to_owned()
+    };
+    let path = FieldPath(vec![PathSegment::Key(name)]);
     let types = parameter.schema.as_ref().map(types_of).unwrap_or_default();
     fields.insert(
         (location, path),
@@ -352,7 +376,11 @@ mod tests {
             (id.required, id.types.clone()),
             (false, vec![ValueType::Null, ValueType::Number])
         );
-        assert_eq!(fields.0.len(), 6, "non-numeric responses are skipped");
+        assert_eq!(
+            fields.0.len(),
+            8,
+            "body roots are retained; non-numeric responses are skipped"
+        );
     }
 
     #[test]

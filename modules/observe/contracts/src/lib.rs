@@ -185,6 +185,18 @@ pub trait ObserveTx: Send {
     async fn insert_fingerprint(&mut self, fingerprint: &NewFingerprint) -> StoreResult<()>;
 
     async fn fingerprints(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FingerprintStats>>;
+    /// Retained value evidence, independent of structural call counts. Core owns retention.
+    async fn representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Vec<Value>>;
+    async fn put_representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+        samples: &[Value],
+    ) -> StoreResult<()>;
 
     /// The sample stored with a fingerprint, `None` when there is no such one.
     async fn sample(

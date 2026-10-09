@@ -31,6 +31,9 @@ pub async fn one(
     at: DateTime<Utc>,
     command: &Command,
 ) -> KnowledgeResult<()> {
+    if crate::protection::skip(tx, project, author, command).await? {
+        return Ok(());
+    }
     match command {
         Command::PutFolder {
             id,
@@ -40,6 +43,21 @@ pub async fn one(
             position,
         } => {
             let folders = tx.folders(project).await.map_err(store_error)?;
+            if !author.is_person()
+                && let Some(old) = folders
+                    .iter()
+                    .find(|f| f.id == *id)
+                    .filter(|f| f.author.as_ref().is_none_or(|a| a.is_person()))
+            {
+                if old.parent == *parent
+                    && old.name == *name
+                    && old.summary == *summary
+                    && old.position == *position
+                {
+                    return Ok(());
+                }
+                return Err(KnowledgeError::ProtectedKnowledge);
+            }
             crate::tree::check_move(*id, *parent, &folders)?;
             let before = folders.iter().find(|f| f.id == *id).map(|f| {
                 json!({
@@ -47,11 +65,13 @@ pub async fn one(
                     "name": f.name,
                     "summary": f.summary,
                     "position": f.position,
+                    "author": f.author,
                 })
             });
             record(tx, round, seq, Target::Folder { id: *id }, before).await?;
             tx.put_folder(&FolderRow {
                 id: *id,
+                author: Some(author.clone()),
                 project_id: project,
                 parent: *parent,
                 name: name.clone(),
@@ -71,6 +91,7 @@ pub async fn one(
                 "name": folder.name,
                 "summary": folder.summary,
                 "position": folder.position,
+                "author": folder.author,
             });
             record(tx, round, seq, Target::Folder { id: *id }, Some(before)).await?;
             tx.remove_folder(*id).await.map_err(store_error)
@@ -80,11 +101,16 @@ pub async fn one(
             if tx.folder(*folder).await.map_err(store_error)?.is_none() {
                 return Err(KnowledgeError::NoSuchFolder);
             }
-            let before = tx
-                .placement(*endpoint)
-                .await
-                .map_err(store_error)?
-                .map(|p| json!({ "folder": p.folder, "author": p.author, "at": p.at }));
+            let current = tx.placement(*endpoint).await.map_err(store_error)?;
+            if !author.is_person() && current.as_ref().is_some_and(|p| p.author.is_person()) {
+                return if current.as_ref().unwrap().folder == *folder {
+                    Ok(())
+                } else {
+                    Err(KnowledgeError::ProtectedKnowledge)
+                };
+            }
+            let before =
+                current.map(|p| json!({ "folder": p.folder, "author": p.author, "at": p.at }));
             record(
                 tx,
                 round,
@@ -107,11 +133,12 @@ pub async fn one(
         }
 
         Command::Unplace { endpoint } => {
-            let before = tx
-                .placement(*endpoint)
-                .await
-                .map_err(store_error)?
-                .map(|p| json!({ "folder": p.folder, "author": p.author, "at": p.at }));
+            let current = tx.placement(*endpoint).await.map_err(store_error)?;
+            if !author.is_person() && current.as_ref().is_some_and(|p| p.author.is_person()) {
+                return Err(KnowledgeError::ProtectedKnowledge);
+            }
+            let before =
+                current.map(|p| json!({ "folder": p.folder, "author": p.author, "at": p.at }));
             record(
                 tx,
                 round,
@@ -129,10 +156,11 @@ pub async fn one(
             endpoint,
             name,
             purpose,
+            context,
         } => {
             let existing = tx.endpoint_note(*endpoint).await.map_err(store_error)?;
             let before = existing.as_ref().map(
-                |n| json!({ "name": n.name, "purpose": n.purpose, "author": n.author, "at": n.at }),
+                |n| json!({ "name": n.name, "purpose": n.purpose, "context": n.context, "author": n.author, "at": n.at }),
             );
             record(
                 tx,
@@ -154,6 +182,7 @@ pub async fn one(
                 purpose: purpose
                     .clone()
                     .or_else(|| existing.as_ref().and_then(|n| n.purpose.clone())),
+                context: context.clone(),
                 author: author.clone(),
                 at,
             };
@@ -167,12 +196,13 @@ pub async fn one(
             path,
             text,
             values,
+            context,
         } => {
             let before = tx
                 .field_note(*endpoint, path)
                 .await
                 .map_err(store_error)?
-                .map(|n| json!({ "text": n.text, "values": n.values, "author": n.author, "at": n.at }));
+                .map(|n| json!({ "text": n.text, "values": n.values, "context": n.context, "author": n.author, "at": n.at }));
             record(
                 tx,
                 round,
@@ -191,6 +221,7 @@ pub async fn one(
                     path: path.clone(),
                     text: text.clone(),
                     values: values.clone(),
+                    context: context.clone(),
                     author: author.clone(),
                     at,
                 },
@@ -204,7 +235,7 @@ pub async fn one(
                 .field_note(*endpoint, path)
                 .await
                 .map_err(store_error)?
-                .map(|n| json!({ "text": n.text, "values": n.values, "author": n.author, "at": n.at }));
+                .map(|n| json!({ "text": n.text, "values": n.values, "context": n.context, "author": n.author, "at": n.at }));
             record(
                 tx,
                 round,
@@ -228,14 +259,16 @@ pub async fn one(
             to_field,
             relation,
             evidence,
+            context,
         } => {
-            let identity = LinkIdentity {
-                from: *from,
-                from_field: from_field.clone(),
-                to: *to,
-                to_field: to_field.clone(),
-                relation: *relation,
-            };
+            let identity = LinkIdentity::new(
+                *from,
+                from_field.clone(),
+                *to,
+                to_field.clone(),
+                *relation,
+                context,
+            );
             // Rediscovering a link refreshes it rather than adding a duplicate.
             let existing = tx.find_link(&identity).await.map_err(store_error)?;
             let id = existing.as_ref().map(|l| l.id).unwrap_or_else(LinkId::new);
@@ -245,7 +278,7 @@ pub async fn one(
                 json!({
                     "from": l.from, "from_field": l.from_field,
                     "to": l.to, "to_field": l.to_field,
-                    "relation": l.relation, "evidence": l.evidence,
+                    "relation": l.relation, "evidence": l.evidence, "context": l.context,
                     "author": l.author, "at": l.at,
                 })
             });
@@ -260,6 +293,7 @@ pub async fn one(
                     to_field: to_field.clone(),
                     relation: *relation,
                     evidence: evidence.clone(),
+                    context: context.clone(),
                     author: author.clone(),
                     at,
                 },
@@ -273,7 +307,7 @@ pub async fn one(
                 json!({
                     "from": l.from, "from_field": l.from_field,
                     "to": l.to, "to_field": l.to_field,
-                    "relation": l.relation, "evidence": l.evidence,
+                    "relation": l.relation, "evidence": l.evidence, "context": l.context,
                     "author": l.author, "at": l.at,
                 })
             });

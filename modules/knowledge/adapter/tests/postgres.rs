@@ -16,6 +16,10 @@ use nexofolio_knowledge_contracts::{
     FolderRow, KnowledgeStore, KnowledgeTx, LinkIdentity, PlacementRow,
 };
 use serde_json::json;
+#[path = "postgres/folder_author.rs"]
+mod folder_author;
+#[path = "postgres/link_identity.rs"]
+mod link_identity;
 
 fn at() -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 29, 12, 0, 0).unwrap()
@@ -78,6 +82,7 @@ async fn every_statement_runs() {
     for (folder, parent, name) in [(top, None, "订单"), (child, Some(top), "查询")] {
         tx.put_folder(&FolderRow {
             id: folder,
+            author: None,
             project_id: project,
             parent,
             name: name.into(),
@@ -90,6 +95,7 @@ async fn every_statement_runs() {
     // Same id again replaces rather than duplicating.
     tx.put_folder(&FolderRow {
         id: top,
+        author: None,
         project_id: project,
         parent: None,
         name: "订单管理".into(),
@@ -138,6 +144,8 @@ async fn every_statement_runs() {
             purpose: None,
             author: curate(),
             at: at(),
+
+            context: Default::default(),
         },
     )
     .await
@@ -156,6 +164,10 @@ async fn every_statement_runs() {
                 path: path.into(),
                 text: "状态".into(),
                 values: vec!["1".into(), "2".into()],
+                context: nexofolio_contracts::knowledge::FieldContext {
+                    input_hash: Some("evidence-version-1".into()),
+                    ..Default::default()
+                },
                 author: curate(),
                 at: at(),
             },
@@ -166,6 +178,10 @@ async fn every_statement_runs() {
     let notes = tx.field_notes(endpoint).await.unwrap();
     assert_eq!(notes.len(), 2);
     assert_eq!(notes[0].values, vec!["1".to_string(), "2".to_string()]);
+    assert_eq!(
+        notes[0].context.input_hash.as_deref(),
+        Some("evidence-version-1")
+    );
     tx.remove_field_note(endpoint, "data.total").await.unwrap();
     assert_eq!(tx.field_notes(endpoint).await.unwrap().len(), 1);
 
@@ -180,6 +196,8 @@ async fn every_statement_runs() {
         evidence: "12 个值全部命中".into(),
         author: curate(),
         at: at(),
+
+        context: Default::default(),
     };
     tx.put_link(project, &link).await.unwrap();
     // Rediscovery refreshes the same row: identity is the ends plus relation.
@@ -195,13 +213,7 @@ async fn every_statement_runs() {
     assert_eq!(links[0].evidence, "18 个值全部命中");
     assert_eq!(links[0].from_field.as_deref(), Some("data.list[].seriesId"));
 
-    let identity = LinkIdentity {
-        from: link.from,
-        from_field: link.from_field.clone(),
-        to: link.to,
-        to_field: None,
-        relation: Relation::Dictionary,
-    };
+    let identity = link.identity();
     assert_eq!(tx.find_link(&identity).await.unwrap().unwrap().id, link.id);
     // A NULL field must not match a named one.
     assert!(
@@ -270,6 +282,7 @@ async fn restore_reverses_every_write() {
     let folder = FolderId::new();
     let kept = FolderRow {
         id: folder,
+        author: None,
         project_id: project,
         parent: None,
         name: "原名".into(),
@@ -350,13 +363,17 @@ async fn restore_reverses_every_write() {
             path: path.clone(),
         },
         Some(&json!({
-            "text": "旧说明", "values": ["1"], "author": curate(), "at": at(),
+            "text": "旧说明", "values": ["1"], "context": {"input_hash":"previous-evidence", "evidence":[]}, "author": curate(), "at": at(),
         })),
     )
     .await
     .unwrap();
     let note = tx.field_note(endpoint, &path).await.unwrap().unwrap();
     assert_eq!((note.text.as_str(), note.values.len()), ("旧说明", 1));
+    assert_eq!(
+        note.context.input_hash.as_deref(),
+        Some("previous-evidence")
+    );
     tx.restore(
         project,
         &Target::FieldNote {
@@ -403,11 +420,59 @@ async fn uncommitted_writes_vanish() {
 
     let mut tx = store.begin().await.unwrap();
     let id = round(&mut *tx, project).await;
+    let folder = FolderId::new();
+    let endpoint = EndpointId::new();
+    tx.put_folder(&FolderRow {
+        id: folder,
+        author: None,
+        project_id: project,
+        parent: None,
+        name: "未提交目录".into(),
+        summary: None,
+        position: 0,
+    })
+    .await
+    .unwrap();
+    tx.put_placement(&PlacementRow {
+        endpoint,
+        project_id: project,
+        folder,
+        author: curate(),
+        at: at(),
+    })
+    .await
+    .unwrap();
+    tx.put_field_note(
+        project,
+        &FieldNote {
+            endpoint,
+            path: "response_body:200:status".into(),
+            text: "未提交说明".into(),
+            values: vec![],
+            context: Default::default(),
+            author: curate(),
+            at: at(),
+        },
+    )
+    .await
+    .unwrap();
+    tx.record_revision(&Revision {
+        round: id,
+        seq: 1,
+        target: Target::Folder { id: folder },
+        before: None,
+    })
+    .await
+    .unwrap();
     drop(tx);
 
     let mut tx = store.begin().await.unwrap();
     assert!(tx.round(id).await.unwrap().is_none());
     assert!(tx.rounds(project, 10).await.unwrap().is_empty());
+    assert!(tx.folders(project).await.unwrap().is_empty());
+    assert!(tx.placement(endpoint).await.unwrap().is_none());
+    assert!(tx.field_notes(endpoint).await.unwrap().is_empty());
+    assert!(tx.revisions(id).await.unwrap().is_empty());
     tx.commit().await.unwrap();
     store.close().await;
 }

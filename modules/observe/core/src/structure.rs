@@ -16,10 +16,16 @@ pub struct Structure {
     pub query: Part,
     pub request: Part,
     pub response: Part,
+    #[serde(default)]
+    pub request_headers: Part,
+    #[serde(default)]
+    pub response_headers: Part,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Part {
+    #[serde(default)]
+    pub state: Option<String>,
     pub media_type: Option<String>,
     pub shape: Shape,
     /// The shape is the whole content, so a missing field is really missing.
@@ -33,11 +39,16 @@ impl Structure {
         Self {
             status: exchange.response.as_ref().map(|response| response.status),
             query: Part {
+                state: None,
                 media_type: None,
                 shape: Shape::of_keys(keys.iter().map(String::as_str)),
                 complete: !request.url_truncated,
             },
             request: Part::of(&request.body),
+            request_headers: Part::headers(request.headers.as_ref()),
+            response_headers: Part::headers(
+                exchange.response.as_ref().and_then(|r| r.headers.as_ref()),
+            ),
             response: exchange
                 .response
                 .as_ref()
@@ -57,6 +68,10 @@ impl Structure {
             FieldLocation::Path => None,
             FieldLocation::Query => Some(&self.query),
             FieldLocation::RequestBody => Some(&self.request),
+            FieldLocation::RequestHeader => Some(&self.request_headers),
+            FieldLocation::ResponseHeader { status } => {
+                (self.status == Some(status)).then_some(&self.response_headers)
+            }
             FieldLocation::ResponseBody { status } => {
                 (self.status == Some(status)).then_some(&self.response)
             }
@@ -67,21 +82,47 @@ impl Structure {
     pub fn parts(&self) -> Vec<(FieldLocation, &Part)> {
         let mut parts = vec![
             (FieldLocation::Query, &self.query),
+            (FieldLocation::RequestHeader, &self.request_headers),
             (FieldLocation::RequestBody, &self.request),
         ];
         if let Some(status) = self.status {
             parts.push((FieldLocation::ResponseBody { status }, &self.response));
+            parts.push((
+                FieldLocation::ResponseHeader { status },
+                &self.response_headers,
+            ));
         }
         parts
     }
 }
 
 impl Part {
+    fn headers(headers: Option<&nexofolio_contracts::observation::Headers>) -> Self {
+        let Some(headers) = headers else {
+            return Self::default();
+        };
+        let names: Vec<_> = headers
+            .entries
+            .iter()
+            .map(|(name, _)| name.to_ascii_lowercase())
+            .collect();
+        Self {
+            state: None,
+            media_type: None,
+            shape: Shape::of_keys(names.iter().map(String::as_str)),
+            complete: headers.complete,
+        }
+    }
     fn of(body: &Body) -> Self {
         let (media_type, content) = match body {
             Body::Full {
                 media_type,
                 content,
+            }
+            | Body::Partial {
+                media_type,
+                content,
+                ..
             }
             | Body::Truncated {
                 media_type,
@@ -94,6 +135,16 @@ impl Part {
         let media_type = media_type.as_deref().map(essence);
         let shape = content.and_then(|content| shape_of(media_type.as_deref(), &text(content)));
         Self {
+            state: Some(
+                match body {
+                    Body::Full { .. } => "full",
+                    Body::Partial { .. } => "partial",
+                    Body::Truncated { .. } => "truncated",
+                    Body::Unreadable { .. } => "unreadable",
+                    Body::None => "none",
+                }
+                .into(),
+            ),
             complete: shape.is_some() && body.proves_absence(),
             shape: shape.unwrap_or_default(),
             media_type,
@@ -126,7 +177,14 @@ fn shape_of(media_type: Option<&str>, text: &str) -> Option<Shape> {
             Some(Shape::of_keys(keys.iter().map(String::as_str)))
         }
         Some("multipart/form-data") => {
-            let names = multipart_names(text);
+            let names = if let Ok(Value::Array(fields)) = serde_json::from_str::<Value>(text) {
+                fields
+                    .iter()
+                    .filter_map(|f| f.get("name").and_then(Value::as_str).map(str::to_owned))
+                    .collect()
+            } else {
+                multipart_names(text)
+            };
             Some(Shape::of_keys(names.iter().map(String::as_str)))
         }
         _ => {
@@ -335,5 +393,63 @@ mod tests {
         assert_eq!(path_of("https://api.example.com"), "/");
         assert_eq!(path_of("https://api.example.com:8443/a/b?x=/c#d"), "/a/b");
         assert_eq!(decode("a%20b+c%zz%4"), "a b c%zz%4");
+    }
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+    use nexofolio_contracts::observation::{Headers, HttpRequest};
+    fn of(body: Body) -> Structure {
+        Structure::of(&HttpExchange {
+            request: HttpRequest {
+                method: "POST".into(),
+                url: "https://fixture.test/x".into(),
+                url_truncated: false,
+                headers: Some(Headers {
+                    complete: false,
+                    entries: vec![],
+                }),
+                body,
+            },
+            response: None,
+        })
+    }
+    #[test]
+    fn none_empty_unreadable_and_truncated_are_distinct() {
+        let bodies = [
+            Body::None,
+            Body::Full {
+                media_type: Some("application/json".into()),
+                content: Content::Text("{}".into()),
+            },
+            Body::Unreadable {
+                media_type: None,
+                note: None,
+            },
+            Body::Truncated {
+                media_type: Some("application/json".into()),
+                content: Content::Text("{}".into()),
+                original_bytes: None,
+            },
+        ];
+        let hashes: std::collections::HashSet<_> =
+            bodies.into_iter().map(|b| of(b).hash()).collect();
+        assert_eq!(hashes.len(), 4);
+    }
+    #[test]
+    fn multipart_summary_projects_known_parameters_without_proving_absence() {
+        let shape=of(Body::Partial {media_type:Some("multipart/form-data".into()),content:Content::Text(r#"[{"name":"note","value":"fixture"},{"name":"upload","file":"fixture.txt","type":"text/plain","size":12}]"#.into()),note:Some("no file bytes".into())});
+        assert!(!shape.request.complete);
+        assert_eq!(
+            shape
+                .request
+                .shape
+                .fields
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["note", "upload"]
+        );
     }
 }

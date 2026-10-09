@@ -1,60 +1,37 @@
-//! Curate: turns what traffic proves into words and a place in the tree.
+//! Curate derives updateable knowledge from collected facts.
 //!
-//! Two passes, both pure functions of observe's facts plus one model call:
-//!
-//! - [`describe`] writes a name and a purpose for one endpoint
-//! - [`organize`] groups a project's endpoints into folders
-//!
-//! Neither touches storage. Both return `Command`s for knowledge to apply
-//! inside a round, so a pass is undoable by the same path a manual edit is.
-//! That is also why the model sits behind [`Completions`]: tests decide what it
-//! says, and no test needs a network.
+//! Evidence extracts bounded observations; rules find deterministic clues;
+//! planning decides freshness and pass dependencies; interpretation calls the
+//! model and proposes Commands. None of these modules reads SQL or schedules IO.
+mod evidence;
+mod interpretation;
+mod planning;
+mod rules;
 
-mod describe;
-mod organize;
-mod prompt;
-
-pub use describe::Describe;
+pub use evidence::{SampleField, SignalIndex, authentication, sample_fields};
+pub use interpretation::{Describe, Organize};
 pub use nexofolio_curate_contracts::{CompletionError, Completions};
-pub use organize::Organize;
+pub use planning::ProjectEvidence;
+pub use planning::field_addressed;
+mod value_budget;
+pub use planning::{
+    FieldInput, Pass, field_input_hash, field_inputs, legacy_field_input_hash, pending_fields,
+    workflow,
+};
+pub use value_budget::model_value_examples;
 
-/// Pulls the first JSON value out of a reply.
-///
-/// Models wrap JSON in prose or a ```json fence however they like, and a pass
-/// that rejects the reply over a stray backtick throws away a usable answer.
-pub(crate) fn json_slice(reply: &str) -> Option<&str> {
-    let start = reply.find(['{', '['])?;
-    let opener = reply.as_bytes()[start];
-    let closer = if opener == b'{' { b'}' } else { b']' };
-    let end = reply.bytes().rposition(|b| b == closer)?;
-    if end <= start {
-        return None;
-    }
-    Some(&reply[start..=end])
-}
+pub use rules::{LinkProposal, NAVIGATION_RECIPE, navigation_links};
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use planning::{
+    EndpointInput, description_context, description_pending, endpoint_input,
+    endpoint_input_from_fields, endpoint_input_hash,
+};
 
-    #[test]
-    fn json_survives_a_fenced_reply() {
-        let fenced = "Here you go:\n```json\n{\"name\": \"下单\"}\n```\nHope that helps.";
-        assert_eq!(json_slice(fenced), Some("{\"name\": \"下单\"}"));
-    }
+pub use interpretation::FieldBatchOutput;
+pub use planning::directory_input_hash;
+pub use planning::relation_commands;
+pub use planning::{FIELD_BATCH_BYTES, FIELD_BATCH_LIMIT, field_batches};
 
-    #[test]
-    fn json_survives_a_bare_reply() {
-        assert_eq!(json_slice("{\"a\":1}"), Some("{\"a\":1}"));
-    }
+pub use planning::{TraceOptions, TraceResult, TraceStep, trace_environment, trace_upstream};
 
-    #[test]
-    fn arrays_are_found_too() {
-        assert_eq!(json_slice("prose [1,2] tail"), Some("[1,2]"));
-    }
-
-    #[test]
-    fn prose_alone_yields_nothing() {
-        assert_eq!(json_slice("I cannot help with that."), None);
-    }
-}
+pub use interpretation::standard_field_command;

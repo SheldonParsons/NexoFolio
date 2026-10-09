@@ -1,7 +1,10 @@
 //! `PostgresAccess` implements every access contract over the `access` schema,
 //! one contract per file. `scope` implements the shared collect contracts.
+mod actor_names;
+mod avatar;
 mod environments;
 mod login;
+mod profile;
 mod projects;
 mod scope;
 mod sessions;
@@ -50,5 +53,6 @@ fn profile(row: &PgRow) -> Result<UserProfile> {
         account: row.try_get("account").map_err(db_error)?,
         display_name: row.try_get("display_name").map_err(db_error)?,
         enabled: row.try_get("enabled").map_err(db_error)?,
+        avatar_url: row.try_get("avatar_url").unwrap_or(None),
     })
 }

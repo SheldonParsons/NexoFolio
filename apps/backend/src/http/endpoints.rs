@@ -44,6 +44,10 @@ pub fn routes(
             "/v1/projects/{project_id}/endpoints/{endpoint_id}/examples/{example_id}",
             get(example),
         )
+        .route(
+            "/v1/projects/{project_id}/endpoints/{endpoint_id}/field-values",
+            get(field_values),
+        )
         .route_layer(middleware::from_fn_with_state(sessions, session_auth))
         .with_state(EndpointsHttp {
             projects,
@@ -179,4 +183,55 @@ async fn example(
         .await?
         .ok_or(EndpointsError::NotFound)?;
     Ok(Json(json!({ "observation": observation })))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ValuesQuery {
+    archive: uuid::Uuid,
+    field: String,
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "value_limit")]
+    limit: usize,
+    value_id: Option<String>,
+    environment: Option<nexofolio_common::EnvironmentId>,
+}
+fn value_limit() -> usize {
+    20
+}
+async fn field_values(
+    State(s): State<EndpointsHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path((project, endpoint)): Path<(ProjectId, EndpointId)>,
+    Query(query): Query<ValuesQuery>,
+) -> Result<Json<Value>, EndpointsError> {
+    s.projects
+        .require_project(&principal, project)
+        .await
+        .map_err(AccessError::from)?;
+    let q = nexofolio_contracts::field_values::FieldValueQuery {
+        project,
+        endpoint,
+        archive: query.archive,
+        field: query.field,
+        offset: query.offset,
+        limit: query.limit,
+        environment: query.environment,
+    };
+    let value = if let Some(id) = query.value_id {
+        s.knowledge
+            .observed_value(q, &id)
+            .await
+            .map(|v| json!({"json":serde_json::to_string(&v).expect("observed value")}))
+    } else {
+        s.knowledge
+            .observed_values(q)
+            .await
+            .map(|v| serde_json::to_value(v).expect("value page"))
+    };
+    value.map(Json).map_err(|e| match e {
+        nexofolio_contracts::knowledge::KnowledgeError::Unavailable => EndpointsError::Unavailable,
+        _ => EndpointsError::NotFound,
+    })
 }

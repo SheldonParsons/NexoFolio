@@ -501,6 +501,29 @@ impl ObserveTx for PostgresTx {
         .collect()
     }
 
+    async fn representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+    ) -> StoreResult<Vec<Value>> {
+        let value: Option<Value> = sqlx::query_scalar("SELECT representatives FROM fingerprints WHERE endpoint_id=$1 AND environment_id=$2 AND address=$3 AND hash=$4")
+            .bind(uuid(traffic.endpoint)).bind(uuid(traffic.environment_id)).bind(traffic.address.as_str()).bind(hash.as_slice())
+            .fetch_optional(&mut *self.tx).await.map_err(unavailable)?;
+        serde_json::from_value(value.unwrap_or_else(|| serde_json::json!([]))).map_err(unavailable)
+    }
+    async fn put_representatives(
+        &mut self,
+        traffic: &Traffic,
+        hash: &FingerprintHash,
+        samples: &[Value],
+    ) -> StoreResult<()> {
+        sqlx::query("UPDATE fingerprints SET representatives=$5 WHERE endpoint_id=$1 AND environment_id=$2 AND address=$3 AND hash=$4")
+            .bind(uuid(traffic.endpoint)).bind(uuid(traffic.environment_id)).bind(traffic.address.as_str()).bind(hash.as_slice())
+            .bind(serde_json::to_value(samples).map_err(unavailable)?)
+            .execute(&mut *self.tx).await.map_err(unavailable)?;
+        Ok(())
+    }
+
     async fn sample(
         &mut self,
         traffic: &Traffic,
@@ -571,10 +594,11 @@ impl ObserveTx for PostgresTx {
 
     async fn move_traffic(&mut self, from: &Traffic, to: EndpointId) -> StoreResult<()> {
         sqlx::query(
-            "INSERT INTO fingerprints(endpoint_id,environment_id,address,hash,structure,sample,calls,first_seen,last_seen) \
-             SELECT $4,environment_id,address,hash,structure,sample,calls,first_seen,last_seen FROM fingerprints \
+            "INSERT INTO fingerprints(endpoint_id,environment_id,address,hash,structure,sample,calls,first_seen,last_seen,representatives) \
+             SELECT $4,environment_id,address,hash,structure,sample,calls,first_seen,last_seen,representatives FROM fingerprints \
              WHERE endpoint_id=$1 AND environment_id=$2 AND address=$3 \
              ON CONFLICT(endpoint_id,environment_id,address,hash) DO UPDATE SET \
+             representatives=(SELECT coalesce(jsonb_agg(v),'[]'::jsonb) FROM (SELECT DISTINCT ON (v->>'id') v FROM jsonb_array_elements(fingerprints.representatives || excluded.representatives) v ORDER BY v->>'id' LIMIT 15) merged), \
              calls=fingerprints.calls+excluded.calls, \
              first_seen=least(fingerprints.first_seen,excluded.first_seen), \
              last_seen=greatest(fingerprints.last_seen,excluded.last_seen)",

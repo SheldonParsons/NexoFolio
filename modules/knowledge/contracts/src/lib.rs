@@ -11,8 +11,9 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nexofolio_common::{EndpointId, FolderId, LinkId, ProjectId, RoundId};
+pub use nexofolio_contracts::knowledge::LinkIdentity;
 use nexofolio_contracts::knowledge::{
-    Author, EndpointNote, FieldNote, Link, Relation, Revision, Round, RoundState,
+    Author, Candidate, CandidateSummary, EndpointNote, FieldNote, Link, Revision, Round, RoundState,
 };
 use serde_json::Value;
 
@@ -23,6 +24,7 @@ pub mod testing;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FolderRow {
     pub id: FolderId,
+    pub author: Option<Author>,
     pub project_id: ProjectId,
     pub parent: Option<FolderId>,
     pub name: String,
@@ -38,17 +40,6 @@ pub struct PlacementRow {
     pub folder: FolderId,
     pub author: Author,
     pub at: DateTime<Utc>,
-}
-
-/// The two ends and the relation: a link's identity. Rediscovering one refreshes
-/// its evidence rather than adding a duplicate.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct LinkIdentity {
-    pub from: EndpointId,
-    pub from_field: Option<String>,
-    pub to: EndpointId,
-    pub to_field: Option<String>,
-    pub relation: Relation,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -68,6 +59,126 @@ pub trait KnowledgeStore: Send + Sync {
 
 #[async_trait]
 pub trait KnowledgeTx: Send {
+    async fn value_archive(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::field_values::FieldValueArchive>> {
+        Ok(None)
+    }
+    async fn put_value_archive(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+        _archive: &nexofolio_contracts::field_values::FieldValueArchive,
+    ) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+
+    async fn active_candidate(
+        &mut self,
+        project: ProjectId,
+    ) -> StoreResult<Option<CandidateSummary>>;
+    async fn candidate_owner(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<uuid::Uuid>> {
+        Ok(self.candidate(project, id).await?.and_then(|c| {
+            c.progress
+                .get("run_id")
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse().ok())
+        }))
+    }
+    async fn heartbeat_candidate(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        at: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        let mut c = self
+            .candidate(project, id)
+            .await?
+            .ok_or(StoreError::Unavailable)?;
+        c.updated_at = at;
+        self.put_candidate(&c).await
+    }
+
+    async fn candidate_state(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateState>> {
+        Ok(self.candidate(project, id).await?.map(|c| c.state))
+    }
+    async fn checkpoint_candidate(
+        &mut self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+        _state: nexofolio_contracts::knowledge::CandidateState,
+        _progress: &Value,
+        _at: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+    async fn candidate(
+        &mut self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+    ) -> StoreResult<Option<Candidate>> {
+        Err(StoreError::Unavailable)
+    }
+    /// Mutable working projection; deliberately omits the immutable execution input.
+    async fn candidate_projection(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<Candidate>> {
+        let mut candidate = self.candidate(project, id).await?;
+        if let Some(c) = &mut candidate {
+            c.execution_input = None;
+        }
+        Ok(candidate)
+    }
+    /// Update a working projection without replacing its immutable execution input.
+    async fn put_candidate_projection(&mut self, candidate: &Candidate) -> StoreResult<()> {
+        let mut updated = candidate.clone();
+        updated.execution_input = self
+            .candidate(candidate.project_id, candidate.id)
+            .await?
+            .ok_or(StoreError::Unavailable)?
+            .execution_input;
+        self.put_candidate(&updated).await
+    }
+    async fn candidates(
+        &mut self,
+        _project: ProjectId,
+        _limit: usize,
+    ) -> StoreResult<Vec<CandidateSummary>> {
+        Err(StoreError::Unavailable)
+    }
+    async fn candidate_operations(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateOperationHistory>> {
+        Ok(self
+            .candidate(project, id)
+            .await?
+            .map(|c| c.operation_history()))
+    }
+    async fn put_candidate(&mut self, _candidate: &Candidate) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+    async fn entry_candidates(
+        &mut self,
+        _project: ProjectId,
+        _kind: nexofolio_contracts::knowledge::CandidateEntryKind,
+        _selected: Option<uuid::Uuid>,
+    ) -> StoreResult<Vec<CandidateSummary>> {
+        Err(StoreError::Unavailable)
+    }
     async fn commit(self: Box<Self>) -> StoreResult<()>;
 
     /// Serialises writers of one project until the transaction ends, so two

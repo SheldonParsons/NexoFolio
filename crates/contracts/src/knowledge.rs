@@ -7,21 +7,28 @@
 //! every value was written by a person or by a curate pass, and every write
 //! names its author and the round it belongs to.
 
+mod candidates;
+mod completeness;
+mod navigation;
+mod notes;
+pub use completeness::*;
+mod operations;
+pub use candidates::*;
+pub use navigation::*;
+pub use notes::*;
+pub use operations::*;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use nexofolio_common::{EndpointId, FolderId, LinkId, ProjectId, RoundId, UserId};
+use nexofolio_common::{EndpointId, EnvironmentId, FolderId, LinkId, ProjectId, RoundId, UserId};
 use serde::{Deserialize, Serialize};
 
 /// Top-level folders an agent can be handed in one go, so step one of a
 /// lookup never needs paging or a search term.
 pub const MAX_TOP_LEVEL: usize = 12;
 
-/// Root is depth 1. Two levels is the norm; the third exists for folders that
-/// grew past [`SPLIT_THRESHOLD`].
-pub const MAX_DEPTH: usize = 3;
-
-/// Above this many endpoints, a folder earns sub-folders.
-pub const SPLIT_THRESHOLD: usize = 30;
+/// Root is depth 1: business module, then a functional group. No third level.
+pub const MAX_DEPTH: usize = 2;
 
 /// Who wrote something down.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,6 +54,9 @@ impl Author {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Folder {
     pub id: FolderId,
+    /// Unknown legacy ownership is kept unknown and protected during curation.
+    #[serde(default)]
+    pub author: Option<Author>,
     /// `None` at the top level.
     pub parent: Option<FolderId>,
     pub name: String,
@@ -95,33 +105,6 @@ pub struct Placement {
     pub at: DateTime<Utc>,
 }
 
-/// The words for one endpoint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EndpointNote {
-    pub endpoint: EndpointId,
-    /// Human-readable, e.g. 技术咨询分页查询.
-    pub name: Option<String>,
-    /// One line: what it is for. This is what the catalogue pass reads, so it
-    /// must stand alone without the field tree.
-    pub purpose: Option<String>,
-    pub author: Author,
-    pub at: DateTime<Utc>,
-}
-
-/// The words for one field of one endpoint. `path` is the field path as observe
-/// reports it, so notes survive as long as the field keeps its place.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FieldNote {
-    pub endpoint: EndpointId,
-    pub path: String,
-    pub text: String,
-    /// Values seen for this field, when they read as a closed set.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub values: Vec<String>,
-    pub author: Author,
-    pub at: DateTime<Utc>,
-}
-
 /// How one endpoint relates to another. Found by matching real values across
 /// samples, so every link carries the evidence that produced it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -137,6 +120,8 @@ pub struct Link {
     pub relation: Relation,
     /// Why we believe it, in words a reader can check.
     pub evidence: String,
+    #[serde(default)]
+    pub context: LinkContext,
     pub author: Author,
     pub at: DateTime<Utc>,
 }
@@ -154,6 +139,12 @@ pub enum Relation {
     Precondition,
     /// `to_field`'s observed values are a subset of what `from` offers.
     EnumSubset,
+    ParameterSource,
+    EntityReference,
+    AuthenticationUse,
+    ConfirmedPrerequisite,
+    ConditionalPrerequisite,
+    RecommendedCheck,
 }
 
 /// One run of curation, or one sitting of manual edits. Every write belongs to
@@ -205,6 +196,14 @@ pub enum Target {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KnowledgeError {
+    #[error("no such candidate")]
+    NoSuchCandidate,
+    #[error("candidate is not open for this operation")]
+    CandidateClosed,
+    #[error("official knowledge changed after generation; generate a new candidate")]
+    CandidateStale,
+    #[error("项目已有运行中的整理任务，请查看本轮进度；中断后等待租约到期再恢复")]
+    CandidateBusy,
     /// Retryable: storage is down.
     #[error("knowledge storage unavailable")]
     Unavailable,
@@ -223,6 +222,9 @@ pub enum KnowledgeError {
     /// The endpoint is not in the project the round belongs to.
     #[error("endpoint does not belong to this project")]
     WrongProject,
+    /// A person changed a folder/placement, possibly after the model snapshot.
+    #[error("manual or unknown-origin knowledge is protected")]
+    ProtectedKnowledge,
 }
 
 pub type KnowledgeResult<T> = Result<T, KnowledgeError>;
@@ -240,6 +242,20 @@ pub struct EndpointPage {
 /// to decide what still needs work, and later by the MCP tools.
 #[async_trait]
 pub trait KnowledgeReader: Send + Sync {
+    async fn observed_values(
+        &self,
+        _query: crate::field_values::FieldValueQuery,
+    ) -> KnowledgeResult<crate::field_values::ObservedValuePage> {
+        Err(KnowledgeError::NoSuchCandidate)
+    }
+    async fn observed_value(
+        &self,
+        _query: crate::field_values::FieldValueQuery,
+        _value_id: &str,
+    ) -> KnowledgeResult<serde_json::Value> {
+        Err(KnowledgeError::NoSuchCandidate)
+    }
+
     /// The tree plus the count of endpoints nothing has placed.
     async fn catalogue(&self, project: ProjectId) -> KnowledgeResult<Catalogue>;
 
@@ -320,6 +336,8 @@ pub enum Command {
         endpoint: EndpointId,
         name: Option<String>,
         purpose: Option<String>,
+        #[serde(default)]
+        context: EndpointContext,
     },
     PutFieldNote {
         endpoint: EndpointId,
@@ -327,6 +345,8 @@ pub enum Command {
         text: String,
         #[serde(default)]
         values: Vec<String>,
+        #[serde(default)]
+        context: FieldContext,
     },
     RemoveFieldNote {
         endpoint: EndpointId,
@@ -341,6 +361,8 @@ pub enum Command {
         to_field: Option<String>,
         relation: Relation,
         evidence: String,
+        #[serde(default)]
+        context: LinkContext,
     },
     RemoveLink {
         id: LinkId,
