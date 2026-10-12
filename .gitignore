@@ -43,6 +43,26 @@ __pycache__/
 /music_player.html
 /music_player.jsx
 
+# Local presentation/video experiments and their generated assets.
+/.codex-ppt-build/
+/presentations/
+/NexoFolio-能力介绍.pptx
+/ppt-build-deck.js
+/nexofolio-promo.html
+/STORYBOARD.md
+/style-preview.html
+/style-demo-v*.html
+/ref-frames/
+/ref.mp4
+
+# Machine-specific launcher; keep the actual configuration on this machine.
+/start-nexofolio.sh
+
+# Local execution evidence and transient checkpoints. Existing tracked notes
+# remain tracked; reusable contracts/specs belong in docs/architecture or handoff.
+/docs/audits/
+/docs/handoff/2026-10-07-overnight-checkpoint.json
+
 # Editor/OS scratch files and runtime logs.
 .idea/
 .vscode/
