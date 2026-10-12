@@ -7,6 +7,7 @@ pub(crate) mod curation_review;
 pub mod document_lifecycle;
 pub mod downloads;
 pub mod endpoints;
+mod fetcher_updates;
 pub mod knowledge;
 mod management;
 pub mod mcp_tokens;

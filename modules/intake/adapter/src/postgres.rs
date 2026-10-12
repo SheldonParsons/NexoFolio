@@ -1,3 +1,6 @@
+#[path = "release_policy.rs"]
+mod release_policy;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nexofolio_common::{DatabaseProbe, Error, Result, Secret};

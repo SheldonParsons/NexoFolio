@@ -1,6 +1,6 @@
 {
   "contract": "collect",
-  "contract_version": "1.1.0",
+  "contract_version": "1.2.0",
   "kinds": {
     "http_exchange": [
       1
@@ -15,9 +15,9 @@
     "record_bytes": 4194304
   },
   "files": {
-    "README.md": "e1456c2ad23e49be32887bf44eb4d469e010c7c2284e817f001186ed6ef39584",
+    "README.md": "ede3d2078a068f53983c8a7bd3b6e0dc7333d80fb8183383502f8915d64ddb58",
     "batch.schema.json": "c850996b10fd3e4beb8696c116db027fb704006f8b82a2fff2d1ab54ccabeeb7",
-    "error.schema.json": "4a5694534a79e350a1bb22d20171f383c6c6a358ca26d8f86e01c29b6bdefff8",
+    "error.schema.json": "72bd63a26c5d8a0dab8989fad28ab69ed645b5ccd362f84b99671836c83414fb",
     "fixtures/batch/invalid/declaration-bad-response-code.json": "4d0115e17b15ba45834b127f07d6263bafbd50eec5c37d3150ed80acc2515a14",
     "fixtures/batch/invalid/declaration-path-with-query.json": "e05d4d638799226b33943cf8c269707670a73263abec3c2723f0d8969d532b1f",
     "fixtures/batch/invalid/declaration-with-context.json": "5ea933b3d460ce75fffd2d2325192af560948f2d1683e33fddb3b740120fd471",

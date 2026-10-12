@@ -193,7 +193,10 @@ fn assemble_api(
             store.clone(),
             observe,
         ))
-        .merge(collect::routes(Arc::new(intake)))
+        .merge(collect::routes_with_updates(
+            Arc::new(intake),
+            databases.intake.clone(),
+        ))
         .layer(axum::middleware::from_fn_with_state(
             crate::http::project_writes::ProjectWriteGate {
                 sessions: store.clone(),

@@ -20,7 +20,9 @@
             "UNKNOWN_ENVIRONMENT",
             "BATCH_ID_REUSED",
             "RATE_LIMITED",
-            "UNAVAILABLE"
+            "UNAVAILABLE",
+            "FETCHER_UPDATE_REQUIRED",
+            "FETCHER_UPDATE_POLICY_UNAVAILABLE"
           ]
         },
         "message": { "type": "string", "maxLength": 4096 }

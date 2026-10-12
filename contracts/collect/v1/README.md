@@ -92,4 +92,15 @@ Content-Type: application/json
 | 429 | `RATE_LIMITED` | 按 `Retry-After` 等待后，用同一个 `batch_id` 重发 |
 | 503 | `UNAVAILABLE` | 退避后，用同一个 `batch_id` 重发 |
 
-可重试的情况只会以整批的 429/503 出现，不会逐条出现在回执里。
+可重试的情况以整批429/503出现；Fetcher运行版本门禁另有整批426，需更新运行版本后按原ID/正文重试，不是记录永久拒绝。
+
+## Fetcher 运行版本门禁（HTTP 层）
+
+body.platform=`nexofolio-fetcher` 或带 `X-NexoFolio-Fetcher-Version` 的请求，在 intake 写入之前必须通过同一固定 OSS latest.json 的最低版本策略。新 Fetcher 必须用该请求头填写实际安装的 manifest 版本；body.platform_version 是原始采集出处，不拿它判断当前运行版本，也不得为绕过门禁改写历史正文/批次ID。非 Fetcher API 生产者和 MCP 不受此门禁影响；platform/版本是客户端声明，不是防恶意冒充的身份凭据。
+
+| HTTP | code | 处理 |
+| --- | --- | --- |
+| 426 | FETCHER_UPDATE_REQUIRED | 当前运行版本太旧、声明非法或正最低门槛下缺版本头；保留队列，安装合规版本后原样重试 |
+| 503 | FETCHER_UPDATE_POLICY_UNAVAILABLE | OSS策略无法确认、回退或持久门槛不可用；保留队列与会话，按Retry-After恢复校验后原样重试 |
+
+门槛首次兼容无策略旧清单为0.0.0；仍为零时缺少新版本头的旧客户端可继续，不把普通更新变成隐式强制。门槛提升后，无法声明运行版本的旧客户端需升级至含门禁代码的版本。已形成批次在新版运行时仍允许保持旧platform_version，HTTP运行版本头不参与批次内容哈希。原批次请求/回执Schema不变；本补充仅扩展错误码和HTTP头说明。

@@ -5,7 +5,7 @@ use axum::{
     Json, Router,
     body::Bytes,
     extract::{DefaultBodyLimit, State, rejection::BytesRejection},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::post,
 };
@@ -15,19 +15,52 @@ use std::sync::Arc;
 /// `message` limit of `error.schema.json`.
 const MAX_MESSAGE_CHARS: usize = 4096;
 
+#[derive(Clone)]
+struct CollectHttp {
+    intake: Arc<Intake>,
+    updates: Option<Arc<super::fetcher_updates::FetcherUpdates>>,
+}
+
+// Generic API-only harness constructor. Fetcher fails closed without the durable gate.
 pub fn routes(intake: Arc<Intake>) -> Router {
+    routes_with(intake, None)
+}
+
+pub fn routes_with_updates(
+    intake: Arc<Intake>,
+    ledger: nexofolio_intake_adapter::PostgresLedger,
+) -> Router {
+    routes_with(
+        intake,
+        Some(super::fetcher_updates::FetcherUpdates::new(ledger)),
+    )
+}
+fn routes_with(
+    intake: Arc<Intake>,
+    updates: Option<Arc<super::fetcher_updates::FetcherUpdates>>,
+) -> Router {
     Router::new()
         .route("/v1/collect/batches", post(submit))
-        .with_state(intake)
+        .with_state(CollectHttp { intake, updates })
         .layer(DefaultBodyLimit::max(MAX_BATCH_BYTES))
 }
 
 async fn submit(
-    State(intake): State<Arc<Intake>>,
+    State(service): State<CollectHttp>,
+    headers: HeaderMap,
     body: Result<Bytes, BytesRejection>,
 ) -> Response {
     let result = match body {
-        Ok(body) => intake.submit(&body).await,
+        Ok(body) => {
+            if let Some(updates) = &service.updates {
+                if let Err(response) = updates.check(&body, &headers).await {
+                    return response;
+                }
+            } else if super::fetcher_updates::is_fetcher(&body, &headers) {
+                return super::fetcher_updates::refusal(false);
+            }
+            service.intake.submit(&body).await
+        }
         Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
             Err(CollectError::BatchTooLarge)
         }
