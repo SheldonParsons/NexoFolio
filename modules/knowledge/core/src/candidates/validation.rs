@@ -79,16 +79,40 @@ pub(super) async fn commands(
     }
     Ok(())
 }
-pub(super) fn valid_names(view: &KnowledgeSnapshot) -> KnowledgeResult<()> {
-    let mut names = std::collections::HashSet::new();
+pub(super) fn lifecycle_view(
+    view: &KnowledgeSnapshot,
+    lifecycle: &DocumentLifecycle,
+) -> KnowledgeResult<()> {
     if view
-        .folders
+        .endpoints
         .iter()
-        .any(|f| !names.insert((f.parent, f.name.trim())))
+        .any(|id| lifecycle.endpoint(*id).is_some())
+        || view
+            .folders
+            .iter()
+            .any(|f| lifecycle.folder(f.id).is_some())
+        || view.placements.iter().any(|p| {
+            lifecycle.endpoint(p.endpoint).is_some()
+                || lifecycle.folder(p.folder).is_some()
+                || !view.folders.iter().any(|f| f.id == p.folder)
+        })
+        || view
+            .notes
+            .iter()
+            .any(|n| lifecycle.endpoint(n.endpoint).is_some())
+        || view
+            .fields
+            .iter()
+            .any(|f| lifecycle.field_key(f.endpoint, &f.path).is_some())
+        || view.links.iter().any(|l| lifecycle.link_retired(l))
     {
-        return Err(KnowledgeError::InvalidTree(
-            "duplicate sibling names".into(),
+        return Err(KnowledgeError::InvalidLifecycle(
+            "候选包含废弃对象或无效归属".into(),
         ));
     }
     Ok(())
+}
+pub(super) fn valid_names(view: &KnowledgeSnapshot) -> KnowledgeResult<()> {
+    lifecycle_view(view, &view.lifecycle)?;
+    crate::tree::check_names(view.folders.iter().map(|f| (f.parent, f.name.as_str())))
 }

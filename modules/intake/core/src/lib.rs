@@ -8,7 +8,8 @@
 //!
 //! Delivery is at least once: a crash between handing the batch to the sink
 //! and recording it in the ledger makes the client retry, and the sink ignores
-//! observation keys it has already seen. No locks, no "in progress" state.
+//! observation keys it has already seen. Serving applications may inject a short
+//! project activity lease to exclude concurrent administrative resets.
 
 mod hash;
 mod limiter;
@@ -90,6 +91,7 @@ pub struct Intake {
     ledger: Arc<dyn BatchLedger>,
     clock: Arc<dyn Clock>,
     limiter: limiter::RateLimiter,
+    lifecycle: Option<Arc<dyn nexofolio_contracts::project_lifecycle::ProjectLifecycle>>,
 }
 
 /// What the log line of one batch may contain: identifiers and counts only.
@@ -115,7 +117,16 @@ impl Intake {
             ledger,
             clock,
             limiter: limiter::RateLimiter::new(limits),
+            lifecycle: None,
         }
+    }
+
+    pub fn with_project_lifecycle(
+        mut self,
+        lifecycle: Arc<dyn nexofolio_contracts::project_lifecycle::ProjectLifecycle>,
+    ) -> Self {
+        self.lifecycle = Some(lifecycle);
+        self
     }
 
     /// Processes one request body. Retrying the same batch is always safe.
@@ -178,6 +189,16 @@ impl Intake {
         let batch = wire::parse_batch(value).map_err(CollectError::InvalidBatch)?;
         trace.batch_id = Some(batch.batch_id);
         trace.records = batch.records.len();
+
+        let _activity = match &self.lifecycle {
+            Some(lifecycle) => Some(
+                lifecycle
+                    .activity(batch.target.project_id)
+                    .await
+                    .map_err(|_| CollectError::Unavailable("project_maintenance"))?,
+            ),
+            None => None,
+        };
 
         match self.ledger.find(batch.batch_id).await {
             Ok(Some(entry)) if entry.content_hash == content_hash => {

@@ -3,7 +3,9 @@ mod batch_writes;
 mod create;
 mod decisions;
 mod inheritance;
+mod progress;
 mod recovery;
+mod restart;
 mod session;
 mod snapshot;
 mod snapshot_tx;
@@ -21,6 +23,32 @@ use snapshot_tx::SnapshotTx;
 
 #[async_trait]
 impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Knowledge<S, R, C> {
+    async fn recovery_candidates(
+        &self,
+        after: Option<uuid::Uuid>,
+        limit: usize,
+    ) -> KnowledgeResult<Vec<CandidateRecovery>> {
+        self.store
+            .begin_read()
+            .await
+            .map_err(store_error)?
+            .recovery_candidates(
+                self.clock.now() - chrono::TimeDelta::seconds(recovery::LEASE_SECONDS),
+                after,
+                limit.clamp(1, 50),
+            )
+            .await
+            .map_err(store_error)
+    }
+    async fn recover_candidate(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        owner: uuid::Uuid,
+    ) -> KnowledgeResult<Option<Candidate>> {
+        self.recover_proposal(project, id, owner).await
+    }
+
     async fn freeze_candidate_values(
         &self,
         project: ProjectId,
@@ -79,17 +107,31 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         )
         .await
     }
-    async fn active_candidate(
+    async fn candidate_diagnostics(
         &self,
         project: ProjectId,
-    ) -> KnowledgeResult<Option<CandidateSummary>> {
+        id: uuid::Uuid,
+    ) -> KnowledgeResult<CandidateDiagnostics> {
         self.store
             .begin()
             .await
             .map_err(store_error)?
-            .active_candidate(project)
+            .candidate_diagnostics(project, id)
             .await
-            .map_err(store_error)
+            .map_err(store_error)?
+            .ok_or(KnowledgeError::NoSuchCandidate)
+    }
+    async fn active_candidate(
+        &self,
+        project: ProjectId,
+    ) -> KnowledgeResult<Option<CandidateSummary>> {
+        let mut tx = self.store.begin_read().await.map_err(store_error)?;
+        let mut row = tx.active_candidate(project).await.map_err(store_error)?;
+        if let Some(row) = &mut row {
+            let version = tx.lifecycle(project).await.map_err(store_error)?.version;
+            progress::lifecycle_status(row, version);
+        }
+        Ok(row)
     }
     async fn candidate_operations(
         &self,
@@ -110,13 +152,18 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         project: ProjectId,
         limit: usize,
     ) -> KnowledgeResult<Vec<CandidateSummary>> {
-        self.store
-            .begin()
-            .await
-            .map_err(store_error)?
+        let mut tx = self.store.begin_read().await.map_err(store_error)?;
+        let mut rows = tx
             .candidates(project, limit.clamp(1, 50))
             .await
-            .map_err(store_error)
+            .map_err(store_error)?;
+        if !rows.is_empty() {
+            let version = tx.lifecycle(project).await.map_err(store_error)?.version;
+            for row in &mut rows {
+                progress::lifecycle_status(row, version);
+            }
+        }
+        Ok(rows)
     }
     async fn entry_candidates(
         &self,
@@ -124,13 +171,18 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         kind: CandidateEntryKind,
         selected: Option<uuid::Uuid>,
     ) -> KnowledgeResult<Vec<CandidateSummary>> {
-        self.store
-            .begin()
-            .await
-            .map_err(store_error)?
+        let mut tx = self.store.begin_read().await.map_err(store_error)?;
+        let mut rows = tx
             .entry_candidates(project, kind, selected)
             .await
-            .map_err(store_error)
+            .map_err(store_error)?;
+        if !rows.is_empty() {
+            let version = tx.lifecycle(project).await.map_err(store_error)?.version;
+            for row in &mut rows {
+                progress::lifecycle_status(row, version);
+            }
+        }
+        Ok(rows)
     }
     async fn open_candidate_batch(
         &self,

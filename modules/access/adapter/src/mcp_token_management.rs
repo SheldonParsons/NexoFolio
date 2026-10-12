@@ -84,7 +84,7 @@ fn info(row: &PgRow, now: DateTime<Utc>) -> Result<McpTokenInfo> {
 #[async_trait]
 impl McpTokens for Postgres {
     async fn mcp_accessible_projects(&self, owner: &SessionPrincipal) -> Result<Option<i64>> {
-        let row = sqlx::query("SELECT CASE WHEN u.grants_synced THEN (SELECT count(*) FROM user_project_access a JOIN projects p ON p.id=a.project_id AND p.instance=u.instance WHERE a.user_id=u.id) ELSE NULL END AS accessible_projects FROM users u WHERE u.id=$1 AND u.instance=$2 AND u.enabled")
+        let row = sqlx::query("SELECT CASE WHEN u.ready THEN (SELECT count(*) FROM effective_project_access a WHERE a.user_id=u.id) ELSE NULL END AS accessible_projects FROM project_access_principals u WHERE u.id=$1 AND u.instance=$2")
             .bind(uuid(owner.user_id)).bind(&owner.instance)
             .fetch_optional(&self.pool).await.map_err(db_error)?
             .ok_or(Error::Unauthenticated)?;

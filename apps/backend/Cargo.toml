@@ -38,6 +38,8 @@ name = "contracts"
 path = "../../tests/contracts/collect.rs"
 
 [dependencies]
+nexofolio-audit-contracts.workspace = true
+nexofolio-audit-adapter.workspace = true
 nexofolio-common.workspace = true
 nexofolio-access-contracts.workspace = true
 nexofolio-access.workspace = true
@@ -74,6 +76,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
 base64.workspace = true
+sha2 = "0.11"
 
 [[test]]
 name = "navigation_mcp"
@@ -118,3 +121,19 @@ workspace = true
 [[test]]
 name = "field_values"
 path = "../../tests/integration/field_values.rs"
+
+[[test]]
+name = "curation_restart"
+path = "../../tests/integration/curation_restart.rs"
+
+[[test]]
+name = "project_management"
+path = "../../tests/integration/project_management.rs"
+
+[[test]]
+name = "document_lifecycle"
+path = "../../tests/integration/document_lifecycle.rs"
+
+[[test]]
+name = "audit_browser_fixture"
+path = "../../tests/integration/audit_browser_fixture.rs"

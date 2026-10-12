@@ -1661,6 +1661,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nexofolio-audit-adapter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-audit-contracts",
+ "nexofolio-common",
+ "serde_json",
+ "sha2 0.10.9",
+ "sqlx",
+]
+
+[[package]]
+name = "nexofolio-audit-contracts"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "nexofolio-common",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nexofolio-backend"
 version = "0.1.0"
 dependencies = [
@@ -1676,6 +1700,8 @@ dependencies = [
  "nexofolio-access",
  "nexofolio-access-adapter",
  "nexofolio-access-contracts",
+ "nexofolio-audit-adapter",
+ "nexofolio-audit-contracts",
  "nexofolio-common",
  "nexofolio-contracts",
  "nexofolio-curate",

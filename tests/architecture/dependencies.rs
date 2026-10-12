@@ -13,7 +13,14 @@ mod sql_ownership;
 
 /// Registered backend modules. A crate or directory outside this list is an
 /// undefined boundary.
-pub(crate) const MODULES: &[&str] = &["access", "curate", "intake", "knowledge", "observe"];
+pub(crate) const MODULES: &[&str] = &[
+    "access",
+    "audit",
+    "curate",
+    "intake",
+    "knowledge",
+    "observe",
+];
 
 const COMMON: &str = "nexofolio-common";
 const CONTRACTS: &str = "nexofolio-contracts";

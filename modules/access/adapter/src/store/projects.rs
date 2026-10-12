@@ -1,7 +1,7 @@
 use super::{PostgresAccess, db_error, typed, uuid};
 use async_trait::async_trait;
 use nexofolio_access_contracts::{
-    AccessState, ProjectAccess, ProjectCard, ProjectPage, SessionPrincipal,
+    AccessState, ProjectAccess, ProjectCard, ProjectOrigin, ProjectPage, SessionPrincipal,
 };
 use nexofolio_common::{Error, ProjectId, Result};
 use sqlx::{Row, postgres::PgRow};
@@ -28,14 +28,13 @@ impl ProjectAccess for PostgresAccess {
             .await
             .map_err(db_error)?;
         let rows = sqlx::query(
-            r#"SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1
-            FROM user_project_access a
+            r#"SELECT p.id,p.name,p.status,p.origin,u.ready,EXISTS(SELECT 1
+            FROM effective_project_access a
             WHERE a.project_id=p.id
             AND a.user_id=u.id) AS allowed
             FROM projects p
-            JOIN users u ON u.id=$1
+            JOIN project_access_principals u ON u.id=$1
             AND u.instance=p.instance
-            AND u.enabled
             WHERE p.instance=$2
             ORDER BY p.id
             LIMIT $3 OFFSET $4"#,
@@ -58,14 +57,13 @@ impl ProjectAccess for PostgresAccess {
     }
     async fn require_project(&self, p: &SessionPrincipal, id: ProjectId) -> Result<ProjectCard> {
         let row = sqlx::query(
-            r#"SELECT p.id,p.name,p.status,u.grants_synced,EXISTS(SELECT 1
-            FROM user_project_access a
+            r#"SELECT p.id,p.name,p.status,p.origin,u.ready,EXISTS(SELECT 1
+            FROM effective_project_access a
             WHERE a.project_id=p.id
             AND a.user_id=u.id) AS allowed
             FROM projects p
-            JOIN users u ON u.id=$1
+            JOIN project_access_principals u ON u.id=$1
             AND u.instance=p.instance
-            AND u.enabled
             WHERE p.instance=$2
             AND p.id=$3"#,
         )
@@ -88,9 +86,9 @@ impl ProjectAccess for PostgresAccess {
 }
 
 fn card(row: &PgRow) -> Result<ProjectCard> {
-    let synced: bool = row.try_get("grants_synced").map_err(db_error)?;
+    let ready: bool = row.try_get("ready").map_err(db_error)?;
     let allowed: bool = row.try_get("allowed").map_err(db_error)?;
-    let (access_state, reason_code) = if !synced {
+    let (access_state, reason_code) = if !ready {
         (AccessState::Unknown, Some("PROJECT_ACCESS_UNAVAILABLE"))
     } else if allowed {
         (AccessState::Allowed, None)
@@ -101,7 +99,16 @@ fn card(row: &PgRow) -> Result<ProjectCard> {
         project_id: typed(row.try_get("id").map_err(db_error)?),
         name: row.try_get("name").map_err(db_error)?,
         status: row.try_get("status").map_err(db_error)?,
-        can_access: synced && allowed,
+        origin: match row.try_get::<&str, _>("origin").map_err(db_error)? {
+            "local" => ProjectOrigin::Local,
+            "zentao" => ProjectOrigin::Zentao,
+            _ => {
+                return Err(Error::Unavailable {
+                    component: "project_origin",
+                });
+            }
+        },
+        can_access: ready && allowed,
         access_state,
         reason_code,
     })

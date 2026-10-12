@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use nexofolio_common::{ProjectId, Result};
 use serde::Serialize;
 
-/// A project as ZenTao reports it. Projects are never created locally.
+/// A project as ZenTao reports it; independent local projects are managed separately.
 #[derive(Debug, Clone)]
 pub struct ExternalProject {
     pub instance: String,
@@ -25,9 +25,17 @@ pub struct ProjectCard {
     pub project_id: ProjectId,
     pub name: String,
     pub status: String,
+    pub origin: ProjectOrigin,
     pub can_access: bool,
     pub access_state: AccessState,
     pub reason_code: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectOrigin {
+    Zentao,
+    Local,
 }
 
 #[derive(Debug, Serialize)]

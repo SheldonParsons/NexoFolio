@@ -33,6 +33,23 @@ pub struct FieldNote {
     pub at: DateTime<Utc>,
 }
 
+impl FieldNote {
+    /// Generated output completeness is separate from semantic confirmation.
+    pub fn generation_addressed(&self) -> bool {
+        self.context.completion.as_ref().map_or_else(
+            || {
+                !self.text.trim().is_empty()
+                    && self
+                        .context
+                        .display_name
+                        .as_ref()
+                        .is_some_and(|s| !s.trim().is_empty())
+            },
+            |c| c.addressed(self.context.display_name.as_deref(), &self.text),
+        )
+    }
+}
+
 /// Separately sourced knowledge. More evidence kinds can be added without
 /// replacing the human-readable summary or losing earlier observations.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -96,8 +113,15 @@ pub struct FieldOption {
 
 /// Request and response fields with the same path must not share a note.
 pub fn field_note_key(field: &crate::endpoint::FieldFacts) -> String {
+    qualified_field_key(field.location, &field.path)
+}
+
+pub fn qualified_field_key(
+    location: crate::endpoint::FieldLocation,
+    path: &crate::endpoint::FieldPath,
+) -> String {
     use crate::endpoint::FieldLocation;
-    let location = match field.location {
+    let location = match location {
         FieldLocation::Path => "path".into(),
         FieldLocation::Query => "query".into(),
         FieldLocation::RequestHeader => "request_header".into(),
@@ -105,5 +129,44 @@ pub fn field_note_key(field: &crate::endpoint::FieldFacts) -> String {
         FieldLocation::RequestBody => "request_body".into(),
         FieldLocation::ResponseBody { status } => format!("response_body:{status}"),
     };
-    format!("{location}:{}", field.path)
+    format!("{location}:{path}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn generation_completeness_is_independent_of_confirmation_and_preserves_uncertainty() {
+        let mut note = FieldNote {
+            endpoint: nexofolio_common::EndpointId::new(),
+            path: "request_body:id".into(),
+            text: "说明".into(),
+            values: vec![],
+            context: FieldContext {
+                display_name: Some("标识".into()),
+                ..Default::default()
+            },
+            author: Author::Curate {
+                pass: "fixture".into(),
+                model: None,
+            },
+            at: chrono::DateTime::from_timestamp(0, 0).unwrap(),
+        };
+        assert!(note.generation_addressed());
+        assert_eq!(note.context.meaning.confirmation, Confirmation::Candidate);
+        note.context.meaning.confirmation = Confirmation::Confirmed;
+        note.context.completion = Some(Box::new(FieldCompletion::default()));
+        assert!(!note.generation_addressed());
+        let uncertain = AspectCompletion {
+            state: AspectState::Uncertain,
+            reason: Some("需要补充证据".into()),
+        };
+        note.context.completion = Some(Box::new(FieldCompletion {
+            name: uncertain.clone(),
+            description: uncertain,
+        }));
+        note.context.display_name = None;
+        note.text.clear();
+        assert!(note.generation_addressed());
+    }
 }

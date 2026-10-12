@@ -44,6 +44,21 @@ fn field_note_row(row: &PgRow) -> StoreResult<FieldNote> {
 }
 
 impl PostgresTx {
+    pub(super) async fn db_project_field_notes(
+        &mut self,
+        project: ProjectId,
+    ) -> StoreResult<Vec<FieldNote>> {
+        let rows = sqlx::query(concat!(
+            "SELECT ",
+            field_note_columns!(),
+            " FROM field_notes WHERE project_id = $1 ORDER BY endpoint_id, path"
+        ))
+        .bind(uuid(project))
+        .fetch_all(&mut *self.tx)
+        .await
+        .map_err(unavailable)?;
+        rows.iter().map(field_note_row).collect()
+    }
     pub(super) async fn db_endpoint_note(
         &mut self,
         endpoint: EndpointId,

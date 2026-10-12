@@ -28,8 +28,15 @@ pub(super) async fn evidence_snapshot(
         ..Default::default()
     };
     let mut authentication = std::collections::HashMap::new();
+    let lifecycle = match summaries.first() {
+        Some(su) => s.reader.lifecycle(su.project_id).await?,
+        None => Default::default(),
+    };
     for summary in summaries {
-        let endpoint = s
+        if lifecycle.endpoint(summary.id).is_some() {
+            continue;
+        }
+        let mut endpoint = s
             .endpoints
             .get(summary.id)
             .await
@@ -38,6 +45,12 @@ pub(super) async fn evidence_snapshot(
         if endpoint.summary.project_id != summary.project_id {
             return Err(CurationError::NotFound);
         }
+        if endpoint.summary.id != summary.id {
+            return Err(CurationError::Conflict(
+                "接口身份在准备资料期间发生变化；已保存成果保留，请开始新一轮整理".into(),
+            ));
+        }
+        nexofolio_curate::active_facts(&mut endpoint, &lifecycle);
         let mut retained = Vec::new();
         for example in &endpoint.examples {
             if let Some(raw) = s
@@ -46,6 +59,12 @@ pub(super) async fn evidence_snapshot(
                 .await
                 .map_err(|_| CurationError::Unavailable)?
             {
+                let raw = nexofolio_curate::active_observation(
+                    raw,
+                    &lifecycle,
+                    summary.id,
+                    &summary.path_template,
+                );
                 retained.push((example.id.clone(), Some(raw.clone())));
                 let endpoint_for_sample = endpoint.clone();
                 let example_id = example.id.clone();

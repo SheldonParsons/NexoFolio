@@ -76,6 +76,12 @@ impl<S: ObserveStore> Observe<S> {
         for project in &projects {
             tx.lock_project(*project).await?;
         }
+        let mut cutoffs = std::collections::HashMap::new();
+        for project in &projects {
+            if let Some(cutoff) = tx.reset_cutoff(*project).await? {
+                cutoffs.insert(*project, cutoff);
+            }
+        }
         let mut batches = HashSet::new();
         let mut fresh = HashSet::new();
         for observation in observations {
@@ -86,7 +92,11 @@ impl<S: ObserveStore> Observe<S> {
         }
         let mut ingest = Ingest::new(tx.as_mut());
         for observation in observations {
-            if fresh.contains(&observation.key.batch_id) {
+            if fresh.contains(&observation.key.batch_id)
+                && cutoffs
+                    .get(&observation.project_id)
+                    .is_none_or(|cutoff| observation.observed_at > *cutoff)
+            {
                 ingest.observe(observation).await?;
             }
         }
@@ -134,6 +144,22 @@ impl<S: ObserveStore> ObservationSink for Observe<S> {
 
 #[async_trait]
 impl<S: ObserveStore> EndpointReader for Observe<S> {
+    async fn identity(
+        &self,
+        id: EndpointId,
+    ) -> Result<Option<nexofolio_contracts::endpoint::EndpointIdentity>, EndpointError> {
+        let mut tx = self.read().await?;
+        let Some(row) = tx.endpoint(id).await.map_err(unavailable)? else {
+            return Ok(None);
+        };
+        let aliases = tx.aliases(row.id).await.map_err(unavailable)?;
+        Ok(Some(nexofolio_contracts::endpoint::EndpointIdentity {
+            id: row.id,
+            project_id: row.project_id,
+            aliases,
+        }))
+    }
+
     async fn list(&self, project: ProjectId) -> Result<Vec<EndpointSummary>, EndpointError> {
         let mut tx = self.read().await?;
         let endpoints = tx.endpoints(project).await.map_err(unavailable)?;

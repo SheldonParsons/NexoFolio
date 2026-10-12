@@ -104,7 +104,7 @@ pub(super) async fn verify(
     )
     .await;
     let tools = listed["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 7);
+    assert_eq!(tools.len(), 11);
     let discovery_schema =
         &tools.iter().find(|t| t["name"] == "list_projects").unwrap()["inputSchema"];
     assert!(discovery_schema["properties"].get("project_id").is_none());

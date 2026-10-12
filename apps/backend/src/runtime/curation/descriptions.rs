@@ -48,9 +48,9 @@ pub(super) async fn run(
         );
         let previous = notes.get(&facts.summary.id).cloned();
         if !(s.resuming
-            && previous
-                .as_ref()
-                .is_some_and(|n| n.name.is_some() && n.purpose.is_some()))
+            && previous.as_ref().is_some_and(|n| {
+                n.name.is_some() && n.purpose.is_some() && n.context.input_hash.is_some()
+            }))
             && nexofolio_curate::description_pending(&input, previous.as_ref())
         {
             pending.push((facts.clone(), input, previous));

@@ -4,10 +4,16 @@ mod actor_names;
 mod avatar;
 mod environments;
 mod login;
+mod managed_projects;
+mod management;
+mod management_list;
+mod project_lifecycle;
+pub use project_lifecycle::ProjectReset;
 mod profile;
 mod projects;
 mod scope;
 mod sessions;
+mod user_directory;
 
 use crate::{Postgres, session_crypto::SessionCrypto};
 use nexofolio_access_contracts::UserProfile;

@@ -7,6 +7,7 @@ use nexofolio_observe_adapter::PostgresObserve;
 
 /// One lazy pool per module schema, all on the same database.
 pub struct Databases {
+    pub audit: nexofolio_audit_adapter::PostgresAudit,
     pub access: Postgres,
     pub intake: PostgresLedger,
     pub knowledge: PostgresKnowledge,
@@ -21,6 +22,7 @@ impl Databases {
             config.database_timeout,
         );
         Ok(Self {
+            audit: nexofolio_audit_adapter::PostgresAudit::new(url)?,
             access: Postgres::new(url, max, timeout)?,
             intake: PostgresLedger::new(url, max, timeout)?,
             knowledge: PostgresKnowledge::new(url, max, timeout)?,
@@ -30,6 +32,7 @@ impl Databases {
 
     /// Explicit administration only; the api never migrates automatically.
     pub async fn migrate(&self) -> Result<()> {
+        self.audit.migrate().await?;
         self.access.migrate().await?;
         self.intake.migrate().await?;
         self.knowledge.migrate().await?;
@@ -37,6 +40,7 @@ impl Databases {
     }
 
     pub async fn close(&self) {
+        self.audit.close().await;
         self.access.close().await;
         self.intake.close().await;
         self.knowledge.close().await;

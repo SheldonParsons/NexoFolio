@@ -58,6 +58,11 @@ fn catalogue(project: ProjectId, snapshot: &KnowledgeSnapshot) -> Catalogue {
 }
 #[async_trait]
 impl KnowledgeReader for CandidateSession {
+    async fn lifecycle(&self, project: ProjectId) -> KnowledgeResult<DocumentLifecycle> {
+        self.check_project(project)?;
+        Ok(self.view.lock().expect("candidate view").lifecycle.clone())
+    }
+
     async fn catalogue(&self, project: ProjectId) -> KnowledgeResult<Catalogue> {
         self.check_project(project)?;
         Ok(catalogue(

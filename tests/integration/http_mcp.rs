@@ -186,6 +186,13 @@ async fn actual_http_mcp_initialize_and_empty_tool_list_with_test_only_identity(
         result["result"]["serverInfo"]["name"],
         "nexofolio-foundation"
     );
+    assert!(
+        result["result"]["instructions"]
+            .as_str()
+            .unwrap()
+            .contains("尚未装配知识导航工具"),
+        "an empty foundation service must explain unavailable navigation"
+    );
     let response = invoke(json!({"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}))
         .send()
         .await

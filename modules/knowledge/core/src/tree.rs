@@ -6,6 +6,22 @@ use nexofolio_common::FolderId;
 use nexofolio_contracts::knowledge::{Folder, KnowledgeError, KnowledgeResult, MAX_DEPTH};
 use nexofolio_knowledge_contracts::FolderRow;
 
+/// Only effective siblings share a naming namespace; history keeps its names.
+pub(crate) fn check_names<'a>(
+    folders: impl IntoIterator<Item = (Option<FolderId>, &'a str)>,
+) -> KnowledgeResult<()> {
+    let mut names = HashSet::new();
+    for (parent, name) in folders {
+        if !names.insert((parent, name.trim())) {
+            return Err(KnowledgeError::InvalidTree(format!(
+                "同一级有效目录中已存在名称“{}”",
+                name.trim()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Parent of every folder, for walking upwards.
 pub type Parents = HashMap<FolderId, Option<FolderId>>;
 

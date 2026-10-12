@@ -17,6 +17,8 @@ mod field_worker;
 mod fields;
 mod jobs;
 #[cfg(test)]
+mod lifecycle_tests;
+#[cfg(test)]
 mod model_benchmark_tests;
 #[cfg(test)]
 mod model_effort_benchmark_tests;
@@ -29,8 +31,12 @@ mod preparation_progress;
 #[cfg(test)]
 mod readonly_resume_tests;
 mod recovery;
+mod restart;
+#[cfg(test)]
+mod restart_tests;
 #[cfg(test)]
 mod resume_tests;
+mod resumption;
 mod review_run;
 #[cfg(test)]
 mod semantic_retry_tests;
@@ -72,6 +78,7 @@ pub(crate) struct Curation {
     frozen: Option<Arc<recovery::FrozenInput>>,
     resuming: bool,
     actor: CandidateActor,
+    audit: Option<crate::audit::Context>,
 }
 impl Curation {
     pub(crate) fn new(
@@ -95,6 +102,7 @@ impl Curation {
             frozen: None,
             resuming: false,
             actor: CandidateActor::Unknown,
+            audit: None,
         }
     }
 
@@ -107,6 +115,10 @@ impl Curation {
         self.idle_budget = idle;
         self
     }
+    pub(crate) fn with_audit(mut self, audit: Option<crate::audit::Context>) -> Self {
+        self.audit = audit;
+        self
+    }
     pub(crate) fn with_actor(mut self, actor: CandidateActor) -> Self {
         self.actor = actor;
         self
@@ -116,59 +128,31 @@ impl Curation {
         self.jobs.snapshot(project)
     }
 
-    pub(crate) async fn start(&self, project: ProjectId) -> Result<Progress, CurationError> {
-        self.start_target(project, None, None).await
+    pub(crate) fn forget_project(&self, project: ProjectId, expected: Option<uuid::Uuid>) {
+        self.jobs.forget(project, expected);
+    }
+    pub(crate) fn has_running_project(&self, project: ProjectId) -> bool {
+        self.jobs.snapshot(project).status == Status::Running
     }
 
-    pub(crate) async fn start_target(
-        &self,
-        project: ProjectId,
-        target: Option<EndpointId>,
-        parent: Option<uuid::Uuid>,
-    ) -> Result<Progress, CurationError> {
-        let summaries = self
-            .endpoints
-            .list(project)
-            .await
-            .map_err(|_| CurationError::Unavailable)?;
-        if target.is_some_and(|id| {
-            !summaries
-                .iter()
-                .any(|e| e.id == id && e.project_id == project)
-        }) {
-            return Err(CurationError::NotFound);
-        }
-        let existing = self.jobs.snapshot(project);
-        if existing.status == Status::Running && existing.target != target {
-            return Err(CurationError::Busy);
-        }
-        let (job, created) = self
-            .jobs
-            .start(project, if target.is_some() { 1 } else { summaries.len() });
-        if created {
-            job.update(|p| p.target = target);
-            let state = match self
-                .stage_run(project, target, parent, &summaries, &job)
-                .await
-            {
-                Ok(state) => state,
-                Err(error) => {
-                    job.update(|p| {
-                        p.status = Status::Failed;
-                        p.message = Some(error.to_string());
-                    });
-                    return Err(error);
-                }
-            };
-            spawn(state, project, summaries, job.clone());
-        }
-        Ok(job.snapshot())
+    pub(crate) async fn start(&self, project: ProjectId) -> Result<Progress, CurationError> {
+        self.start_target(project, None, None).await
     }
 }
 
 fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: Arc<Job>) {
     // The observer turns a worker panic into a failed run instead of a stuck spinner.
     tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        if let Some(audit) = &s.audit {
+            audit.record(
+                "operation",
+                "curation.running",
+                "RUNNING",
+                job.snapshot().candidate_id.map(|id| id.to_string()),
+                0,
+            );
+        }
         let progress = job.clone();
         let checkpoint = s.clone();
         let worker = tokio::spawn(async move {
@@ -187,6 +171,7 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 CandidateState::Ready
             }
             Ok(Err(error)) => {
+                let failure_code = error.diagnostic_code().to_owned();
                 let state = if matches!(error, CurationError::Unavailable) {
                     CandidateState::Interrupted
                 } else {
@@ -195,6 +180,7 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 job.update(|p| {
                     p.status = Status::Failed;
                     p.active.clear();
+                    p.failure_code = Some(failure_code);
                     p.message = Some(match error {
                         CurationError::Failed(message) => message,
                         _ => "整理暂时无法完成，已保存的候选内容保留，可补跑。".into(),
@@ -202,8 +188,16 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 });
                 state
             }
-            Err(_) => {
+            Err(error) => {
                 job.update(|p| {
+                    p.failure_code = Some(
+                        if error.is_panic() {
+                            "WORKER_PANIC"
+                        } else {
+                            "WORKER_CANCELLED"
+                        }
+                        .into(),
+                    );
                     p.status = Status::Failed;
                     p.active.clear();
                     p.message = Some("整理被中断，已保存批次保留，可补跑。".into());
@@ -249,6 +243,24 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 p.status = Status::Failed;
                 p.message = Some("结果保存暂时失败，已保存批次保留，请刷新或补跑".into());
             });
+        }
+        if let Some(audit) = &checkpoint.audit {
+            let progress = job.snapshot();
+            let successful = progress.status == Status::Done;
+            let code = if successful {
+                "READY"
+            } else if candidate_state == CandidateState::Interrupted {
+                "INTERRUPTED"
+            } else {
+                "PARTIAL_OR_SAVE_FAILED"
+            };
+            audit.record(
+                if successful { "operation" } else { "error" },
+                "curation.finished",
+                code,
+                progress.candidate_id.map(|id| id.to_string()),
+                started.elapsed().as_millis().min(u32::MAX as u128) as u32,
+            );
         }
     });
 }

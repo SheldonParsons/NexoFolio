@@ -33,7 +33,7 @@ fn page<T>(items: Vec<T>, total: i64, offset: u64, limit: u32) -> McpDiscoveryPa
 }
 
 async fn owner(tx: &mut Transaction<'_, Pg>, principal: &McpPrincipal) -> Result<String> {
-    sqlx::query_scalar("SELECT u.instance FROM mcp_tokens t JOIN users u ON u.id=t.user_id WHERE t.id=$1 AND u.id=$2 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()) AND u.enabled AND u.grants_synced")
+    sqlx::query_scalar("SELECT u.instance FROM mcp_tokens t JOIN project_access_principals u ON u.id=t.user_id WHERE t.id=$1 AND u.id=$2 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()) AND u.ready")
         .bind(uuid(principal.token_id)).bind(uuid(principal.user_id))
         .fetch_optional(&mut **tx).await.map_err(db_error)?.ok_or(Error::Unauthenticated)
 }
@@ -52,9 +52,9 @@ impl Postgres {
             .await
             .map_err(db_error)?;
         let instance = owner(&mut tx, principal).await?;
-        let total: i64 = sqlx::query_scalar("SELECT count(*) FROM projects p JOIN user_project_access a ON a.project_id=p.id WHERE a.user_id=$1 AND p.instance=$2")
+        let total: i64 = sqlx::query_scalar("SELECT count(*) FROM projects p JOIN effective_project_access a ON a.project_id=p.id WHERE a.user_id=$1 AND p.instance=$2")
             .bind(uuid(principal.user_id)).bind(&instance).fetch_one(&mut *tx).await.map_err(db_error)?;
-        let rows = sqlx::query("SELECT p.id,p.name,p.status FROM projects p JOIN user_project_access a ON a.project_id=p.id WHERE a.user_id=$1 AND p.instance=$2 ORDER BY p.id LIMIT $3 OFFSET $4")
+        let rows = sqlx::query("SELECT p.id,p.name,p.status FROM projects p JOIN effective_project_access a ON a.project_id=p.id WHERE a.user_id=$1 AND p.instance=$2 ORDER BY p.id LIMIT $3 OFFSET $4")
             .bind(uuid(principal.user_id)).bind(&instance).bind(i64::from(limit)).bind(skip)
             .fetch_all(&mut *tx).await.map_err(db_error)?;
         let items = rows
@@ -90,7 +90,7 @@ impl Postgres {
             .await
             .map_err(db_error)?;
         let instance = owner(&mut tx, principal).await?;
-        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects p JOIN user_project_access a ON a.project_id=p.id WHERE p.id=$1 AND a.user_id=$2 AND p.instance=$3)")
+        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM projects p JOIN effective_project_access a ON a.project_id=p.id WHERE p.id=$1 AND a.user_id=$2 AND p.instance=$3)")
             .bind(uuid(project)).bind(uuid(principal.user_id)).bind(&instance)
             .fetch_one(&mut *tx).await.map_err(db_error)?;
         if !allowed {

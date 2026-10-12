@@ -21,6 +21,8 @@ pub(crate) enum Status {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Progress {
+    pub lifecycle_version: u64,
+    pub lifecycle_stale: bool,
     pub candidate_id: Option<uuid::Uuid>,
     pub candidate_state: Option<nexofolio_contracts::knowledge::CandidateState>,
     pub attempts: usize,
@@ -36,6 +38,7 @@ pub(crate) struct Progress {
     pub heartbeat_at: Option<DateTime<Utc>>,
     pub preparation: Option<super::preparation_progress::PreparationProgress>,
     pub resume_available: Option<bool>,
+    pub recovery_blocked: bool,
     pub status: Status,
     pub stage: Option<Pass>,
     pub completed: usize,
@@ -69,11 +72,14 @@ pub(crate) struct Progress {
     pub active: Vec<ActiveEndpoint>,
     pub issues: Vec<Issue>,
     pub message: Option<String>,
+    pub failure_code: Option<String>,
 }
 
 impl Default for Progress {
     fn default() -> Self {
         Self {
+            lifecycle_version: 0,
+            lifecycle_stale: false,
             candidate_id: None,
             candidate_state: None,
             attempts: 1,
@@ -89,6 +95,7 @@ impl Default for Progress {
             heartbeat_at: None,
             preparation: None,
             resume_available: None,
+            recovery_blocked: false,
             status: Status::Idle,
             stage: None,
             completed: 0,
@@ -120,6 +127,7 @@ impl Default for Progress {
             active: vec![],
             issues: vec![],
             message: None,
+            failure_code: None,
         }
     }
 }
@@ -192,6 +200,16 @@ impl Job {
 }
 
 impl Jobs {
+    pub(super) fn forget(&self, project: ProjectId, expected: Option<uuid::Uuid>) {
+        let mut jobs = self.0.lock().expect("jobs");
+        if jobs
+            .get(&project)
+            .is_some_and(|job| Some(job.run_id) == expected)
+            && let Some(job) = jobs.remove(&project)
+        {
+            job.cancel();
+        }
+    }
     pub(super) fn cancel(&self, project: ProjectId) {
         if let Some(job) = self.0.lock().expect("jobs").get(&project) {
             job.cancel();
@@ -235,6 +253,23 @@ impl Jobs {
         });
         jobs.insert(project, job.clone());
         (job, true)
+    }
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+    #[test]
+    fn reset_does_not_cancel_a_new_run_started_after_commit() {
+        let jobs = Jobs::default();
+        let project = ProjectId::new();
+        let (old, _) = jobs.start(project, 1);
+        old.update(|progress| progress.status = Status::Done);
+        let (new, _) = jobs.start(project, 1);
+        jobs.forget(project, Some(old.run_id));
+        assert_eq!(jobs.snapshot(project).run_id, Some(new.run_id));
+        jobs.forget(project, Some(new.run_id));
+        assert_eq!(jobs.snapshot(project).status, Status::Idle);
     }
 }
 

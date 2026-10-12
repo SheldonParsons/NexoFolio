@@ -121,7 +121,7 @@ impl IntoResponse for AccessError {
                 "Bearer realm=\"nexofolio\"".parse().unwrap(),
             );
         }
-        response
+        crate::audit::http::problem(response, code)
     }
 }
 
@@ -149,7 +149,7 @@ pub fn routes(state: AccessHttp) -> Router {
         .layer(DefaultBodyLimit::max(16 * 1024))
         .layer(middleware::from_fn(no_store))
 }
-pub(super) async fn no_store(req: Request, next: Next) -> Response {
+pub(crate) async fn no_store(req: Request, next: Next) -> Response {
     let mut r = next.run(req).await;
     r.headers_mut()
         .insert(header::CACHE_CONTROL, "no-store".parse().unwrap());
@@ -157,6 +157,7 @@ pub(super) async fn no_store(req: Request, next: Next) -> Response {
 }
 async fn login(
     State(s): State<AccessHttp>,
+    audit: Option<Extension<crate::audit::Context>>,
     Json(body): Json<LoginBody>,
 ) -> Result<Response, AccessError> {
     let password = Secret::new(body.password);
@@ -180,37 +181,62 @@ async fn login(
         .login
         .login(LoginCredentials { account, password })
         .await?;
-    Ok(Json(serde_json::json!({"user":result.session.user,"token":result.session.token.expose(),"token_type":"Bearer","expires_at":result.session.expires_at,"token_reused":result.session.reused,"project_sync":result.sync})).into_response())
+    if let Some(Extension(audit)) = audit {
+        audit.identify(result.session.user.id);
+    }
+    let capabilities = user_capabilities(&result.session.user);
+    Ok(Json(serde_json::json!({"user":result.session.user,"capabilities":capabilities,"token":result.session.token.expose(),"token_type":"Bearer","expires_at":result.session.expires_at,"token_reused":result.session.reused,"project_sync":result.sync})).into_response())
 }
 pub(crate) async fn session_auth(
     State(sessions): State<Arc<dyn Sessions>>,
     mut req: Request,
     next: Next,
 ) -> Result<Response, AccessError> {
-    let mut headers = req.headers().get_all(header::AUTHORIZATION).iter();
+    let principal = authenticate(sessions.as_ref(), req.headers()).await?;
+    if let Some(audit) = req.extensions().get::<crate::audit::Context>() {
+        audit.identify(principal.user_id);
+    }
+    req.extensions_mut().insert(principal);
+    Ok(next.run(req).await)
+}
+pub(crate) async fn authenticate(
+    sessions: &dyn Sessions,
+    request_headers: &axum::http::HeaderMap,
+) -> Result<SessionPrincipal, Error> {
+    let mut headers = request_headers.get_all(header::AUTHORIZATION).iter();
     let value = headers
         .next()
         .and_then(|x| x.to_str().ok())
         .ok_or(Error::Unauthenticated)?;
     if headers.next().is_some() {
-        return Err(Error::Unauthenticated.into());
+        return Err(Error::Unauthenticated);
     }
     let (scheme, value) = value.split_once(' ').ok_or(Error::Unauthenticated)?;
     if !scheme.eq_ignore_ascii_case("bearer")
         || value.len() > 256
         || value.bytes().any(|b| b.is_ascii_whitespace())
     {
-        return Err(Error::Unauthenticated.into());
+        return Err(Error::Unauthenticated);
     }
-    let principal = sessions.verify_session(&Secret::new(value)).await?;
-    req.extensions_mut().insert(principal);
-    Ok(next.run(req).await)
+    sessions.verify_session(&Secret::new(value)).await
 }
 async fn me(
     State(s): State<AccessHttp>,
     Extension(p): Extension<SessionPrincipal>,
 ) -> Result<Json<serde_json::Value>, AccessError> {
-    Ok(Json(serde_json::json!({"user":s.sessions.me(&p).await?})))
+    let user = s.sessions.me(&p).await?;
+    let capabilities = user_capabilities(&user);
+    Ok(Json(
+        serde_json::json!({"user":user,"capabilities":capabilities}),
+    ))
+}
+
+fn user_capabilities(user: &nexofolio_access_contracts::UserProfile) -> serde_json::Value {
+    if nexofolio_access_contracts::can_manage_projects(&user.account, user.enabled) {
+        serde_json::json!({"manage_projects":true})
+    } else {
+        serde_json::json!({})
+    }
 }
 async fn projects(
     State(s): State<AccessHttp>,

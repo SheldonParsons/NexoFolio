@@ -275,8 +275,8 @@ async fn actual_mcp_navigation_with_postgres_saved_knowledge_and_project_grants(
         .json()
         .await
         .unwrap();
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 7);
-    let search:Value=invoke(3,"tools/call",json!({"name":"search_interfaces","arguments":{"project_id":project,"query":"创建并提交技术咨询","limit":1}}))
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 11);
+    let search:Value=invoke(3,"tools/call",json!({"name":"search_interfaces","arguments":{"project_id":project,"query":"保存并提交技术咨询","limit":1}}))
         .send().await.unwrap().json().await.unwrap();
     assert_eq!(
         search["result"]["structuredContent"]["items"][0]["endpoint_id"],

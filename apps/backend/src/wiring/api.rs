@@ -17,10 +17,31 @@ use std::sync::Arc;
 /// addresses. All of it needs
 /// access configured, since collect targets and sites belong to its projects.
 pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::Router>> {
+    Ok(assemble_api(config, databases)?.map(|(router, _)| router))
+}
+
+/// Only the serving API starts recovery. Admin/preflight construction stays idle.
+pub fn build_api_with_recovery(
+    config: &Config,
+    databases: &Databases,
+    shutdown: tokio_util::sync::CancellationToken,
+) -> Result<(Option<axum::Router>, Option<tokio::task::JoinHandle<()>>)> {
+    let Some((router, curation)) = assemble_api(config, databases)? else {
+        return Ok((None, None));
+    };
+    let recovery = tokio::spawn(curation.recover_after_restart(shutdown));
+    Ok((Some(router), Some(recovery)))
+}
+
+fn assemble_api(
+    config: &Config,
+    databases: &Databases,
+) -> Result<Option<(axum::Router, Curation)>> {
     let (Some(base), Some(key)) = (&config.zentao_base_url, &config.session_key) else {
         return Ok(None);
     };
     let provider = Arc::new(Zentao::new(base)?);
+    let document_instance = provider.instance();
     let store = Arc::new(PostgresAccess::new(databases.access.clone(), key)?);
     let emergency = Arc::new(ConfiguredEmergencyPassword::new(
         config.emergency_password_hash.as_ref(),
@@ -42,7 +63,8 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
         Arc::new(databases.intake.clone()),
         Arc::new(SystemClock),
         config.collect_limits,
-    );
+    )
+    .with_project_lifecycle(store.clone());
 
     // Curate: LLM-powered describe and organize passes
     let completions: Arc<dyn Completions> = Arc::new(
@@ -90,40 +112,96 @@ pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::
     )
     .with_idle_timeout(config.curation_idle_timeout);
 
+    let administration = Arc::new(crate::runtime::project_management::ProjectAdministration {
+        access: store.clone(),
+        knowledge: databases.knowledge.clone(),
+        observe: databases.observe.clone(),
+        curation: curation.clone(),
+    });
     let access = AccessHttp::new(login, store.clone(), store.clone(), store.clone());
-    Ok(Some(
-        crate::http::access::routes(access)
-            .merge(crate::http::mcp_tokens::routes(
-                store.clone(),
-                Arc::new(databases.access.clone()),
-            ))
-            .merge(sites::routes(store.clone(), store.clone(), store.clone()))
-            .merge(crate::http::profile::routes(
-                store.clone(),
-                Arc::new(nexofolio_access::ProfileService::new(store.clone())),
-            ))
-            .merge(endpoints::routes(
-                store.clone(),
-                store.clone(),
-                observe.clone(),
-                knowledge_svc.clone(),
-            ))
-            .merge(knowledge::routes(
-                store.clone(),
-                store.clone(),
-                knowledge_svc.clone(),
-                observe.clone(),
-            ))
-            .merge(curate::routes(store.clone(), store.clone(), curation))
-            .merge(crate::http::curation_review::routes(
-                store.clone(),
-                store.clone(),
-                knowledge_svc,
-                store.clone(),
-            ))
-            .merge(service_addresses::routes(store.clone(), store, observe))
-            .merge(collect::routes(Arc::new(intake))),
-    ))
+    let router = crate::http::access::routes(access)
+        .merge(crate::http::public_documents::routes(
+            document_instance,
+            Arc::new(databases.access.clone()),
+            observe.clone(),
+            knowledge_svc.clone(),
+        ))
+        .merge(crate::audit::console::routes(
+            crate::audit::console::Services {
+                sessions: store.clone(),
+                projects: store.clone(),
+                actors: store.clone(),
+                store: Arc::new(databases.audit.clone()),
+                candidates: knowledge_svc.clone(),
+                knowledge: knowledge_svc.clone(),
+                endpoints: observe.clone(),
+            },
+        ))
+        .merge(crate::audit::routes::routes(
+            store.clone(),
+            Arc::new(databases.audit.clone()),
+            Some(store.clone()),
+        ))
+        .merge(crate::http::mcp_tokens::routes(
+            store.clone(),
+            Arc::new(databases.access.clone()),
+        ))
+        .merge(crate::http::project_management::routes(
+            store.clone(),
+            administration,
+        ))
+        .merge(crate::http::user_management::routes(
+            store.clone(),
+            store.clone(),
+        ))
+        .merge(sites::routes(store.clone(), store.clone(), store.clone()))
+        .merge(crate::http::profile::routes(
+            store.clone(),
+            Arc::new(nexofolio_access::ProfileService::new(store.clone())),
+        ))
+        .merge(endpoints::routes(
+            store.clone(),
+            store.clone(),
+            observe.clone(),
+            knowledge_svc.clone(),
+        ))
+        .merge(crate::http::document_lifecycle::routes(
+            store.clone(),
+            store.clone(),
+            knowledge_svc.clone(),
+            knowledge_svc.clone(),
+        ))
+        .merge(knowledge::routes(
+            store.clone(),
+            store.clone(),
+            knowledge_svc.clone(),
+            observe.clone(),
+        ))
+        .merge(curate::routes(
+            store.clone(),
+            store.clone(),
+            curation.clone(),
+        ))
+        .merge(crate::http::curation_review::routes(
+            store.clone(),
+            store.clone(),
+            knowledge_svc,
+            store.clone(),
+        ))
+        .merge(service_addresses::routes(
+            store.clone(),
+            store.clone(),
+            observe,
+        ))
+        .merge(collect::routes(Arc::new(intake)))
+        .layer(axum::middleware::from_fn_with_state(
+            crate::http::project_writes::ProjectWriteGate {
+                sessions: store.clone(),
+                lifecycle: store,
+            },
+            crate::http::project_writes::protect,
+        ));
+    Ok(Some((router, curation)))
 }
 
 /// MCP composes saved knowledge and access ports, independently of business model configuration.

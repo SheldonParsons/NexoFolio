@@ -239,6 +239,7 @@ pub(super) fn fixture(fail_second: bool) -> (Curation, ProjectId, Arc<Memory>, A
         frozen: None,
         resuming: false,
         actor: nexofolio_contracts::knowledge::CandidateActor::Unknown,
+        audit: None,
     };
     (state, project, memory, model)
 }

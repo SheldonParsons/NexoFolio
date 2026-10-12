@@ -143,9 +143,19 @@ async fn facts(
         .map_err(AccessError::from)?;
     let facts = facts_of(&s, project, endpoint).await?;
     let known = s.knowledge.endpoint(facts.summary.id).await.ok();
+    let lifecycle = s
+        .knowledge
+        .lifecycle(project)
+        .await
+        .map_err(|_| EndpointsError::Unavailable)?;
+    let retired_source_count = known
+        .as_ref()
+        .map_or(0, |k| lifecycle.retired_source_count(k));
     Ok(Json(json!({
         "facts": facts,
-        "knowledge": known
+        "knowledge": known,
+        "lifecycle": lifecycle,
+        "retired_source_count": retired_source_count
     })))
 }
 

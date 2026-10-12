@@ -20,6 +20,7 @@ pub mod feed;
 pub mod field_values;
 pub mod knowledge;
 pub mod observation;
+pub mod project_lifecycle;
 pub mod request;
 pub mod scope;
 

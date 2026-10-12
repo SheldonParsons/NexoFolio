@@ -84,6 +84,11 @@ impl IntoResponse for ReviewError {
             KnowledgeError::NoSuchCandidate => {
                 (StatusCode::NOT_FOUND, "NOT_FOUND", "整理结果不存在")
             }
+            KnowledgeError::LifecycleStale => (
+                StatusCode::CONFLICT,
+                "LIFECYCLE_STALE",
+                "废弃状态已变化，此结果保留但不能应用；请开始新一轮整理",
+            ),
             KnowledgeError::CandidateStale => (
                 StatusCode::CONFLICT,
                 "CANDIDATE_STALE",
@@ -110,11 +115,14 @@ impl IntoResponse for ReviewError {
                 "候选结果未通过知识校验，未应用任何变更",
             ),
         };
-        (
-            status,
-            Json(json!({"error":{"code":code,"message":message}})),
+        crate::audit::http::problem(
+            (
+                status,
+                Json(json!({"error":{"code":code,"message":message}})),
+            )
+                .into_response(),
+            code,
         )
-            .into_response()
     }
 }
 async fn authorize(

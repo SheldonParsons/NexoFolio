@@ -10,6 +10,16 @@ impl Curation {
         summaries: &[nexofolio_contracts::endpoint::EndpointSummary],
         job: &super::jobs::Job,
     ) -> Result<(), CurationError> {
+        if summaries.is_empty() {
+            // Empty interface knowledge is valid. Unselected directory content
+            // (especially manual introductions) retains its independent lifecycle.
+            let folders = self.reader.catalogue(project).await?.folders.len();
+            job.update(|p| {
+                p.folders_saved = Some(folders);
+                p.directory_completed = true;
+            });
+            return Ok(());
+        }
         let notes = self.reader.notes(project).await?;
         let catalog = self.reader.catalogue(project).await?;
         let mut placements = Vec::new();

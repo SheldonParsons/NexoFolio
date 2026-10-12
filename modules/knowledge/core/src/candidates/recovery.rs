@@ -7,6 +7,28 @@ use nexofolio_knowledge_contracts::{KnowledgeStore, KnowledgeTx};
 use serde_json::Value;
 
 pub(super) const LEASE_SECONDS: i64 = 120;
+pub(super) fn claim(
+    candidate: &mut Candidate,
+    owner: uuid::Uuid,
+    actor: CandidateActor,
+    now: chrono::DateTime<chrono::Utc>,
+) {
+    for batch in &mut candidate.batches {
+        if batch.state == RoundState::Running {
+            batch.state = RoundState::Failed;
+        }
+    }
+    candidate
+        .operations
+        .push(CandidateOperation::new(CandidateAction::Resume, actor, now));
+    candidate.state = CandidateState::Running;
+    if !candidate.progress.is_object() {
+        candidate.progress = serde_json::json!({});
+    }
+    candidate.progress["run_id"] = serde_json::json!(owner);
+    candidate.progress["recovery_blocked"] = serde_json::json!(false);
+    candidate.updated_at = now;
+}
 pub(super) fn owned(candidate: &Candidate, owner: Option<uuid::Uuid>) -> KnowledgeResult<()> {
     let expected = candidate
         .progress
@@ -62,6 +84,9 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             .map(|e| e.id)
             .collect();
         let base = snapshot::capture(tx.as_mut(), project, endpoints).await?;
+        if base.lifecycle.version != candidate.base.lifecycle.version {
+            return Err(KnowledgeError::LifecycleStale);
+        }
         if snapshot::hash(&base) != candidate.base_hash {
             return Err(KnowledgeError::CandidateStale);
         }
@@ -73,20 +98,8 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             return Err(KnowledgeError::CandidateStale);
         }
         candidate.execution_input = Some(input);
-        // Close old batches: a late result from an obsolete worker cannot append to them.
-        for batch in &mut candidate.batches {
-            if batch.state == RoundState::Running {
-                batch.state = RoundState::Failed;
-            }
-        }
-        candidate.operations.push(CandidateOperation::new(
-            CandidateAction::Resume,
-            actor,
-            self.clock.now(),
-        ));
-        candidate.state = CandidateState::Running;
-        candidate.progress["run_id"] = serde_json::json!(owner);
-        candidate.updated_at = self.clock.now();
+        // Close old batches and fence late results from the previous worker.
+        claim(&mut candidate, owner, actor, self.clock.now());
         tx.put_candidate(&candidate).await.map_err(store_error)?;
         tx.commit().await.map_err(store_error)?;
         Ok(candidate)

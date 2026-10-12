@@ -29,6 +29,10 @@ fn candidate(row: &PgRow) -> StoreResult<Candidate> {
 }
 fn summary(row: &PgRow) -> StoreResult<CandidateSummary> {
     let mut progress: serde_json::Value = row.get("progress");
+    if !progress.is_object() {
+        progress = serde_json::json!({});
+    }
+    progress["lifecycle_version"] = row.get::<serde_json::Value, _>("lifecycle_version");
     if progress.is_object() {
         if row.get::<&str, _>("state") == "running" {
             progress["heartbeat_at"] =
@@ -39,6 +43,10 @@ fn summary(row: &PgRow) -> StoreResult<CandidateSummary> {
                 row.get::<&str, _>("state"),
                 "running" | "partial" | "interrupted"
             ) && row.get::<bool, _>("input_frozen")
+                && progress
+                    .get("recovery_blocked")
+                    .and_then(serde_json::Value::as_bool)
+                    != Some(true)
         );
     }
     Ok(CandidateSummary {
@@ -53,6 +61,28 @@ fn summary(row: &PgRow) -> StoreResult<CandidateSummary> {
     })
 }
 impl PostgresTx {
+    pub(super) async fn db_recovery_candidates(
+        &mut self,
+        before: chrono::DateTime<chrono::Utc>,
+        after: Option<uuid::Uuid>,
+        limit: usize,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
+        let rows = sqlx::query("SELECT id,project_id FROM candidates WHERE state='running' AND updated_at<=$1 AND ($2::uuid IS NULL OR id>$2) ORDER BY id LIMIT $3")
+            .bind(before)
+            .bind(after)
+            .bind(limit as i64)
+            .fetch_all(&mut *self.tx)
+            .await
+            .map_err(unavailable)?;
+        Ok(rows
+            .iter()
+            .map(|row| nexofolio_contracts::knowledge::CandidateRecovery {
+                id: row.get("id"),
+                project_id: id(row.get("project_id")),
+            })
+            .collect())
+    }
+
     pub(super) async fn db_candidate_operations(
         &mut self,
         project: ProjectId,
@@ -78,7 +108,7 @@ impl PostgresTx {
         &mut self,
         project: ProjectId,
     ) -> StoreResult<Option<CandidateSummary>> {
-        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 AND state='running' ORDER BY created_at LIMIT 1")
+        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 AND state='running' ORDER BY created_at LIMIT 1")
             .bind(uuid(project)).fetch_optional(&mut *self.tx).await.map_err(unavailable)?;
         row.as_ref().map(summary).transpose()
     }
@@ -183,7 +213,7 @@ impl PostgresTx {
         project: ProjectId,
         limit: usize,
     ) -> StoreResult<Vec<CandidateSummary>> {
-        let rows = sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 ORDER BY created_at DESC LIMIT $2")
+        let rows = sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 ORDER BY created_at DESC LIMIT $2")
             .bind(uuid(project)).bind(limit as i64).fetch_all(&mut *self.tx).await.map_err(unavailable)?;
         rows.iter().map(summary).collect()
     }
@@ -203,7 +233,7 @@ impl PostgresTx {
                     WHEN $2 AND state='applied' THEN 2
                     WHEN $2 AND state='discarded' THEN 3 ELSE 4 END,
                     created_at DESC,id DESC LIMIT 1)
-            SELECT id,project_id,target,state,created_at,updated_at,coalesce(execution_input->>'version'='2',false) AS input_frozen,
+            SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,
                 (CASE WHEN jsonb_typeof(progress)='object' THEN progress ELSE '{}'::jsonb END)
                 || jsonb_build_object('folders_saved', coalesce(nullif(progress->'folders_saved','null'::jsonb),
                     to_jsonb(jsonb_array_length(view->'folders')))) AS progress,

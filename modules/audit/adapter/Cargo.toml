@@ -1,0 +1,18 @@
+[package]
+name = "nexofolio-audit-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+nexofolio-common.workspace = true
+nexofolio-audit-contracts.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

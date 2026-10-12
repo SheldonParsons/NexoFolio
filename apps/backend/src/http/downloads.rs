@@ -1,5 +1,6 @@
-//! Public release metadata. No project, session, database, or binary proxy dependency.
+//! Public release metadata and stable download redirects. No session, database, or binary proxy.
 mod manifests;
+mod redirects;
 #[cfg(test)]
 mod tests;
 
@@ -269,11 +270,15 @@ impl DownloadService {
         }
     }
 
-    async fn get(&self, channel: DesktopChannel) -> Downloads {
-        let sources = match channel {
+    fn desktop_sources(&self, channel: DesktopChannel) -> &[Arc<Source<DesktopRelease>>; 3] {
+        match channel {
             DesktopChannel::Internal => &self.internal,
             DesktopChannel::Public => &self.public,
-        };
+        }
+    }
+
+    async fn get(&self, channel: DesktopChannel) -> Downloads {
+        let sources = self.desktop_sources(channel);
         let (fetcher, windows, arm, intel) = tokio::join!(
             self.fetcher.get(),
             sources[0].get(),
@@ -324,6 +329,11 @@ async fn downloads(
 fn routes_with(service: DownloadService) -> Router {
     Router::new()
         .route("/v1/downloads", get(downloads))
+        .route("/v1/downloads/fetcher/latest", get(redirects::fetcher))
+        .route(
+            "/v1/downloads/asynctest/{channel}/{platform}/latest",
+            get(redirects::desktop),
+        )
         .with_state(Arc::new(service))
 }
 

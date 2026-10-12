@@ -12,7 +12,7 @@ use nexofolio_knowledge_contracts::{
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 
-const PROJECT_LOCK: i32 = 0x6b6e_0001;
+use super::PROJECT_LOCK;
 
 pub(super) struct PostgresTx {
     pub(super) tx: Transaction<'static, Postgres>,
@@ -20,6 +20,29 @@ pub(super) struct PostgresTx {
 
 #[async_trait]
 impl KnowledgeTx for PostgresTx {
+    async fn lifecycle(
+        &mut self,
+        project: ProjectId,
+    ) -> StoreResult<nexofolio_contracts::knowledge::DocumentLifecycle> {
+        self.db_lifecycle(project).await
+    }
+    async fn put_lifecycle(
+        &mut self,
+        project: ProjectId,
+        state: &nexofolio_contracts::knowledge::DocumentLifecycle,
+    ) -> StoreResult<()> {
+        self.db_put_lifecycle(project, state).await
+    }
+
+    async fn recovery_candidates(
+        &mut self,
+        before: DateTime<Utc>,
+        after: Option<uuid::Uuid>,
+        limit: usize,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
+        self.db_recovery_candidates(before, after, limit).await
+    }
+
     async fn value_archive(
         &mut self,
         project: ProjectId,
@@ -81,6 +104,13 @@ impl KnowledgeTx for PostgresTx {
         id: uuid::Uuid,
     ) -> StoreResult<Option<nexofolio_contracts::knowledge::Candidate>> {
         self.db_candidate(project, id).await
+    }
+    async fn candidate_diagnostics(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateDiagnostics>> {
+        self.db_candidate_diagnostics(project, id).await
     }
     async fn candidate_projection(
         &mut self,
@@ -225,6 +255,10 @@ impl KnowledgeTx for PostgresTx {
 
     async fn field_notes(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FieldNote>> {
         self.db_field_notes(endpoint).await
+    }
+
+    async fn project_field_notes(&mut self, project: ProjectId) -> StoreResult<Vec<FieldNote>> {
+        self.db_project_field_notes(project).await
     }
 
     async fn put_field_note(&mut self, project: ProjectId, note: &FieldNote) -> StoreResult<()> {

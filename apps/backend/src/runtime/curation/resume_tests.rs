@@ -11,9 +11,9 @@ use std::sync::{
     Mutex,
     atomic::{AtomicBool, Ordering},
 };
-struct Model {
-    fail: AtomicBool,
-    paths: Mutex<Vec<Vec<String>>>,
+pub(super) struct Model {
+    pub(super) fail: AtomicBool,
+    pub(super) paths: Mutex<Vec<Vec<String>>>,
 }
 #[async_trait]
 impl Completions for Model {

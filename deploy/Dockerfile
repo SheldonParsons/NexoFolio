@@ -14,8 +14,8 @@ COPY modules ./modules
 RUN cargo build --locked --release -p nexofolio-backend --bins
 
 FROM ${RUNTIME_IMAGE} AS runtime
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl libgcc-s1 \
+RUN apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends ca-certificates curl libgcc-s1 \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 nexofolio \
     && useradd --uid 10001 --gid 10001 --no-create-home nexofolio

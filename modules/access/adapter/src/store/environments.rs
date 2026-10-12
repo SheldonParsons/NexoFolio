@@ -87,7 +87,7 @@ impl Postgres {
     }
 }
 
-/// Holds the user and re-checks the grant inside the writing transaction.
+/// Holds the user and re-checks effective access inside the writing transaction.
 async fn lock_environment_access(
     tx: &mut Transaction<'_, Pg>,
     p: &SessionPrincipal,
@@ -103,7 +103,7 @@ async fn lock_environment_access(
     if user.is_none() {
         return Err(Error::Unauthenticated);
     }
-    let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM user_project_access a JOIN projects p ON a.project_id=p.id WHERE a.user_id=$1 AND a.project_id=$2 AND p.instance=$3)").bind(uuid(p.user_id)).bind(uuid(project)).bind(&p.instance).fetch_one(&mut **tx).await.map_err(db_error)?;
+    let allowed:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM effective_project_access a JOIN projects p ON a.project_id=p.id WHERE a.user_id=$1 AND a.project_id=$2 AND p.instance=$3)").bind(uuid(p.user_id)).bind(uuid(project)).bind(&p.instance).fetch_one(&mut **tx).await.map_err(db_error)?;
     if !allowed {
         return Err(Error::Forbidden);
     }

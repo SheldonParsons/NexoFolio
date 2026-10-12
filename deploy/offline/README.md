@@ -136,6 +136,34 @@ bash update-backend.sh status
 配置变化会触发同一版本重新部署。已部署后的项目名、数据库卷、PostgreSQL 镜像/镜像 ID、数据库账号配置不可通过普通更新替换，数据库升级需单独安排。
 会话密钥持续保留，版本更新不重新生成。
 
+### 含整理自动恢复能力的升级
+
+不要在升级前点击“停止本轮”、废弃候选或手动修改候选状态。正常执行更新脚本停止/替换 API 即可；自动恢复只接管仍为 `running` 且 120 秒执行租约已过期的候选。
+API 启动立即检查，随后每 20 秒扫描。配置检查和 `nexofolio-admin migrate` 不启动恢复器；脚本仍先备份和迁移，再启动新版 API。
+
+升级前可执行下面的只读查询，只显示状态元数据，不输出冻结内容或凭据：
+
+```bash
+docker exec nexofolio-server-db-1 psql -X -U nexofolio -d nexofolio -P pager=off -c "
+SELECT id, project_id, state,
+       coalesce(execution_input->>'version'='2',false) AS input_v2,
+       round(extract(epoch FROM now()-updated_at)) AS heartbeat_age_seconds
+FROM knowledge.candidates WHERE state='running'
+ORDER BY updated_at LIMIT 20;"
+```
+
+`input_v2=true` 只是兼容前提，恢复时还会核对完整结构、正式基线和租约。没有完整输入、格式不兼容或基线变化时会保留结果并明确阻断，不会自动另开一轮。
+手动停止、`partial/interrupted`、已完成、应用或废弃的候选不会自动启动。已保存结果复用，未保存的模型批次可能重跑。
+
+更新后查看系统接管或失败事件：
+
+```bash
+docker logs --since 10m nexofolio-server-api-1 2>&1 | grep -E 'api_started|curation_auto_'
+```
+
+`curation_auto_recovered` 表示同一候选已被接管并开始续跑，不代表整轮完成。若启动时租约还未过期，需要等待剩余租约和后续扫描；数据库或模型服务异常也会影响恢复时间。
+当前没有 `running` 任务时，没有自动恢复日志是正常现象，不要为验证新建付费整理任务。
+
 日志中的工具原始输出默认不显示，避免凭据或服务错误详情外泄。配置检查或迁移失败时仅输出退出码、固定错误类别和已知配置项名称，不打印配置值。遇到失败先用 `status` 查看状态。
 `backups/` 保存受限数据库备份，`configs/` 保存受限环境快照，`state.tsv` 保存成功及未完成部署记录。
 不要上传或公开这些目录，也不要删除仍用于恢复的文件。

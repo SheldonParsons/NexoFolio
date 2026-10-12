@@ -287,9 +287,25 @@ pub enum EndpointError {
     Unavailable,
 }
 
+/// Identity-only projection, without structures, samples, or captured values.
+#[derive(Debug, Clone)]
+pub struct EndpointIdentity {
+    pub id: EndpointId,
+    pub project_id: ProjectId,
+    pub aliases: Vec<EndpointId>,
+}
+
 /// Read model of endpoint facts. Implemented by observe.
 #[async_trait]
 pub trait EndpointReader: Send + Sync {
+    async fn identity(&self, id: EndpointId) -> Result<Option<EndpointIdentity>, EndpointError> {
+        Ok(self.get(id).await?.map(|f| EndpointIdentity {
+            id: f.summary.id,
+            project_id: f.summary.project_id,
+            aliases: f.aliases,
+        }))
+    }
+
     /// Every current endpoint of a project; aliases are not listed.
     async fn list(&self, project: ProjectId) -> Result<Vec<EndpointSummary>, EndpointError>;
 

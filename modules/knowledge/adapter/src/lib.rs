@@ -1,5 +1,6 @@
 //! Knowledge-owned persistence. The database pool stays private.
 mod postgres;
+mod project_reset;
 pub use postgres::PostgresKnowledge;
 
 /// Concrete persistence details cannot be reached from other crates.

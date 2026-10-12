@@ -23,6 +23,7 @@ use crate::{
 
 #[derive(Clone, Default)]
 struct State {
+    lifecycles: HashMap<ProjectId, nexofolio_contracts::knowledge::DocumentLifecycle>,
     value_archives:
         HashMap<(ProjectId, uuid::Uuid), nexofolio_contracts::field_values::FieldValueArchive>,
     candidates: HashMap<uuid::Uuid, nexofolio_contracts::knowledge::Candidate>,
@@ -121,6 +122,49 @@ struct InMemoryTx {
 
 #[async_trait]
 impl KnowledgeTx for InMemoryTx {
+    async fn lifecycle(
+        &mut self,
+        project: ProjectId,
+    ) -> StoreResult<nexofolio_contracts::knowledge::DocumentLifecycle> {
+        Ok(self
+            .working
+            .lifecycles
+            .get(&project)
+            .cloned()
+            .unwrap_or_default())
+    }
+    async fn put_lifecycle(
+        &mut self,
+        project: ProjectId,
+        state: &nexofolio_contracts::knowledge::DocumentLifecycle,
+    ) -> StoreResult<()> {
+        self.working.lifecycles.insert(project, state.clone());
+        Ok(())
+    }
+
+    async fn recovery_candidates(
+        &mut self,
+        before: DateTime<Utc>,
+        after: Option<uuid::Uuid>,
+        limit: usize,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
+        use nexofolio_contracts::knowledge::{CandidateRecovery, CandidateState};
+        let mut rows: Vec<_> = self
+            .working
+            .candidates
+            .values()
+            .filter(|c| c.state == CandidateState::Running && c.updated_at <= before)
+            .filter(|c| after.is_none_or(|id| c.id > id))
+            .map(|c| CandidateRecovery {
+                id: c.id,
+                project_id: c.project_id,
+            })
+            .collect();
+        rows.sort_by_key(|c| c.id);
+        rows.truncate(limit);
+        Ok(rows)
+    }
+
     async fn value_archive(
         &mut self,
         project: ProjectId,
@@ -417,6 +461,18 @@ impl KnowledgeTx for InMemoryTx {
             .collect();
         found.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(found)
+    }
+
+    async fn project_field_notes(&mut self, project: ProjectId) -> StoreResult<Vec<FieldNote>> {
+        let mut notes: Vec<_> = self
+            .working
+            .field_notes
+            .values()
+            .filter(|(p, _)| *p == project)
+            .map(|(_, n)| n.clone())
+            .collect();
+        notes.sort_by_key(|n| (n.endpoint.to_string(), n.path.clone()));
+        Ok(notes)
     }
 
     async fn put_field_note(&mut self, project: ProjectId, note: &FieldNote) -> StoreResult<()> {

@@ -4,13 +4,19 @@ pub mod curate;
 mod curation_actor;
 mod curation_operations;
 pub(crate) mod curation_review;
+pub mod document_lifecycle;
 pub mod downloads;
 pub mod endpoints;
 pub mod knowledge;
+mod management;
 pub mod mcp_tokens;
 pub(crate) mod profile;
+pub(crate) mod project_management;
+pub(crate) mod project_writes;
+pub mod public_documents;
 pub mod service_addresses;
 pub mod sites;
+pub(crate) mod user_management;
 use crate::{
     mcp::{KnowledgeMcp, Navigation, require_token},
     wiring::Config,
@@ -59,7 +65,12 @@ async fn ready(State(state): State<HealthState>) -> (StatusCode, Json<serde_json
 async fn identify(mut request: Request, next: Next) -> Response {
     let id = uuid::Uuid::new_v4().to_string();
     request.extensions_mut().insert(RequestId(id.clone()));
-    let mut response = next.run(request).await;
+    let audit = request.extensions().get::<crate::audit::Audit>().cloned();
+    let mut response = if let Some(audit) = audit {
+        crate::audit::observe(audit, request, next).await
+    } else {
+        next.run(request).await
+    };
     response.headers_mut().insert(
         "x-request-id",
         HeaderValue::from_str(&id).expect("UUID is a valid header"),
@@ -149,9 +160,12 @@ pub async fn serve(
     shutdown: CancellationToken,
     grace: Duration,
 ) -> io::Result<()> {
-    let serving = axum::serve(listener, router)
-        .with_graceful_shutdown(shutdown.clone().cancelled_owned())
-        .into_future();
+    let serving = axum::serve(
+        listener,
+        router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown.clone().cancelled_owned())
+    .into_future();
     tokio::pin!(serving);
     tokio::select! {
         result = &mut serving => result,

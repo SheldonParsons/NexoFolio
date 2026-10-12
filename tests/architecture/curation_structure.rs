@@ -80,6 +80,7 @@ fn curation_and_storage_files_remain_reviewable() {
         "modules/curate/core/src",
         "modules/knowledge/adapter/src",
         "apps/backend/src/runtime/curation",
+        "apps/backend/src/mcp",
     ] {
         let mut files = Vec::new();
         sources(&root.join(directory), &mut files);
@@ -91,6 +92,29 @@ fn curation_and_storage_files_remain_reviewable() {
             assert!(
                 lines <= 400,
                 "{} has {lines} lines; review responsibilities before increasing the limit",
+                file.display()
+            );
+        }
+    }
+}
+
+#[test]
+fn mcp_navigation_uses_read_ports_without_models_sql_or_writes() {
+    let mut files = vec![root().join("apps/backend/src/mcp/navigation.rs")];
+    sources(&root().join("apps/backend/src/mcp/navigation"), &mut files);
+    for file in files {
+        let source = fs::read_to_string(&file).unwrap();
+        for forbidden in [
+            "sqlx::",
+            "reqwest::",
+            "Completions",
+            "KnowledgeWriter",
+            ".complete(",
+            ".apply(",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{} crosses the read boundary: {forbidden}",
                 file.display()
             );
         }

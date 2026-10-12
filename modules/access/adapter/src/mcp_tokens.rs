@@ -20,7 +20,7 @@ fn uuid(id: impl std::fmt::Display) -> Uuid {
 #[async_trait]
 impl McpTokenVerifier for Postgres {
     async fn verify(&self, token: &Secret) -> Result<McpPrincipal> {
-        let row = sqlx::query("SELECT t.id,t.user_id FROM mcp_tokens t JOIN users u ON u.id=t.user_id WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()) AND u.enabled AND u.grants_synced")
+        let row = sqlx::query("SELECT t.id,t.user_id FROM mcp_tokens t JOIN project_access_principals u ON u.id=t.user_id WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()) AND u.ready")
             .bind(SessionCrypto::hash(token)).fetch_optional(&self.pool).await.map_err(db_error)?
             .ok_or(Error::Unauthenticated)?;
         Ok(McpPrincipal {
@@ -55,7 +55,7 @@ impl McpProjectAccess for Postgres {
         principal: &McpPrincipal,
         project: ProjectId,
     ) -> Result<()> {
-        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users u JOIN user_project_access a ON a.user_id=u.id JOIN projects p ON p.id=a.project_id AND p.instance=u.instance JOIN mcp_tokens t ON t.user_id=u.id WHERE u.id=$1 AND a.project_id=$2 AND t.id=$3 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()) AND u.enabled AND u.grants_synced)")
+        let allowed: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM effective_project_access a JOIN mcp_tokens t ON t.user_id=a.user_id WHERE a.user_id=$1 AND a.project_id=$2 AND t.id=$3 AND t.revoked_at IS NULL AND t.starts_at<=now() AND (t.expires_at IS NULL OR t.expires_at>now()))")
             .bind(uuid(principal.user_id)).bind(uuid(project)).bind(uuid(principal.token_id))
             .fetch_one(&self.pool).await.map_err(db_error)?;
         if allowed {
@@ -74,7 +74,7 @@ impl Postgres {
         }
         let secret = SessionCrypto::random_mcp_token();
         let id = TokenId::new();
-        let result = sqlx::query("INSERT INTO mcp_tokens(id,user_id,token_hash,expires_at) SELECT $1,id,$3,now()+($4*interval '1 day') FROM users WHERE id=$2 AND enabled AND grants_synced")
+        let result = sqlx::query("INSERT INTO mcp_tokens(id,user_id,token_hash,expires_at) SELECT $1,id,$3,now()+($4*interval '1 day') FROM project_access_principals WHERE id=$2 AND ready")
             .bind(uuid(id)).bind(uuid(user)).bind(SessionCrypto::hash(&secret)).bind(i32::try_from(days).unwrap())
             .execute(&self.pool).await.map_err(db_error)?;
         if result.rows_affected() != 1 {

@@ -4,6 +4,7 @@ use std::{net::SocketAddr, time::Duration};
 
 #[derive(Debug)]
 pub struct Config {
+    pub audit: crate::audit::Settings,
     pub bind_addr: SocketAddr,
     pub database_url: Secret,
     pub database_max_connections: u32,
@@ -64,6 +65,7 @@ impl Config {
             Ok(items)
         };
         let config = Self {
+            audit: crate::audit::Settings::parse(&lookup)?,
             bind_addr,
             database_url: Secret::new(database_url),
             database_max_connections: number("NEXOFOLIO_DB_MAX_CONNECTIONS", 5, 100)? as u32,

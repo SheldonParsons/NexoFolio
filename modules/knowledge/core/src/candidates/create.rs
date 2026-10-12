@@ -46,6 +46,27 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             reviewed_by: None,
             operations: Vec::new(),
         };
+        candidate.view.lifecycle =
+            crate::lifecycle::resolve(&self.endpoints, candidate.base.lifecycle.clone()).await?;
+        let lifecycle = candidate.view.lifecycle.clone();
+        if target.is_some_and(|id| lifecycle.endpoint(id).is_some()) {
+            return Err(KnowledgeError::InvalidLifecycle("请先撤销接口废弃".into()));
+        }
+        lifecycle.project_snapshot(&mut candidate.view);
+        if lifecycle.pending() {
+            // Invalidating hashes only in the candidate preserves official history
+            // and manual prose. New generated batches acquire fresh input hashes.
+            for note in &mut candidate.view.notes {
+                if !note.author.is_person() {
+                    note.context.input_hash = None;
+                }
+            }
+            for field in &mut candidate.view.fields {
+                if !field.author.is_person() {
+                    field.context.input_hash = None;
+                }
+            }
+        }
         candidate.operations.push(CandidateOperation::new(
             CandidateAction::Organize,
             actor,
@@ -56,8 +77,9 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             if !matches!(
                 old.state,
                 CandidateState::Ready | CandidateState::Partial | CandidateState::Interrupted
-            ) || (old.base_hash != candidate.base_hash
-                && !inheritance::compatible_base(&old.base, &candidate.base))
+            ) || old.base.lifecycle.version != candidate.base.lifecycle.version
+                || (old.base_hash != candidate.base_hash
+                    && !inheritance::compatible_base(&old.base, &candidate.base))
                 || old.target != target
             {
                 return Err(KnowledgeError::CandidateStale);
@@ -65,6 +87,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             candidate.parent = Some(parent);
             candidate.view = old.view;
             candidate.view.endpoints = candidate.base.endpoints.clone();
+            lifecycle.project_snapshot(&mut candidate.view);
             // A resumed proposal keeps every acknowledged chunk, including interrupted rounds.
             candidate.batches = old
                 .batches

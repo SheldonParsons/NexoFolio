@@ -1,5 +1,6 @@
 //! Observe-owned persistence. The database pool stays private.
 mod postgres;
+mod project_reset;
 pub use postgres::PostgresObserve;
 
 /// Concrete persistence details cannot be reached from other crates.

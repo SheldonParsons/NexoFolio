@@ -3,6 +3,8 @@ use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct KnowledgeSnapshot {
+    #[serde(default, skip_serializing_if = "DocumentLifecycle::is_empty")]
+    pub lifecycle: DocumentLifecycle,
     pub endpoints: Vec<EndpointId>,
     pub folders: Vec<Folder>,
     pub placements: Vec<Placement>,
@@ -70,8 +72,23 @@ pub struct CandidateSummary {
     pub commands: usize,
     pub progress: serde_json::Value,
 }
+
+/// Internal recovery cursor: no frozen input or generated content in the scan.
+#[derive(Debug, Clone)]
+pub struct CandidateRecovery {
+    pub id: uuid::Uuid,
+    pub project_id: ProjectId,
+}
 impl Candidate {
     pub fn summary(&self) -> CandidateSummary {
+        let mut progress = if self.progress.is_object() {
+            self.progress.clone()
+        } else {
+            serde_json::json!({})
+        };
+        // The frozen baseline is authoritative, including before the first
+        // executor checkpoint and for older snapshots without a version.
+        progress["lifecycle_version"] = serde_json::json!(self.base.lifecycle.version);
         CandidateSummary {
             id: self.id,
             project_id: self.project_id,
@@ -80,7 +97,7 @@ impl Candidate {
             created_at: self.created_at,
             updated_at: self.updated_at,
             commands: self.batches.iter().map(|b| b.commands.len()).sum(),
-            progress: self.progress.clone(),
+            progress,
         }
     }
 }
@@ -88,6 +105,21 @@ impl Candidate {
 /// Lifecycle and atomic application belong to knowledge, execution to runtime.
 #[async_trait]
 pub trait KnowledgeCandidates: Send + Sync {
+    /// Backend-only scan of expired running proposals, in ascending ID order.
+    async fn recovery_candidates(
+        &self,
+        after: Option<uuid::Uuid>,
+        limit: usize,
+    ) -> KnowledgeResult<Vec<CandidateRecovery>>;
+    /// Recheck expired/running state under the project lock before claiming.
+    /// None means no takeover, including an intervening manual stop/heartbeat.
+    async fn recover_candidate(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        owner: uuid::Uuid,
+    ) -> KnowledgeResult<Option<Candidate>>;
+
     async fn freeze_candidate_values(
         &self,
         project: ProjectId,
@@ -113,6 +145,13 @@ pub trait KnowledgeCandidates: Send + Sync {
         actor: CandidateActor,
     ) -> KnowledgeResult<Candidate>;
     async fn candidate(&self, project: ProjectId, id: uuid::Uuid) -> KnowledgeResult<Candidate>;
+    async fn candidate_diagnostics(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> KnowledgeResult<CandidateDiagnostics> {
+        Ok(self.candidate(project, id).await?.into())
+    }
     async fn candidate_operations(
         &self,
         project: ProjectId,

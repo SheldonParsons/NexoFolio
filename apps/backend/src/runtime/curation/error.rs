@@ -20,6 +20,7 @@ impl From<KnowledgeError> for CurationError {
         match error {
             KnowledgeError::Unavailable => Self::Unavailable,
             KnowledgeError::CandidateBusy => Self::Busy,
+            KnowledgeError::LifecycleStale => Self::Conflict(error.to_string()),
             KnowledgeError::CandidateStale => Self::Conflict(
                 "正式知识或人工修改已偏离本轮基线，不能静默续跑；请开始新一轮整理".into(),
             ),
@@ -33,5 +34,17 @@ impl From<KnowledgeError> for CurationError {
 impl From<CompletionError> for CurationError {
     fn from(error: CompletionError) -> Self {
         Self::Failed(error.to_string())
+    }
+}
+
+impl CurationError {
+    pub(super) fn diagnostic_code(&self) -> &'static str {
+        match self {
+            Self::NotFound => "RESOURCE_NOT_FOUND",
+            Self::Unavailable => "SERVICE_UNAVAILABLE",
+            Self::Conflict(_) => "CANDIDATE_CONFLICT",
+            Self::Failed(_) => "PASS_FAILED",
+            Self::Busy => "PROJECT_BUSY",
+        }
     }
 }

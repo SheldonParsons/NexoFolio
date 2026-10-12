@@ -1,116 +1,23 @@
 //! Execution snapshots, same-ID resume and lease-aware cancellation. No semantic rules or SQL.
-use super::{Curation, CurationError, Progress, Status, jobs::Job, preparation::PreparedProject};
+use super::{Curation, CurationError, Progress, jobs::Job, preparation::PreparedProject};
 use nexofolio_common::{ProjectId, RoundId};
 use nexofolio_contracts::{
     endpoint::EndpointSummary,
     knowledge::{Candidate, CandidateState, Command},
 };
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(super) struct FrozenInput {
-    version: u32,
+    pub version: u32,
+    #[serde(default)]
+    pub lifecycle_version: u64,
     pub summaries: Vec<EndpointSummary>,
     pub prepared: PreparedProject,
     pub baseline_batches: Vec<RoundId>,
     pub legacy: bool,
 }
 impl Curation {
-    pub(crate) async fn resume_candidate(
-        &self,
-        project: ProjectId,
-        id: uuid::Uuid,
-    ) -> Result<Progress, CurationError> {
-        if self.progress(project).status == Status::Running {
-            return Err(CurationError::Busy);
-        }
-        let candidates = self.candidates.as_ref().ok_or(CurationError::Unavailable)?;
-        let old = candidates.candidate(project, id).await?;
-        if !matches!(
-            old.state,
-            CandidateState::Partial | CandidateState::Interrupted | CandidateState::Running
-        ) {
-            return Err(CurationError::Failed(
-                "该候选已完成、应用或废弃，不能补写；请开始新一轮整理".into(),
-            ));
-        }
-        let frozen = match &old.execution_input {
-            Some(value) => serde_json::from_value::<FrozenInput>(value.clone()).map_err(|_| {
-                CurationError::Failed("本轮冻结资料格式不兼容，请开始新一轮整理".into())
-            })?,
-            None => {
-                return Err(CurationError::Conflict(
-                    "本轮未保存完整整理输入，无法安全续跑；请开始新一轮整理，已保存内容仍可查看"
-                        .into(),
-                ));
-            }
-        };
-        if frozen.version != 2 {
-            return Err(CurationError::Failed(
-                "本轮冻结资料版本不兼容，请开始新一轮整理".into(),
-            ));
-        }
-        let (job, created) = self.jobs.start(project, old.base.endpoints.len());
-        if !created {
-            return Err(CurationError::Busy);
-        }
-        let candidate = match candidates
-            .resume_candidate_as(
-                project,
-                id,
-                job.run_id,
-                serde_json::to_value(&frozen).expect("frozen input"),
-                self.actor.clone(),
-            )
-            .await
-        {
-            Ok(candidate) => candidate,
-            Err(error) => {
-                job.update(|p| {
-                    p.status = Status::Failed;
-                    p.message = Some(error.to_string());
-                });
-                return Err(error.into());
-            }
-        };
-        let mut progress: Progress =
-            serde_json::from_value(candidate.progress.clone()).unwrap_or_default();
-        reconcile(&candidate, &frozen, &mut progress);
-        progress.run_id = Some(job.run_id);
-        progress.candidate_id = Some(id);
-        progress.target = candidate.target;
-        progress.status = Status::Running;
-        progress.active.clear();
-        progress.heartbeat_at = None;
-        progress.resume_available = Some(true);
-        progress.message = None;
-        progress.attempts += 1;
-        progress.attempt_started_at = Some(chrono::Utc::now());
-        progress
-            .attempt_history
-            .push(super::jobs::Attempt::start(job.run_id));
-        job.update(|p| *p = progress);
-        job.record(super::activity::Activity::new(
-            nexofolio_curate::Pass::Fields,
-            "resume",
-            "补齐本轮缺口：沿用同一候选和冻结资料，已确认保存的字段不重跑",
-        ));
-        let mut state = self.clone();
-        let staged = Arc::new(nexofolio_knowledge::CandidateSession::new(
-            &candidate,
-            candidates.clone(),
-        ));
-        state.reader = staged.clone();
-        state.knowledge = staged;
-        state.resuming = true;
-        let summaries = frozen.summaries.clone();
-        state.frozen = Some(Arc::new(frozen));
-        state
-            .checkpoint(project, &job, CandidateState::Running)
-            .await?;
-        super::spawn(state, project, summaries, job.clone());
-        Ok(job.snapshot())
-    }
     pub(crate) async fn cancel(
         &self,
         project: ProjectId,
@@ -130,7 +37,7 @@ impl Curation {
         Ok(())
     }
 }
-fn reconcile(candidate: &Candidate, frozen: &FrozenInput, p: &mut Progress) {
+pub(super) fn reconcile(candidate: &Candidate, frozen: &FrozenInput, p: &mut Progress) {
     let mut fields = HashSet::new();
     let mut descriptions = HashSet::new();
     for batch in candidate
@@ -195,6 +102,7 @@ pub(super) async fn prepared(
         s.checkpoint(project, job, CandidateState::Running).await?;
         let frozen = FrozenInput {
             version: 2,
+            lifecycle_version: candidate.base.lifecycle.version,
             summaries: summaries.to_vec(),
             prepared: prepared.clone(),
             baseline_batches: candidate.batches.iter().map(|b| b.id).collect(),
@@ -274,6 +182,7 @@ pub(super) async fn legacy_input(
     }
     Ok(FrozenInput {
         version: 2,
+        lifecycle_version: candidate.base.lifecycle.version,
         summaries,
         prepared,
         baseline_batches: vec![],

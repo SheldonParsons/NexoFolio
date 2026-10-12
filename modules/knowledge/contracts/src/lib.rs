@@ -55,10 +55,39 @@ pub type StoreResult<T> = Result<T, StoreError>;
 pub trait KnowledgeStore: Send + Sync {
     /// Dropping the transaction without [`KnowledgeTx::commit`] undoes it.
     async fn begin(&self) -> StoreResult<Box<dyn KnowledgeTx>>;
+
+    /// Consistent read snapshot for compound projections. Adapters must not
+    /// acquire writer locks or advance domain state.
+    async fn begin_read(&self) -> StoreResult<Box<dyn KnowledgeTx>> {
+        self.begin().await
+    }
 }
 
 #[async_trait]
 pub trait KnowledgeTx: Send {
+    async fn lifecycle(
+        &mut self,
+        _project: ProjectId,
+    ) -> StoreResult<nexofolio_contracts::knowledge::DocumentLifecycle> {
+        Ok(Default::default())
+    }
+    async fn put_lifecycle(
+        &mut self,
+        _project: ProjectId,
+        _state: &nexofolio_contracts::knowledge::DocumentLifecycle,
+    ) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+
+    async fn recovery_candidates(
+        &mut self,
+        _before: DateTime<Utc>,
+        _after: Option<uuid::Uuid>,
+        _limit: usize,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
+        Err(StoreError::Unavailable)
+    }
+
     async fn value_archive(
         &mut self,
         _project: ProjectId,
@@ -128,6 +157,13 @@ pub trait KnowledgeTx: Send {
         _id: uuid::Uuid,
     ) -> StoreResult<Option<Candidate>> {
         Err(StoreError::Unavailable)
+    }
+    async fn candidate_diagnostics(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateDiagnostics>> {
+        Ok(self.candidate(project, id).await?.map(Into::into))
     }
     /// Mutable working projection; deliberately omits the immutable execution input.
     async fn candidate_projection(
@@ -254,6 +290,10 @@ pub trait KnowledgeTx: Send {
     ) -> StoreResult<Option<FieldNote>>;
 
     async fn field_notes(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FieldNote>>;
+
+    async fn project_field_notes(&mut self, _project: ProjectId) -> StoreResult<Vec<FieldNote>> {
+        Err(StoreError::Unavailable)
+    }
 
     async fn put_field_note(&mut self, project: ProjectId, note: &FieldNote) -> StoreResult<()>;
 

@@ -1,3 +1,5 @@
+mod redirects;
+
 use super::*;
 use axum::{body::Body, extract::Request, response::IntoResponse};
 use http_body_util::BodyExt;
@@ -452,7 +454,15 @@ async fn route_is_present_without_access_or_database_availability() {
         tokio_util::sync::CancellationToken::new(),
     );
     // Invalid query validates route mounting without reaching external services.
-    let (status, data) = response(app, "/v1/downloads?desktop_channel=invalid").await;
+    let (status, data) = response(app.clone(), "/v1/downloads?desktop_channel=invalid").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(data, json!({"error":"invalid_download_query"}));
+    for uri in [
+        "/v1/downloads/fetcher/latest?url=https://evil.test",
+        "/v1/downloads/asynctest/internal/windows/latest?refresh=true",
+    ] {
+        let (status, data) = response(app.clone(), uri).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(data, json!({"error":"invalid_download_query"}));
+    }
 }

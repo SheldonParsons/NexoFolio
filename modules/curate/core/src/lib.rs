@@ -3,6 +3,8 @@
 //! Evidence extracts bounded observations; rules find deterministic clues;
 //! planning decides freshness and pass dependencies; interpretation calls the
 //! model and proposes Commands. None of these modules reads SQL or schedules IO.
+mod lifecycle;
+pub use lifecycle::{active_facts, active_observation};
 mod evidence;
 mod interpretation;
 mod planning;

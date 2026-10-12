@@ -102,16 +102,20 @@ impl IntoResponse for CurateHttpError {
                 "项目正在整理，请等待完成后再重新生成。".into(),
             ),
         };
-        (
-            status,
-            Json(json!({ "error": { "code": code, "message": message } })),
+        crate::audit::http::problem(
+            (
+                status,
+                Json(json!({ "error": { "code": code, "message": message } })),
+            )
+                .into_response(),
+            code,
         )
-            .into_response()
     }
 }
 
 async fn describe_endpoint(
     State(s): State<CurateHttp>,
+    audit: Option<Extension<crate::audit::Context>>,
     Extension(principal): Extension<SessionPrincipal>,
     Path((project, endpoint)): Path<(ProjectId, EndpointId)>,
 ) -> Result<(StatusCode, Json<Progress>), CurateHttpError> {
@@ -125,6 +129,7 @@ async fn describe_endpoint(
         Json(
             s.curation
                 .clone()
+                .with_audit(audit.map(|Extension(ctx)| ctx))
                 .with_actor(
                     super::curation_actor::from_session(s.sessions.as_ref(), &principal)
                         .await
@@ -138,6 +143,7 @@ async fn describe_endpoint(
 
 async fn start(
     State(s): State<CurateHttp>,
+    audit: Option<Extension<crate::audit::Context>>,
     Extension(principal): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
     options: Option<Json<StartOptions>>,
@@ -148,11 +154,15 @@ async fn start(
         .map_err(AccessError::from)?;
 
     let reuse = options.and_then(|options| options.0.reuse_candidate);
-    let curation = s.curation.clone().with_actor(
-        super::curation_actor::from_session(s.sessions.as_ref(), &principal)
-            .await
-            .map_err(AccessError::from)?,
-    );
+    let curation = s
+        .curation
+        .clone()
+        .with_audit(audit.map(|Extension(ctx)| ctx))
+        .with_actor(
+            super::curation_actor::from_session(s.sessions.as_ref(), &principal)
+                .await
+                .map_err(AccessError::from)?,
+        );
     let progress = if reuse.is_some() {
         curation.start_target(project, None, reuse).await?
     } else {
@@ -175,6 +185,7 @@ async fn progress(
 
 async fn resume(
     State(s): State<CurateHttp>,
+    audit: Option<Extension<crate::audit::Context>>,
     Extension(principal): Extension<SessionPrincipal>,
     Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
 ) -> Result<(StatusCode, Json<Progress>), CurateHttpError> {
@@ -187,6 +198,7 @@ async fn resume(
         Json(
             s.curation
                 .clone()
+                .with_audit(audit.map(|Extension(ctx)| ctx))
                 .with_actor(
                     super::curation_actor::from_session(s.sessions.as_ref(), &principal)
                         .await

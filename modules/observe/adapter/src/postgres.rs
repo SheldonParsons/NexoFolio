@@ -25,7 +25,7 @@ use uuid::Uuid;
 const SCHEMA: &str = "observe";
 
 /// Advisory lock keys (first half): one per project, one for the outbox.
-const PROJECT_LOCK: i32 = 0x6f62_0001;
+pub(crate) const PROJECT_LOCK: i32 = 0x6f62_0001;
 const OUTBOX_LOCK: i32 = 0x6f62_0002;
 
 #[derive(Clone)]
@@ -223,6 +223,14 @@ impl ObserveTx for PostgresTx {
             .execute(&mut *self.tx)
             .await
             .map(|done| done.rows_affected() == 1)
+            .map_err(unavailable)
+    }
+
+    async fn reset_cutoff(&mut self, project: ProjectId) -> StoreResult<Option<DateTime<Utc>>> {
+        sqlx::query_scalar("SELECT cleared_at FROM project_resets WHERE project_id=$1")
+            .bind(uuid(project))
+            .fetch_optional(&mut *self.tx)
+            .await
             .map_err(unavailable)
     }
 

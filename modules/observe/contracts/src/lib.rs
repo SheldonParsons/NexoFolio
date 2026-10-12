@@ -118,6 +118,11 @@ pub trait ObserveTx: Send {
     /// Serialises writers of one project until the transaction ends.
     async fn lock_project(&mut self, project: ProjectId) -> StoreResult<()>;
 
+    /// Reset watermark is checked under the same writer lock as ingestion.
+    async fn reset_cutoff(&mut self, _project: ProjectId) -> StoreResult<Option<DateTime<Utc>>> {
+        Ok(None)
+    }
+
     /// Records a delivered batch; `false` when it was delivered before.
     async fn first_delivery(&mut self, batch_id: Uuid) -> StoreResult<bool>;
 

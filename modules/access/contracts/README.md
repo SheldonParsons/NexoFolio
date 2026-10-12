@@ -18,7 +18,7 @@
 ## POST /v1/auth/login
 
 ```json
-{"account":"你的禅道账号","password":"你的密码"}
+{ "account": "你的禅道账号", "password": "你的密码" }
 ```
 
 - 普通登录始终先请求禅道 `/tokens` 和 `/user`，即使本地已有有效 Token，也不能跳过禅道验证。
@@ -33,12 +33,20 @@
 
 ```json
 {
-  "user":{"id":"本地用户UUID","account":"规范账号","display_name":"显示名","enabled":true},
-  "token":"仅在响应中交给调用方的内部Token",
-  "token_type":"Bearer",
-  "expires_at":"2026-12-14T00:00:00+00:00",
-  "token_reused":false,
-  "project_sync":{"status":"completed","counts":{"created":2,"updated":0,"skipped":8}}
+  "user": {
+    "id": "本地用户UUID",
+    "account": "规范账号",
+    "display_name": "显示名",
+    "enabled": true
+  },
+  "token": "仅在响应中交给调用方的内部Token",
+  "token_type": "Bearer",
+  "expires_at": "2026-12-14T00:00:00+00:00",
+  "token_reused": false,
+  "project_sync": {
+    "status": "completed",
+    "counts": { "created": 2, "updated": 0, "skipped": 8 }
+  }
 }
 ```
 
@@ -104,12 +112,12 @@
 
 ```json
 {
-  "project_id":"本地项目UUID",
-  "name":"项目名称",
-  "status":"doing",
-  "can_access":false,
-  "access_state":"denied",
-  "reason_code":"PROJECT_ACCESS_DENIED"
+  "project_id": "本地项目UUID",
+  "name": "项目名称",
+  "status": "doing",
+  "can_access": false,
+  "access_state": "denied",
+  "reason_code": "PROJECT_ACCESS_DENIED"
 }
 ```
 
@@ -118,11 +126,29 @@ access_state 为 allowed、denied 或 unknown。未知权限返回 can_access=fa
 
 ## GET /v1/projects/{project_id}
 
-已登录且具有该项目本地访问关系时返回项目卡片；明确无权限返回 403/PROJECT_ACCESS_DENIED；本地权限尚未建立返回 503/PROJECT_ACCESS_UNAVAILABLE；不存在或不同实例返回 404。
+已登录且具有该项目有效访问权限时返回项目卡片；明确无权限返回 403/PROJECT_ACCESS_DENIED；本地权限尚未建立返回 503/PROJECT_ACCESS_UNAVAILABLE；不存在或不同实例返回 404。
 此端点是当前的“进入项目”校验。后续知识端点必须同样调用 ProjectAccess::require_project，不能认为进过一次项目就不再检查。
 不提供 POST /v1/projects、独立项目同步 API 或项目编辑/删除 API。
 
+### A80646 的全项目访问
+
+已认证账号 `A80646`（忽略大小写）可访问同一禅道实例下所有已同步到 NexoFolio 的项目，包括以后新增同步的项目，无需加入项目成员。它沿用现有项目功能权限；这是 NexoFolio 的本地访问策略，不改变禅道成员或禅道本身的权限。
+
+策略只读取已认证用户在数据库中保存的账号，不接受请求中自报的账号，也不会向 `user_project_access` 补写成员关系。该账号不依赖成员权限同步成功，仍需正常登录并保持账号启用；停用或改名后会在后续校验中立即失效。其他账号仍遵循原有同步关系和权限未知时拒绝访问的规则，跨禅道实例仍不可访问。
+
+页面、环境读写、MCP 项目/环境发现、知识读取和凭证页的可访问项目数统一使用 access 模块内的实时权限视图。发布时须先用新版本执行 access 数据库迁移 `202610100001_project_access_policy.sql`，再启动新 API；不需要修改前端或添加账号成员记录。
+
+## 网页全局只读
+
+独立业务项目和仅限指定管理账号的创建、清空接口，见 `docs/architecture/0014-local-projects-and-content-reset.md`。本地项目通过 `effective_project_access` 继承真实禅道项目的授权，网页操作与 MCP 使用同一判断；普通项目成员不获得创建或清空权限。
+
+网页可通过独立 `/v1/public/projects/{project_id}/document` 和公开接口详情路由读取正式文档，不要求加入项目。`ProjectDocuments` 只提供当前配置实例下的项目基本信息和环境，不创建成员关系，也不参与 `ProjectAccess` / `McpProjectAccess` 的放行判断。
+
+原有成员 API、真实样本、观测原值、候选结果和所有修改操作继续要求现有身份与项目权限。MCP 不使用公开文档策略；网页可以只读不代表 MCP 有权读取。实现说明见 `docs/architecture/0013-public-document-reading.md`。
+
 ## 验证
+
+管理中心已注册用户的只读端口 `UserDirectory` 与 `/v1/user-management/users` 见 `docs/architecture/0016-registered-user-directory.md`。它只查询当前实例中首次登录已留档的用户和展示资料，沿用管理中心服务端权限，不涉及用户修改、MCP 或公开文档放行。
 
 - 常规：cargo test --workspace --locked。
 - 隔离真实 PostgreSQL：设置 TEST_DATABASE_URL 后执行 cargo test -p nexofolio-backend --test access_flow --test postgres --locked -- --ignored。

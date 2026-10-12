@@ -14,6 +14,7 @@ const SCHEMA: &str = "access";
 #[derive(Clone)]
 pub struct Postgres {
     pub(crate) pool: PgPool,
+    pub(crate) activity_pool: PgPool,
 }
 
 impl Postgres {
@@ -32,8 +33,16 @@ impl Postgres {
         let pool = PgPoolOptions::new()
             .max_connections(max_connections)
             .acquire_timeout(timeout)
+            .connect_lazy_with(options.clone());
+        // Activity leases must not exhaust the pool used by the requests they protect.
+        let activity_pool = PgPoolOptions::new()
+            .max_connections(max_connections)
+            .acquire_timeout(timeout)
             .connect_lazy_with(options);
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            activity_pool,
+        })
     }
 
     /// Explicit administration only; the api never migrates automatically.
@@ -50,6 +59,7 @@ impl Postgres {
     }
 
     pub async fn close(&self) {
+        self.activity_pool.close().await;
         self.pool.close().await;
     }
 }

@@ -94,15 +94,5 @@ pub(crate) fn fresh(
 
 /// Completed output is distinct from confirmation of its business meaning.
 pub fn field_addressed(note: &nexofolio_contracts::knowledge::FieldNote) -> bool {
-    note.context.completion.as_ref().map_or_else(
-        || {
-            !note.text.trim().is_empty()
-                && note
-                    .context
-                    .display_name
-                    .as_ref()
-                    .is_some_and(|s| !s.trim().is_empty())
-        },
-        |c| c.addressed(note.context.display_name.as_deref(), &note.text),
-    )
+    note.generation_addressed()
 }

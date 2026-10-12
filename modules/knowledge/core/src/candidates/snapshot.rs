@@ -44,6 +44,7 @@ pub(super) async fn capture(
         fields.extend(tx.field_notes(*endpoint).await.map_err(store_error)?);
     }
     Ok(KnowledgeSnapshot {
+        lifecycle: tx.lifecycle(project).await.map_err(store_error)?,
         endpoints,
         folders,
         placements,

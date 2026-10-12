@@ -8,9 +8,11 @@ use sqlx::{
 };
 use std::{str::FromStr, time::Duration};
 
+mod candidate_diagnostics;
 mod candidates;
 mod codec;
 mod folders;
+mod lifecycle;
 mod links;
 mod notes;
 mod placements;
@@ -24,6 +26,7 @@ use transaction::PostgresTx;
 /// Everything knowledge stores lives in this schema. Connections put it alone
 /// on the `search_path`, so SQL in this crate stays unqualified.
 const SCHEMA: &str = "knowledge";
+pub(crate) const PROJECT_LOCK: i32 = 0x6b6e_0001;
 
 #[derive(Clone)]
 pub struct PostgresKnowledge {
@@ -83,6 +86,14 @@ impl DatabaseProbe for PostgresKnowledge {
 
 #[async_trait]
 impl KnowledgeStore for PostgresKnowledge {
+    async fn begin_read(&self) -> StoreResult<Box<dyn KnowledgeTx>> {
+        let mut tx = self.pool.begin().await.map_err(unavailable)?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+        Ok(Box::new(PostgresTx { tx }))
+    }
     async fn begin(&self) -> StoreResult<Box<dyn KnowledgeTx>> {
         let tx = self.pool.begin().await.map_err(unavailable)?;
         Ok(Box::new(PostgresTx { tx }))

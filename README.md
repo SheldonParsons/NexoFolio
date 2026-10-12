@@ -49,6 +49,8 @@ cargo run -p nexofolio-backend --bin nexofolio-admin -- observe report --project
 
 有效入口：`/health/live`、`/health/ready`、`/v1/auth/login`、`/v1/auth/me`、项目及环境管理、`/v1/sites`、`/v1/collect/batches`、`/v1/projects/{id}/service-addresses`、下载接口，以及默认拒绝访问且无业务工具的`/mcp`。旧的接口文档/重构/发布路由已经从源码移除，返回404。
 
+Fetcher 与 AsyncTest Desktop 的最新版固定下载入口见 [下载链接说明](docs/downloads.md)。
+
 ## Linux容器
 
 ```bash

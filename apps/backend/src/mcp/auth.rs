@@ -50,6 +50,7 @@ pub async fn require_token(
     let secret = Secret::new(value);
     match verifier.verify(&secret).await {
         Ok(principal) => {
+            if let Some(audit) = request.extensions().get::<crate::audit::Context>() { audit.identify(principal.user_id); }
             let request_id = request.extensions().get::<RequestId>().map(|id| id.0.clone())
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             request.extensions_mut().insert(McpRequestContext { request_id, principal });

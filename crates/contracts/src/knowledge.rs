@@ -7,7 +7,11 @@
 //! every value was written by a person or by a curate pass, and every write
 //! names its author and the round it belongs to.
 
+mod lifecycle;
+pub use lifecycle::*;
 mod candidates;
+mod diagnostics;
+pub use diagnostics::*;
 mod completeness;
 mod navigation;
 mod notes;
@@ -196,6 +200,10 @@ pub enum Target {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KnowledgeError {
+    #[error("废弃状态已变化，请刷新后重试；旧整理结果保留，请开始新一轮整理")]
+    LifecycleStale,
+    #[error("无效的生命周期操作：{0}")]
+    InvalidLifecycle(String),
     #[error("no such candidate")]
     NoSuchCandidate,
     #[error("candidate is not open for this operation")]
@@ -238,10 +246,21 @@ pub struct EndpointPage {
     pub limit: usize,
 }
 
+/// One read of directory metadata and membership. Allows navigation to filter
+/// by observed environment without issuing one store query per folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogueNavigation {
+    pub catalogue: Catalogue,
+    pub placements: Vec<Placement>,
+}
+
 /// Everything knowledge can be asked. Read by apps for the docs page, by curate
 /// to decide what still needs work, and later by the MCP tools.
 #[async_trait]
 pub trait KnowledgeReader: Send + Sync {
+    async fn lifecycle(&self, _project: ProjectId) -> KnowledgeResult<DocumentLifecycle> {
+        Ok(DocumentLifecycle::default())
+    }
     async fn observed_values(
         &self,
         _query: crate::field_values::FieldValueQuery,
@@ -258,6 +277,13 @@ pub trait KnowledgeReader: Send + Sync {
 
     /// The tree plus the count of endpoints nothing has placed.
     async fn catalogue(&self, project: ProjectId) -> KnowledgeResult<Catalogue>;
+
+    async fn catalogue_navigation(
+        &self,
+        _project: ProjectId,
+    ) -> KnowledgeResult<CatalogueNavigation> {
+        Err(KnowledgeError::Unavailable)
+    }
 
     /// Endpoints in one folder, or the unplaced ones when `folder` is `None`.
     /// Page numbers start at 1. Returns empty items when page is beyond total.
@@ -276,6 +302,11 @@ pub trait KnowledgeReader: Send + Sync {
     /// Notes for many endpoints at once, for the catalogue pass and list views.
     /// Endpoints with nothing written about them are left out.
     async fn notes(&self, project: ProjectId) -> KnowledgeResult<Vec<EndpointNote>>;
+
+    /// Saved field knowledge index, without loading captured HTTP samples.
+    async fn field_notes(&self, _project: ProjectId) -> KnowledgeResult<Vec<FieldNote>> {
+        Err(KnowledgeError::Unavailable)
+    }
 
     /// Every link of a project, for diffing against a fresh pass.
     async fn links(&self, project: ProjectId) -> KnowledgeResult<Vec<Link>>;
