@@ -10,6 +10,9 @@ impl Curation {
         target: Option<EndpointId>,
         parent: Option<uuid::Uuid>,
     ) -> Result<Progress, CurationError> {
+        if self.queue.is_some() {
+            return self.enqueue(project, target, parent, None).await;
+        }
         let summaries = self
             .endpoints
             .list(project)
@@ -108,7 +111,16 @@ impl Curation {
         job: &Job,
         state: CandidateState,
     ) -> Result<(), CurationError> {
-        job.update(|p| p.candidate_state = Some(state));
+        job.update(|p| {
+            p.candidate_state = Some(state);
+            if p.task_id.is_some() && state != CandidateState::Running {
+                p.task_state = Some(if state == CandidateState::Ready {
+                    nexofolio_contracts::knowledge::TaskState::Done
+                } else {
+                    nexofolio_contracts::knowledge::TaskState::Failed
+                });
+            }
+        });
         if let (Some(candidates), Some(id)) = (&self.candidates, job.snapshot().candidate_id) {
             candidates
                 .checkpoint_candidate(
@@ -125,11 +137,22 @@ impl Curation {
         &self,
         project: ProjectId,
     ) -> Result<Progress, CurationError> {
+        if let Some(queue) = &self.queue {
+            let tasks = queue.tasks.active_tasks(project).await?;
+            if let Some(task) = tasks.first() {
+                let mut progress = self.task_progress(task).await?;
+                progress.queued_tasks = tasks
+                    .iter()
+                    .filter(|t| t.state == nexofolio_contracts::knowledge::TaskState::Queued)
+                    .count();
+                return Ok(progress);
+            }
+        }
         let mut live = self.progress(project);
         let lifecycle_version = self.reader.lifecycle(project).await?.version;
         live.lifecycle_stale =
             live.candidate_id.is_some() && live.lifecycle_version != lifecycle_version;
-        if live.status == Status::Running {
+        if live.status == Status::Running && self.queue.is_none() {
             return Ok(live);
         }
         let Some(candidates) = &self.candidates else {
@@ -165,7 +188,7 @@ impl Curation {
                     && detail
                         .execution_input
                         .as_ref()
-                        .is_some_and(|input| input["version"] == 2),
+                        .is_some_and(|input| matches!(input["version"].as_u64(), Some(2 | 3))),
             );
             progress.folders_saved = Some(detail.view.folders.len());
             // The old executor returns this specific field error only after directory success.
@@ -195,6 +218,16 @@ impl Curation {
         }
         if progress.lifecycle_stale {
             progress.resume_available = Some(false);
+        }
+        // Task metadata is authoritative even for older candidate checkpoints.
+        if let (Some(queue), Some(id)) = (&self.queue, progress.task_id) {
+            let task = queue.tasks.task(project, id).await?;
+            progress.task_state = Some(task.state);
+            if task.state == nexofolio_contracts::knowledge::TaskState::Stopped {
+                progress.status = Status::Failed;
+                progress.active.clear();
+                progress.message = task.message;
+            }
         }
         Ok(progress)
     }

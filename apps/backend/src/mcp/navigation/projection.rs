@@ -89,10 +89,40 @@ pub(super) fn page_in_context(
         &json!({"items":stable_paging_facts(json!(items)),"context":context}),
     )?;
     let total = items.len();
+    page_result(
+        tool,
+        q,
+        items.into_iter().skip(q.offset).take(q.limit).collect(),
+        total,
+        rev,
+    )
+}
+
+pub(super) fn paged(
+    tool: &str,
+    q: &Query,
+    mut items: Vec<Value>,
+    total: usize,
+    source: &Value,
+) -> Result<Value, ReadError> {
+    for item in &mut items {
+        if !q.lifecycle.is_empty() {
+            super::lifecycle::annotate(item, q, q.endpoint_id);
+        }
+    }
+    page_result(tool, q, items, total, revision(q, tool, source)?)
+}
+
+fn page_result(
+    tool: &str,
+    q: &Query,
+    selected: Vec<Value>,
+    total: usize,
+    rev: String,
+) -> Result<Value, ReadError> {
     if q.offset > total {
         return Err(ReadError::bounds("offset", q.offset, 0, total, 0, "items"));
     }
-    let selected: Vec<_> = items.into_iter().skip(q.offset).take(q.limit).collect();
     let next = q.offset + selected.len();
     let mut args = q.arguments();
     args["offset"] = json!(next);

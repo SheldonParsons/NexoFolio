@@ -195,6 +195,57 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
         Ok(summaries)
     }
 
+    async fn field(
+        &self,
+        id: EndpointId,
+        key: &str,
+    ) -> Result<Option<nexofolio_contracts::endpoint::FieldFacts>, EndpointError> {
+        let mut tx = self.read().await?;
+        let Some(row) = tx.endpoint(id).await.map_err(unavailable)? else {
+            return Ok(None);
+        };
+        let mut seen = Vec::new();
+        for fingerprint in tx.fingerprints(row.id).await.map_err(unavailable)? {
+            let traffic = Traffic {
+                endpoint: row.id,
+                environment_id: fingerprint.environment_id,
+                address: fingerprint.address.clone(),
+            };
+            let first = tx
+                .sample(&traffic, &fingerprint.hash)
+                .await
+                .map_err(unavailable)?;
+            if let Ok(structure) = sample_structure(first.as_ref(), &fingerprint) {
+                seen.push(Seen {
+                    environment_id: fingerprint.environment_id,
+                    structure,
+                    calls: fingerprint.calls,
+                    first_seen: fingerprint.first_seen,
+                    last_seen: fingerprint.last_seen,
+                });
+            }
+        }
+        let declared = tx
+            .declarations(row.id)
+            .await
+            .map_err(unavailable)?
+            .iter()
+            .filter_map(|d| {
+                Some((
+                    d.updated_at,
+                    serde_json::from_value::<DeclaredFields>(d.structure.clone()).ok()?,
+                ))
+            })
+            .collect();
+        Ok(facts::selected_fields(
+            &row.path_template,
+            &seen,
+            &declaration::merge(declared),
+            Some(key),
+        )
+        .pop())
+    }
+
     async fn get(&self, id: EndpointId) -> Result<Option<EndpointFacts>, EndpointError> {
         let mut tx = self.read().await?;
         let Some(row) = tx.endpoint(id).await.map_err(unavailable)? else {
@@ -235,19 +286,7 @@ impl<S: ObserveStore> EndpointReader for Observe<S> {
                     r.get("sample")?.clone(),
                 ))
             }));
-            let structure = samples
-                .first()
-                .and_then(|(_, raw)| {
-                    serde_json::from_value::<CanonicalObservation>(raw.clone()).ok()
-                })
-                .and_then(|o| match o.fact {
-                    nexofolio_contracts::observation::Fact::Exchange(e) => Some(Structure::of(&e)),
-                    _ => None,
-                })
-                .map(Ok)
-                .unwrap_or_else(|| {
-                    serde_json::from_value::<Structure>(fingerprint.structure.clone())
-                });
+            let structure = sample_structure(samples.first().map(|(_, raw)| raw), &fingerprint);
             let retained_count = samples.len();
             for (sample_id, raw) in samples {
                 if let Ok(observation) = serde_json::from_value::<CanonicalObservation>(raw) {
@@ -472,4 +511,18 @@ impl<S: ObserveStore> ServiceAddresses for Observe<S> {
         };
         decided.await.map_err(unavailable)
     }
+}
+
+fn sample_structure(
+    first: Option<&Value>,
+    fingerprint: &FingerprintStats,
+) -> Result<Structure, serde_json::Error> {
+    first
+        .and_then(|raw| serde_json::from_value::<CanonicalObservation>(raw.clone()).ok())
+        .and_then(|o| match o.fact {
+            nexofolio_contracts::observation::Fact::Exchange(e) => Some(Structure::of(&e)),
+            _ => None,
+        })
+        .map(Ok)
+        .unwrap_or_else(|| serde_json::from_value(fingerprint.structure.clone()))
 }

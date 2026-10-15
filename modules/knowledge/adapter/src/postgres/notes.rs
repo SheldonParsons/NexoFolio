@@ -120,6 +120,11 @@ impl PostgresTx {
         endpoint: EndpointId,
         path: &str,
     ) -> StoreResult<Option<FieldNote>> {
+        if let Some(buffer) = &self.apply_buffer {
+            if buffer.owned.contains(&endpoint) {
+                return Ok(buffer.fields.get(&(endpoint, path.to_owned())).cloned());
+            }
+        }
         let row = sqlx::query(concat!(
             "SELECT ",
             field_note_columns!(),
@@ -154,6 +159,18 @@ impl PostgresTx {
         project: ProjectId,
         note: &FieldNote,
     ) -> StoreResult<()> {
+        if let Some(buffer) = &mut self.apply_buffer {
+            if buffer.project != project || !buffer.owned.contains(&note.endpoint) {
+                return Err(nexofolio_knowledge_contracts::StoreError::Unavailable);
+            }
+            let key = (note.endpoint, note.path.clone());
+            buffer.fields.insert(key.clone(), note.clone());
+            buffer.pending.insert(key, Some(note.clone()));
+            if buffer.revisions.len() >= 100 {
+                self.flush_apply().await?;
+            }
+            return Ok(());
+        }
         sqlx::query(concat!(
             "INSERT INTO field_notes",
             " (endpoint_id, path, project_id, text, values_seen, author, at, context)",
@@ -180,6 +197,15 @@ impl PostgresTx {
         endpoint: EndpointId,
         path: &str,
     ) -> StoreResult<()> {
+        if let Some(buffer) = &mut self.apply_buffer {
+            let key = (endpoint, path.to_owned());
+            buffer.fields.remove(&key);
+            buffer.pending.insert(key, None);
+            if buffer.revisions.len() >= 100 {
+                self.flush_apply().await?;
+            }
+            return Ok(());
+        }
         sqlx::query("DELETE FROM field_notes WHERE endpoint_id = $1 AND path = $2")
             .bind(uuid(endpoint))
             .bind(path)

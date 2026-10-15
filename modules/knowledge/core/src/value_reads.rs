@@ -5,26 +5,51 @@ use nexofolio_knowledge_contracts::KnowledgeStore;
 use serde_json::Value;
 use std::collections::BTreeMap;
 impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
-    async fn load_values(&self, q: &FieldValueQuery) -> KnowledgeResult<FieldValueArchive> {
+    async fn load_values(
+        &self,
+        q: &FieldValueQuery,
+        value_id: Option<&str>,
+    ) -> KnowledgeResult<FieldValueArchive> {
         if q.limit == 0 || q.limit > 50 || q.field.len() > 4096 {
             return Err(KnowledgeError::InvalidTree(
                 "invalid value query bounds".into(),
             ));
         }
-        self.store
-            .begin()
+        let mut tx = self.store.begin_read().await.map_err(store_error)?;
+        let input = tx
+            .candidate_input(q.project, q.archive)
             .await
-            .map_err(store_error)?
-            .value_archive(q.project, q.archive)
+            .map_err(store_error)?;
+        if let Some(input) = input.filter(|v| v["version"] == 3) {
+            let manifest: FrozenManifest =
+                serde_json::from_value(input["manifest"].clone()).map_err(|_| frozen_invalid())?;
+            if input["manifest_hash"].as_str() != Some(frozen_input_hash(&input).as_str())
+                || manifest.version != 1
+                || manifest.project != q.project
+                || manifest.candidate != q.archive
+            {
+                return Err(frozen_invalid());
+            }
+            crate::candidates::frozen::read_value_selection(
+                tx.as_mut(),
+                &manifest,
+                q.endpoint,
+                Some(&q.field),
+                value_id,
+            )
             .await
-            .map_err(store_error)?
-            .ok_or(KnowledgeError::NoSuchCandidate)
+        } else {
+            tx.value_archive_field(q, value_id)
+                .await
+                .map_err(store_error)?
+                .ok_or(KnowledgeError::NoSuchCandidate)
+        }
     }
     pub(super) async fn read_value_page(
         &self,
         q: FieldValueQuery,
     ) -> KnowledgeResult<ObservedValuePage> {
-        let archive = self.load_values(&q).await?;
+        let archive = self.load_values(&q, None).await?;
         let field = archive
             .fields
             .get(&format!("{}/{}", q.endpoint, q.field))
@@ -117,7 +142,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         q: FieldValueQuery,
         value_id: &str,
     ) -> KnowledgeResult<Value> {
-        let archive = self.load_values(&q).await?;
+        let archive = self.load_values(&q, Some(value_id)).await?;
         let field = archive
             .fields
             .get(&format!("{}/{}", q.endpoint, q.field))

@@ -91,7 +91,7 @@ async fn new_executor_automatically_finishes_only_the_unsaved_field() {
         .unwrap();
     let id = first.candidate_id.unwrap();
     let mut saved = terminal(&k, p, id).await;
-    assert_eq!(saved.view.fields.len(), 2);
+    assert_eq!(saved.view.fields.len(), 2, "{:?}", saved.progress);
     let original_input = saved.execution_input.clone();
     let original_actor = saved.operations[0].actor.clone();
     // Persist the last running state a terminated process would leave behind.
@@ -132,7 +132,7 @@ async fn new_executor_automatically_finishes_only_the_unsaved_field() {
             .iter()
             .any(|a| a["message"]
                 .as_str()
-                .is_some_and(|s| s.contains("服务重启后")))
+                .is_some_and(|s| s.contains("系统自动继续")))
     );
     assert!(k.endpoint(endpoint).await.unwrap().fields.is_empty());
     curation.recover_expired().await.unwrap();

@@ -312,6 +312,15 @@ pub trait EndpointReader: Send + Sync {
     /// One endpoint. An alias resolves to the endpoint it was merged into.
     async fn get(&self, id: EndpointId) -> Result<Option<EndpointFacts>, EndpointError>;
 
+    /// One qualified field, without materializing unrelated retained request samples.
+    async fn field(&self, id: EndpointId, key: &str) -> Result<Option<FieldFacts>, EndpointError> {
+        Ok(self.get(id).await?.and_then(|f| {
+            f.fields
+                .into_iter()
+                .find(|f| crate::knowledge::field_note_key(f) == key)
+        }))
+    }
+
     /// The raw observation behind one of [`EndpointFacts::examples`], not
     /// redacted: callers must keep it out of logs. An alias resolves like in
     /// [`Self::get`].

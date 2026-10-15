@@ -2,48 +2,6 @@ use super::types;
 use nexofolio_common::EnvironmentId;
 use nexofolio_contracts::{endpoint::*, knowledge::*};
 
-pub(super) fn catalogue(c: Catalogue) -> types::Catalogue {
-    types::Catalogue {
-        project_id: c.project_id,
-        unplaced: c.unplaced,
-        folders: c
-            .folders
-            .into_iter()
-            .map(|f| types::Folder {
-                id: f.id,
-                parent: f.parent,
-                name: f.name,
-                summary: f.summary,
-                position: f.position,
-                endpoints: f.endpoints,
-                endpoints_deep: f.endpoints_deep,
-            })
-            .collect(),
-    }
-}
-pub(super) fn entry(
-    s: EndpointSummary,
-    note: Option<&EndpointNote>,
-    folder_id: Option<nexofolio_common::FolderId>,
-) -> types::Entry {
-    types::Entry {
-        interface_id: s.id,
-        method: s.method.clone(),
-        path: s.path_template.clone(),
-        name: note.and_then(|n| n.name.clone()),
-        purpose: note.and_then(|n| n.purpose.clone()),
-        folder_id,
-        summary: types::Summary {
-            id: s.id,
-            project_id: s.project_id,
-            method: s.method,
-            path_template: s.path_template,
-            declared: s.declared,
-            external: s.external,
-            environments: s.environments,
-        },
-    }
-}
 pub(super) fn endpoint(
     f: EndpointFacts,
     k: EndpointKnowledge,

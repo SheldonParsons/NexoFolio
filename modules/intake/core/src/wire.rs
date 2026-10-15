@@ -550,6 +550,10 @@ impl WireBody {
 
 fn decode(encoding: Encoding, content: String) -> Result<Content, String> {
     match encoding {
+        // JSON permits NUL but PostgreSQL JSONB text does not. Preserve the
+        // received UTF-8 bytes using the existing binary representation; body
+        // state/media type stay intact and no upstream bytes are invented.
+        Encoding::Utf8 if content.contains('\0') => Ok(Content::Binary(content.into_bytes())),
         Encoding::Utf8 => Ok(Content::Text(content)),
         Encoding::Base64 => BASE64
             .decode(content)

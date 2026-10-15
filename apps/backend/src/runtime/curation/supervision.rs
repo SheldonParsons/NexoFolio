@@ -12,17 +12,25 @@ pub(super) async fn heartbeat(
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         interval.tick().await;
+        if let (Some(queue), Some(task)) = (&s.queue, &s.task) {
+            tokio::time::timeout(Duration::from_secs(30), async {
+                queue.authorize(task).await?;
+                queue
+                    .tasks
+                    .heartbeat_task(task)
+                    .await
+                    .map_err(CurationError::from)
+            })
+            .await
+            .map_err(|_| CurationError::Unavailable)??;
+        }
         if let (Some(candidates), Some(id)) = (&s.candidates, job.snapshot().candidate_id) {
             tokio::time::timeout(
                 Duration::from_secs(30),
                 candidates.heartbeat_candidate(project, id, job.run_id),
             )
             .await
-            .map_err(|_| {
-                CurationError::Failed(
-                    "运行状态确认超过 30 秒未完成，本轮已停止，已保存内容保留".into(),
-                )
-            })??;
+            .map_err(|_| CurationError::Unavailable)??;
         }
         job.heartbeat();
     }

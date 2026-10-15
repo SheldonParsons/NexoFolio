@@ -2,7 +2,7 @@
 use crate::{SampleField, SignalIndex};
 use nexofolio_common::EndpointId;
 use nexofolio_contracts::{
-    endpoint::{EndpointFacts, FieldLocation},
+    endpoint::{EndpointFacts, EndpointSummary, FieldLocation},
     knowledge::{Confirmation, FieldMapping, LinkContext, LinkIdentity, Relation},
 };
 use std::collections::BTreeMap;
@@ -82,10 +82,19 @@ pub(crate) fn navigation_links_indexed(
     facts: &[EndpointFacts],
     index: &SignalIndex<'_>,
 ) -> Vec<LinkProposal> {
+    navigation_links_for_summaries(
+        &facts.iter().map(|f| f.summary.clone()).collect::<Vec<_>>(),
+        index,
+    )
+}
+pub(crate) fn navigation_links_for_summaries(
+    facts: &[EndpointSummary],
+    index: &SignalIndex<'_>,
+) -> Vec<LinkProposal> {
     let mut out = Vec::new();
     for target in facts {
         let own: Vec<_> = index
-            .endpoint(target.summary.id)
+            .endpoint(target.id)
             .filter(|s| request(s.location))
             .collect();
         let mut rows: BTreeMap<(String, String, String), MatchedRow<'_>> = BTreeMap::new();
@@ -125,12 +134,9 @@ pub(crate) fn navigation_links_indexed(
                 .any(|(a, b)| a.name == "id" && b.location == FieldLocation::Path)
                 && facts
                     .iter()
-                    .find(|f| f.summary.id == source.endpoint)
+                    .find(|f| f.id == source.endpoint)
                     .is_some_and(|f| {
-                        super::entity_scope::same_resource(
-                            &f.summary.path_template,
-                            &target.summary.path_template,
-                        )
+                        super::entity_scope::same_resource(&f.path_template, &target.path_template)
                     });
             if !special && !path_id && (distinct.len() < 2 || !pairs.iter().any(|(a, _)| useful(a)))
             {

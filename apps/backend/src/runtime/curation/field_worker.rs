@@ -9,7 +9,7 @@ use nexofolio_curate::{Completions, Describe, FieldBatchOutput, FieldInput, Pass
 use std::{sync::Arc, time::Instant};
 use tokio::sync::{mpsc, oneshot};
 
-pub(super) type Pending = (EndpointFacts, EndpointKnowledge, Vec<FieldInput>);
+pub(super) type Pending = (EndpointId, Vec<Vec<String>>, usize);
 pub(super) struct Work {
     pub facts: EndpointFacts,
     pub knowledge: EndpointKnowledge,
@@ -37,6 +37,7 @@ pub(super) enum Event {
         endpoint: EndpointId,
         code: &'static str,
         fields: usize,
+        keys: Vec<String>,
     },
     Saved {
         task: u64,
@@ -45,6 +46,7 @@ pub(super) enum Event {
         ack: oneshot::Sender<bool>,
     },
     Failed(Issue),
+    Fault(nexofolio_curate::CompletionError),
     Finished {
         task: u64,
         endpoint: EndpointId,
@@ -138,7 +140,14 @@ pub(super) async fn execute(
                 }
                 (output.missing, "missing_fields")
             }
-            Ok(Err(error)) => (inputs, error_code(&error.0)),
+            Ok(Err(error @ nexofolio_curate::CompletionError::InvalidReply(_))) => {
+                (inputs, error.code())
+            }
+            Ok(Err(error)) => {
+                let _ = events.send(Event::Fault(error)).await;
+                std::future::pending::<()>().await;
+                return;
+            }
             Err(_) => (inputs, "retry_budget_exhausted"),
         };
         if missing.is_empty() {
@@ -151,18 +160,7 @@ pub(super) async fn execute(
                 .await;
             continue;
         }
-        retry(&task, code, missing.len(), &events).await;
-        // Release model permits during backoff. Cancellation drops this future and its queue.
-        let delay = if code == "model_rate_limited" {
-            2u64.pow(attempt as u32)
-        } else if code == "model_unavailable" {
-            attempt as u64
-        } else {
-            0
-        };
-        if delay > 0 {
-            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-        }
+        retry(&task, code, &missing, &events).await;
         // Missing-only keeps all accepted fields. Repeated malformed/timeout batches fall back to single fields.
         let size = if code == "missing_fields" || code == "model_rate_limited" {
             missing.len()
@@ -227,7 +225,13 @@ async fn call(
     );
     reply
 }
-async fn retry(task: &Task, code: &'static str, fields: usize, events: &mpsc::Sender<Event>) {
+async fn retry(
+    task: &Task,
+    code: &'static str,
+    inputs: &[FieldInput],
+    events: &mpsc::Sender<Event>,
+) {
+    let fields = inputs.len();
     tracing::warn!(endpoint = %task.work.facts.summary.id, batch = task.batch, fields, code, "field batch retry");
     let _ = events
         .send(Event::Retry {
@@ -235,6 +239,10 @@ async fn retry(task: &Task, code: &'static str, fields: usize, events: &mpsc::Se
             endpoint: task.work.facts.summary.id,
             code,
             fields,
+            keys: inputs
+                .iter()
+                .map(|input| format!("{}/{}", task.work.facts.summary.id, input.key))
+                .collect(),
         })
         .await;
 }
@@ -254,24 +262,6 @@ async fn save(task: &Task, commands: Vec<Command>, events: &mpsc::Sender<Event>)
         .is_ok()
         && saved.await.unwrap_or(false)
 }
-pub(super) fn error_code(message: &str) -> &'static str {
-    if message.contains("超时") || message.to_lowercase().contains("timeout") {
-        "model_timeout"
-    } else if message.contains("HTTP 429") {
-        "model_rate_limited"
-    } else if message.contains("HTTP 408") {
-        "model_timeout"
-    } else if message.contains("HTTP 4") {
-        "model_rejected"
-    } else if ["key", "JSON", "格式", "缺少"]
-        .iter()
-        .any(|s| message.contains(s))
-    {
-        "invalid_reply"
-    } else {
-        "model_unavailable"
-    }
-}
 fn issue(endpoint: EndpointId, code: &str, fields: usize) -> Issue {
     Issue {
         endpoint,
@@ -288,6 +278,6 @@ fn issue(endpoint: EndpointId, code: &str, fields: usize) -> Issue {
             _ => "模型暂时不可用，已完成的批次已保留",
         }
         .into(),
-        retryable: code != "model_rejected",
+        retryable: true,
     }
 }

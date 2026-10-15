@@ -128,11 +128,12 @@ async fn truncated_or_aborted_json_and_empty_content_are_not_accepted() {
 #[test]
 fn retry_after_is_parsed_without_reading_an_upstream_error_body() {
     assert_eq!(retry_after_seconds("65"), Some(65));
+    assert_eq!(retry_after_seconds("172800"), Some(172800));
     assert_eq!(retry_after_seconds("not a delay"), None);
     let later = std::time::SystemTime::now() + std::time::Duration::from_secs(90);
     let seconds = retry_after_seconds(&httpdate::fmt_http_date(later)).unwrap();
     assert!((89..=91).contains(&seconds));
-    assert_eq!(retry_after_seconds("18446744073709551615"), Some(86_400));
+    assert_eq!(retry_after_seconds("18446744073709551615"), None);
 }
 
 #[tokio::test]
@@ -157,12 +158,24 @@ async fn upstream_rate_limit_sets_shared_cooldown_without_exposing_response_body
     assert!(!error.to_string().contains("private upstream body"));
     server.await.unwrap();
     assert!(
-        tokio::time::timeout(
-            std::time::Duration::from_millis(5),
-            client.complete("next caller")
-        )
-        .await
-        .is_err(),
-        "new callers must wait instead of immediately re-hitting the provider"
+        matches!(
+            client.complete("next caller").await,
+            Err(LlmError::Cooldown {
+                retry_after_seconds: 64..=66
+            })
+        ),
+        "cooldown is returned to the durable queue without HTTP IO or holding a permit"
     );
+}
+
+#[tokio::test]
+async fn invalid_request_configuration_is_not_a_temporary_connection_failure() {
+    let client = LlmClient::new(
+        "invalid://fixture".into(),
+        "fixture".into(),
+        "fixture".into(),
+    );
+    let error = Completions::complete(&client, "fixture").await.unwrap_err();
+    assert_eq!(error.code(), "model_configuration");
+    assert!(!error.temporary());
 }

@@ -23,7 +23,7 @@ impl PostgresKnowledge {
             .await
             .map_err(unavailable)?;
         let id: uuid::Uuid = project.to_string().parse().expect("UUID");
-        let row=sqlx::query("SELECT (SELECT count(*) FROM knowledge.folders WHERE project_id=$1) AS folders, (SELECT count(*) FROM knowledge.candidates WHERE project_id=$1) AS candidates, (SELECT count(*) FROM knowledge.candidates WHERE project_id=$1 AND state='running') AS running")
+        let row=sqlx::query("SELECT (SELECT count(*) FROM knowledge.folders WHERE project_id=$1) AS folders, (SELECT count(*) FROM knowledge.candidates WHERE project_id=$1) AS candidates, ((SELECT count(*) FROM knowledge.candidates WHERE project_id=$1 AND state='running') + (SELECT count(*) FROM knowledge.curation_tasks WHERE project_id=$1 AND state IN ('queued','running','waiting','needs_attention'))) AS running")
             .bind(id).fetch_one(connection).await.map_err(unavailable)?;
         Ok(ProjectContentCounts {
             folders: row.get::<i64, _>("folders") as u64,
@@ -49,6 +49,7 @@ impl PostgresKnowledge {
         }
         // Parent links and archives belong to the same project; round revisions cascade.
         for query in [
+            "DELETE FROM knowledge.curation_tasks WHERE project_id=$1",
             "DELETE FROM knowledge.document_lifecycle_history WHERE project_id=$1",
             "DELETE FROM knowledge.document_lifecycle WHERE project_id=$1",
             "UPDATE knowledge.candidates SET parent=NULL WHERE project_id=$1",

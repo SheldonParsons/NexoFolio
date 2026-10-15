@@ -17,13 +17,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(config.bind_addr).await?;
     let shutdown = CancellationToken::new();
     let signals = install_shutdown_handler(shutdown.clone())?;
-    let (api, recovery) = build_api_with_recovery(&config, &databases, shutdown.clone())?;
     let audit_stop = CancellationToken::new();
     let (audit, mut audit_worker) = nexofolio_backend::audit::Audit::start(
         Arc::new(databases.audit.clone()),
         config.audit.clone(),
         audit_stop.clone(),
     );
+    let (api, recovery) =
+        build_api_with_recovery(&config, &databases, shutdown.clone(), audit.clone())?;
     let router = http::router_with_navigation(
         &config,
         Arc::new(databases.access.clone()),

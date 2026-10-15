@@ -1,5 +1,5 @@
 //! Field IO, bounded concurrency and incremental writes. Freshness belongs to curate.
-use super::{Curation, CurationError, jobs::Job, preparation::PreparedProject};
+use super::{Curation, CurationError, frozen_input::ExecutionInput, jobs::Job};
 use nexofolio_common::ProjectId;
 use nexofolio_contracts::knowledge::RoundState;
 use nexofolio_curate::pending_fields;
@@ -9,7 +9,7 @@ pub(super) async fn run(
     project: ProjectId,
     job: &Job,
     target: Option<nexofolio_common::EndpointId>,
-    prepared: &PreparedProject,
+    prepared: &ExecutionInput,
 ) -> Result<(), CurationError> {
     job.update(|p| {
         p.fields_completed = 0;
@@ -49,25 +49,28 @@ pub(super) async fn run(
     job.update(|p| p.fields_total = p.fields_total.max(p.fields_pending));
     super::standard_pass::run(s, project, job, prepared).await?;
     let mut pending = Vec::new();
-    for facts in prepared
-        .facts
+    for endpoint in prepared
+        .endpoints
         .iter()
-        .filter(|facts| target.is_none_or(|id| facts.summary.id == id))
-        .cloned()
+        .copied()
+        .filter(|e| target.is_none_or(|id| *e == id))
     {
-        let knowledge = s.reader.endpoint(facts.summary.id).await?;
-        let all_inputs = prepared
-            .inputs
-            .get(&facts.summary.id)
-            .cloned()
-            .unwrap_or_default();
+        let loaded = prepared.endpoint(s, endpoint).await?;
+        let facts = loaded.facts;
+        let knowledge = s.reader.endpoint(endpoint).await?;
+        let all_inputs = loaded.inputs;
         let all_count = all_inputs.len();
         let inputs = pending_fields(&facts, &knowledge, all_inputs);
         job.update(|p| p.fields_reused += all_count - inputs.len());
         if inputs.is_empty() {
             job.update(|p| p.fields_completed += 1);
         } else {
-            pending.push((facts, knowledge, inputs));
+            let count = inputs.len();
+            let batches = nexofolio_curate::field_batches(inputs, &knowledge)
+                .into_iter()
+                .map(|b| b.into_iter().map(|i| i.key).collect())
+                .collect();
+            pending.push((endpoint, batches, count));
         }
     }
     job.update(|p| p.fields_reused = p.fields_reused.saturating_sub(p.fields_updated));
@@ -83,10 +86,10 @@ pub(super) async fn run(
     if pending.is_empty() {
         return Ok(());
     }
-    pending.sort_by_key(|(_, _, inputs)| inputs.len());
+    pending.sort_by_key(|(_, _, count)| *count);
     let round = s.knowledge.begin(project, s.describe.author()).await?;
     tracing::info!(round = %round, endpoints = pending.len(), "field round opened");
-    let result = super::field_scheduler::run(s, project, round, pending, job).await;
+    let result = super::field_scheduler::run(s, project, round, pending, job, prepared).await;
     super::field_status::refresh(s, prepared, job).await?;
     s.knowledge
         .finish(
@@ -108,21 +111,14 @@ pub(super) async fn run(
 /// Re-read acknowledged knowledge before declaring coverage complete.
 pub(super) async fn coverage(
     s: &Curation,
-    prepared: &PreparedProject,
+    prepared: &ExecutionInput,
 ) -> Result<(usize, usize), CurationError> {
     let mut fields = 0;
     let mut endpoints = 0;
-    for facts in &prepared.facts {
-        let knowledge = s.reader.endpoint(facts.summary.id).await?;
-        let remaining = pending_fields(
-            facts,
-            &knowledge,
-            prepared
-                .inputs
-                .get(&facts.summary.id)
-                .cloned()
-                .unwrap_or_default(),
-        );
+    for endpoint in &prepared.endpoints {
+        let loaded = prepared.endpoint(s, *endpoint).await?;
+        let knowledge = s.reader.endpoint(*endpoint).await?;
+        let remaining = pending_fields(&loaded.facts, &knowledge, loaded.inputs);
         fields += remaining.len();
         endpoints += usize::from(!remaining.is_empty());
     }

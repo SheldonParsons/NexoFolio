@@ -6,8 +6,8 @@ mod labels;
 mod navigation;
 mod same_value;
 mod template;
-pub(crate) use navigation::navigation_links_indexed;
 pub use navigation::{LinkProposal, NAVIGATION_RECIPE, navigation_links};
+pub(crate) use navigation::{navigation_links_for_summaries, navigation_links_indexed};
 
 use crate::{SampleField, SignalIndex};
 use nexofolio_contracts::{

@@ -36,91 +36,113 @@ pub(super) async fn evidence_snapshot(
         if lifecycle.endpoint(summary.id).is_some() {
             continue;
         }
-        let mut endpoint = s
-            .endpoints
-            .get(summary.id)
-            .await
-            .map_err(|_| CurationError::Unavailable)?
-            .ok_or(CurationError::NotFound)?;
-        if endpoint.summary.project_id != summary.project_id {
-            return Err(CurationError::NotFound);
-        }
-        if endpoint.summary.id != summary.id {
-            return Err(CurationError::Conflict(
-                "接口身份在准备资料期间发生变化；已保存成果保留，请开始新一轮整理".into(),
-            ));
-        }
-        nexofolio_curate::active_facts(&mut endpoint, &lifecycle);
-        let mut retained = Vec::new();
-        for example in &endpoint.examples {
-            if let Some(raw) = s
-                .endpoints
-                .example(summary.id, &example.id)
-                .await
-                .map_err(|_| CurationError::Unavailable)?
-            {
-                let raw = nexofolio_curate::active_observation(
-                    raw,
-                    &lifecycle,
-                    summary.id,
-                    &summary.path_template,
-                );
-                retained.push((example.id.clone(), Some(raw.clone())));
-                let endpoint_for_sample = endpoint.clone();
-                let example_id = example.id.clone();
-                let (auth, fields) = tokio::task::spawn_blocking(move || {
-                    (
-                        nexofolio_curate::authentication(&example_id, &raw),
-                        sample_fields(&endpoint_for_sample, &example_id, &raw),
-                    )
-                })
-                .await
-                .map_err(|_| CurationError::Failed("采集资料分析被中断，请重试。".into()))?;
-                authentication
-                    .entry(summary.id)
-                    .or_insert_with(Vec::new)
-                    .extend(auth);
-                signals.extend(fields);
-                if let Some(job) = job {
-                    job.update(|p| {
-                        if let Some(preparation) = &mut p.preparation {
-                            preparation.samples_read += 1;
-                        }
-                    });
-                }
-            } else {
-                retained.push((example.id.clone(), None));
-                if let Some(job) = job {
-                    job.update(|p| {
-                        if let Some(preparation) = &mut p.preparation {
-                            preparation.samples_unavailable += 1;
-                        }
-                    });
-                }
-            }
-        }
-        let value_facts = endpoint.clone();
-        let values = tokio::task::spawn_blocking(move || {
-            nexofolio_observe::archive_values(&value_facts, &retained)
-        })
-        .await
-        .map_err(|_| CurationError::Failed("值证据提取被中断".into()))?;
-        if let Some(job) = job {
-            job.update(|p| {
-                if let Some(preparation) = &mut p.preparation {
-                    preparation.endpoints_read += 1;
-                    preparation.fields += values.fields.len();
-                    preparation.values += values
-                        .fields
-                        .values()
-                        .map(|f| f.values.len())
-                        .sum::<usize>();
-                }
-            });
-        }
-        archive.documents.extend(values.documents);
-        archive.fields.extend(values.fields);
-        facts.push(endpoint);
+        let e = read_endpoint(s, summary, &lifecycle, job).await?;
+        archive.documents.extend(e.values.documents);
+        archive.fields.extend(e.values.fields);
+        authentication.insert(summary.id, e.authentication);
+        signals.extend(e.signals);
+        facts.push(e.facts);
     }
     Ok((facts, signals, archive, authentication))
+}
+
+pub(super) struct EndpointEvidence {
+    pub facts: EndpointFacts,
+    pub signals: Vec<SampleField>,
+    pub values: nexofolio_contracts::field_values::FieldValueArchive,
+    pub authentication: Vec<nexofolio_contracts::knowledge::AuthenticationUse>,
+}
+pub(super) async fn read_endpoint(
+    s: &Curation,
+    summary: &EndpointSummary,
+    lifecycle: &nexofolio_contracts::knowledge::DocumentLifecycle,
+    job: Option<&Job>,
+) -> Result<EndpointEvidence, CurationError> {
+    let mut signals = Vec::new();
+    let mut authentication = Vec::new();
+    let mut endpoint = s
+        .endpoints
+        .get(summary.id)
+        .await
+        .map_err(|_| CurationError::Unavailable)?
+        .ok_or(CurationError::NotFound)?;
+    if endpoint.summary.project_id != summary.project_id {
+        return Err(CurationError::NotFound);
+    }
+    if endpoint.summary.id != summary.id {
+        return Err(CurationError::Conflict(
+            "接口身份在准备资料期间发生变化；已保存成果保留，请开始新一轮整理".into(),
+        ));
+    }
+    nexofolio_curate::active_facts(&mut endpoint, lifecycle);
+    let mut retained = Vec::new();
+    for example in &endpoint.examples {
+        if let Some(raw) = s
+            .endpoints
+            .example(summary.id, &example.id)
+            .await
+            .map_err(|_| CurationError::Unavailable)?
+        {
+            let raw = nexofolio_curate::active_observation(
+                raw,
+                lifecycle,
+                summary.id,
+                &summary.path_template,
+            );
+
+            let endpoint_for_sample = endpoint.clone();
+            let example_id = example.id.clone();
+            let (raw, auth, fields) = tokio::task::spawn_blocking(move || {
+                let auth = nexofolio_curate::authentication(&example_id, &raw);
+                let fields = sample_fields(&endpoint_for_sample, &example_id, &raw);
+                (raw, auth, fields)
+            })
+            .await
+            .map_err(|_| CurationError::Failed("采集资料分析被中断，请重试。".into()))?;
+            retained.push((example.id.clone(), Some(raw)));
+            authentication.extend(auth);
+            signals.extend(fields);
+            if let Some(job) = job {
+                job.update(|p| {
+                    if let Some(preparation) = &mut p.preparation {
+                        preparation.samples_read += 1;
+                    }
+                });
+            }
+        } else {
+            retained.push((example.id.clone(), None));
+            if let Some(job) = job {
+                job.update(|p| {
+                    if let Some(preparation) = &mut p.preparation {
+                        preparation.samples_unavailable += 1;
+                    }
+                });
+            }
+        }
+    }
+    let value_facts = endpoint.clone();
+    let values = tokio::task::spawn_blocking(move || {
+        nexofolio_observe::archive_values(&value_facts, &retained)
+    })
+    .await
+    .map_err(|_| CurationError::Failed("值证据提取被中断".into()))?;
+    if let Some(job) = job {
+        job.update(|p| {
+            if let Some(preparation) = &mut p.preparation {
+                preparation.endpoints_read += 1;
+                preparation.fields += values.fields.len();
+                preparation.values += values
+                    .fields
+                    .values()
+                    .map(|f| f.values.len())
+                    .sum::<usize>();
+            }
+        });
+    }
+    Ok(EndpointEvidence {
+        facts: endpoint,
+        signals,
+        values,
+        authentication,
+    })
 }

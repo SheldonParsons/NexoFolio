@@ -2,13 +2,17 @@
 mod batch_writes;
 mod create;
 mod decisions;
+pub(crate) mod frozen;
 mod inheritance;
 mod progress;
 mod recovery;
 mod restart;
+mod review;
 mod session;
 mod snapshot;
 mod snapshot_tx;
+mod task_retry;
+mod tasks;
 mod validation;
 mod value_archive;
 pub use session::CandidateSession;
@@ -23,6 +27,45 @@ use snapshot_tx::SnapshotTx;
 
 #[async_trait]
 impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Knowledge<S, R, C> {
+    async fn review_candidate(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        query: &CandidateReviewQuery,
+    ) -> KnowledgeResult<serde_json::Value> {
+        self.review_proposal(project, id, query).await
+    }
+    async fn apply_candidate_observed(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        actor: CandidateActor,
+        observer: &dyn ApplyObserver,
+    ) -> KnowledgeResult<Vec<RoundId>> {
+        self.apply_proposal_as(project, id, actor, Some(observer))
+            .await
+    }
+    async fn put_frozen_chunk(
+        &self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        owner: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        content: &str,
+    ) -> KnowledgeResult<FrozenRef> {
+        self.write_frozen_chunk(project, candidate, owner, snapshot, content)
+            .await
+    }
+    async fn frozen_chunk(
+        &self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        reference: &FrozenRef,
+    ) -> KnowledgeResult<String> {
+        self.read_frozen_chunk(project, candidate, snapshot, reference)
+            .await
+    }
     async fn recovery_candidates(
         &self,
         after: Option<uuid::Uuid>,
@@ -199,6 +242,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         let mut candidate = validation::load_projection(tx.as_mut(), project, id).await?;
         running(&candidate)?;
         recovery::owned(&candidate, owner)?;
+        tasks::worker(tx.as_mut(), project, id, owner, self.clock.now()).await?;
         let batch = RoundId::new();
         candidate.batches.push(CandidateBatch {
             id: batch,
@@ -221,8 +265,12 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         batch: RoundId,
         proposed: &[Command],
     ) -> KnowledgeResult<Candidate> {
-        self.append_proposal(project, id, owner, batch, proposed, false)
-            .await
+        let mut tx = self.store.begin().await.map_err(store_error)?;
+        self.append_proposal(tx.as_mut(), project, id, owner, batch, proposed)
+            .await?;
+        let candidate = load(tx.as_mut(), project, id).await?;
+        tx.commit().await.map_err(store_error)?;
+        Ok(candidate)
     }
     async fn append_candidate_view(
         &self,
@@ -232,10 +280,12 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         batch: RoundId,
         proposed: &[Command],
     ) -> KnowledgeResult<KnowledgeSnapshot> {
-        Ok(self
-            .append_proposal(project, id, owner, batch, proposed, true)
-            .await?
-            .view)
+        let mut tx = self.store.begin().await.map_err(store_error)?;
+        let view = self
+            .append_proposal(tx.as_mut(), project, id, owner, batch, proposed)
+            .await?;
+        tx.commit().await.map_err(store_error)?;
+        Ok(view)
     }
     async fn close_candidate_batch(
         &self,
@@ -253,6 +303,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         let mut candidate = validation::load_projection(tx.as_mut(), project, id).await?;
         running(&candidate)?;
         recovery::owned(&candidate, owner)?;
+        tasks::worker(tx.as_mut(), project, id, owner, self.clock.now()).await?;
         let group = candidate
             .batches
             .iter_mut()
@@ -300,9 +351,29 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         {
             return Err(KnowledgeError::CandidateClosed);
         }
+        tasks::worker(tx.as_mut(), project, id, owner, self.clock.now()).await?;
         tx.checkpoint_candidate(project, id, state, &progress, self.clock.now())
             .await
             .map_err(store_error)?;
+        if state != CandidateState::Running
+            && let Some(mut task) = tx.candidate_task(project, id).await.map_err(store_error)?
+        {
+            task.transition(
+                if state == CandidateState::Ready {
+                    TaskState::Done
+                } else {
+                    TaskState::Failed
+                },
+                self.clock.now(),
+            );
+            task.lease_until = None;
+            task.updated_at = self.clock.now();
+            task.message = progress
+                .get("message")
+                .and_then(|v| v.as_str())
+                .map(str::to_owned);
+            tx.put_task(&task).await.map_err(store_error)?;
+        }
         tx.commit().await.map_err(store_error)
     }
     async fn apply_candidate_as(
@@ -311,7 +382,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> KnowledgeCandidates for Kno
         id: uuid::Uuid,
         actor: CandidateActor,
     ) -> KnowledgeResult<Vec<RoundId>> {
-        self.apply_proposal_as(project, id, actor).await
+        self.apply_proposal_as(project, id, actor, None).await
     }
     async fn discard_candidate_as(
         &self,

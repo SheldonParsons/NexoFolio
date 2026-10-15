@@ -18,6 +18,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         let candidate = super::load(tx.as_mut(), project, id).await?;
         super::running(&candidate)?;
         super::recovery::owned(&candidate, Some(owner))?;
+        super::tasks::worker(tx.as_mut(), project, id, Some(owner), self.clock.now()).await?;
         if archive.version != 1
             || archive.documents.values().any(|d| {
                 d.source

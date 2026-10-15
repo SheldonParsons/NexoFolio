@@ -64,7 +64,7 @@ pub enum CollectError {
     UnknownEnvironment,
     #[error("batch_id was already used for different content")]
     BatchIdReused,
-    #[error("too many batches from this platform")]
+    #[error("too many concurrent requests or batches from this producer")]
     RateLimited { retry_after_secs: u64 },
     /// Retryable. Names the dependency that failed, for logs only.
     #[error("temporarily unavailable")]
@@ -131,9 +131,19 @@ impl Intake {
 
     /// Processes one request body. Retrying the same batch is always safe.
     pub async fn submit(&self, raw: &[u8]) -> Result<Receipt, CollectError> {
+        self.submit_for_client(raw, None).await
+    }
+
+    /// Optional installation identity allocates the existing quota independently
+    /// of platform. The HTTP caller must also enforce global resource admission.
+    pub async fn submit_for_client(
+        &self,
+        raw: &[u8],
+        client: Option<Uuid>,
+    ) -> Result<Receipt, CollectError> {
         let started = Instant::now();
         let mut trace = Trace::default();
-        let result = self.process(raw, &mut trace).await;
+        let result = self.process(raw, &mut trace, client).await;
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let batch_id = trace.batch_id.map(|id| id.to_string());
         let platform = trace.platform.as_deref();
@@ -170,7 +180,12 @@ impl Intake {
         result
     }
 
-    async fn process(&self, raw: &[u8], trace: &mut Trace) -> Result<Receipt, CollectError> {
+    async fn process(
+        &self,
+        raw: &[u8],
+        trace: &mut Trace,
+        client: Option<Uuid>,
+    ) -> Result<Receipt, CollectError> {
         if raw.len() > MAX_BATCH_BYTES {
             return Err(CollectError::BatchTooLarge);
         }
@@ -181,8 +196,11 @@ impl Intake {
 
         // Before the ledger, so retries count too; clients wait and resend.
         let now = self.clock.now();
+        let bucket = client
+            .map(|id| format!("client:{id}"))
+            .unwrap_or_else(|| format!("platform:{platform}"));
         self.limiter
-            .take(platform, now)
+            .take(&bucket, now)
             .map_err(|retry_after_secs| CollectError::RateLimited { retry_after_secs })?;
 
         let content_hash = hash::content_hash(&value);

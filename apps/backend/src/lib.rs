@@ -6,3 +6,4 @@ pub mod wiring;
 pub(crate) mod runtime;
 
 pub mod audit;
+pub(crate) mod operations;

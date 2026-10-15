@@ -6,7 +6,7 @@ use super::{
 };
 use nexofolio_contracts::{
     endpoint::{FieldFacts, FieldPath},
-    knowledge::EndpointKnowledge,
+    knowledge::FieldKnowledge,
 };
 
 fn parent(f: &FieldFacts) -> Option<String> {
@@ -21,7 +21,7 @@ fn parent(f: &FieldFacts) -> Option<String> {
 pub(super) fn read(
     q: &Query,
     fields: &[&FieldFacts],
-    knowledge: &EndpointKnowledge,
+    knowledge: &FieldKnowledge,
 ) -> Result<Value, ReadError> {
     let keys: std::collections::HashSet<_> = fields
         .iter()
@@ -51,7 +51,7 @@ pub(super) fn read(
         })
         .map(|(f, _)| {
             let key = nexofolio_contracts::knowledge::field_note_key(f);
-            let note = note_for(f, knowledge);
+            let note = note_for(f, &knowledge.fields);
             let children = child_counts.get(key.as_str()).copied().unwrap_or(0);
             // key already carries the exact path and location. Full structured
             // path remains available in field_summary / field.
@@ -59,7 +59,7 @@ pub(super) fn read(
                 "key":key,"location":f.location,"types":f.types,
                 "name":note.and_then(|n|n.context.display_name.as_ref()),
                 "description_preview":note.map(|n|preview(&n.text)),
-                "children":children,"related_interfaces":field_links(q,knowledge,f).len(),
+                "children":children,"related_interfaces":field_links(q,&knowledge.links,f).len(),
                 "open":action("read_interface",q,json!({"section":"field_summary","field_key":key}))
             });
             if children > 0 {

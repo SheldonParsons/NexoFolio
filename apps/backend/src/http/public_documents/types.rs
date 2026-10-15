@@ -1,52 +1,14 @@
 //! Allowlisted payloads; full facts, note contexts and samples are never serialized.
 use nexofolio_access_contracts::DocumentProject;
-use nexofolio_common::{EndpointId, EnvironmentId, FolderId, ProjectId};
+use nexofolio_common::{EndpointId, EnvironmentId, ProjectId};
 use nexofolio_contracts::{endpoint::*, knowledge::Confirmation};
 use serde::Serialize;
 
 #[derive(Serialize)]
 pub(super) struct DocumentIndex {
-    pub lifecycle: nexofolio_contracts::knowledge::DocumentLifecycle,
     pub project: DocumentProject,
-    pub catalog: Catalogue,
-    pub entries: Vec<Entry>,
-}
-#[derive(Serialize)]
-pub(super) struct Catalogue {
-    pub project_id: ProjectId,
-    pub folders: Vec<Folder>,
-    pub unplaced: usize,
-}
-#[derive(Serialize)]
-pub(super) struct Folder {
-    pub id: FolderId,
-    pub parent: Option<FolderId>,
-    pub name: String,
-    pub summary: Option<String>,
-    pub position: i32,
-    pub endpoints: usize,
-    pub endpoints_deep: usize,
-}
-#[derive(Serialize)]
-pub(super) struct Summary {
-    pub id: EndpointId,
-    pub project_id: ProjectId,
-    pub method: String,
-    pub path_template: String,
-    pub declared: bool,
-    pub external: bool,
-    pub environments: Vec<EnvironmentUsage>,
-}
-#[derive(Serialize)]
-pub(super) struct Entry {
-    pub interface_id: EndpointId,
-    pub method: String,
-    pub path: String,
-    pub name: Option<String>,
-    pub purpose: Option<String>,
-    #[serde(rename = "folderId")]
-    pub folder_id: Option<FolderId>,
-    pub summary: Summary,
+    #[serde(flatten)]
+    pub index: crate::http::document_index::DocumentIndex,
 }
 #[derive(Serialize)]
 pub(super) struct DocumentEndpoint {

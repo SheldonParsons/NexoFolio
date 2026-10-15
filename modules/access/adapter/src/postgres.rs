@@ -76,3 +76,26 @@ impl DatabaseProbe for Postgres {
             })
     }
 }
+
+impl nexofolio_common::PoolTelemetry for Postgres {
+    fn pool_snapshots(&self) -> Vec<nexofolio_common::PoolSnapshot> {
+        vec![
+            nexofolio_common::PoolSnapshot {
+                name: "access",
+                size: self.pool.size(),
+                idle: self.pool.num_idle(),
+                configured_max: self.pool.options().get_max_connections(),
+                waiting: None,
+                acquire_timeouts: None,
+            },
+            nexofolio_common::PoolSnapshot {
+                name: "access_activity",
+                size: self.activity_pool.size(),
+                idle: self.activity_pool.num_idle(),
+                configured_max: self.activity_pool.options().get_max_connections(),
+                waiting: None,
+                acquire_timeouts: None,
+            },
+        ]
+    }
+}

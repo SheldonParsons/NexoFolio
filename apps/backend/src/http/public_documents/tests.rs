@@ -210,3 +210,39 @@ async fn mcp_still_requires_identity_and_project_permission_after_public_reading
         "创建订单"
     );
 }
+
+#[tokio::test]
+async fn protected_index_shares_public_projection_without_opening_member_access() {
+    let f = setup().await;
+    let project = f.access.project;
+    let path = format!("/v1/projects/{project}/document");
+    for (token, expected) in [
+        (None, StatusCode::UNAUTHORIZED),
+        (Some("expired"), StatusCode::UNAUTHORIZED),
+        (Some("outsider"), StatusCode::FORBIDDEN),
+    ] {
+        assert_eq!(
+            request(&f, "GET", &path, token, Value::Null).await.0,
+            expected
+        );
+    }
+    let (status, mut member, cache) = request(&f, "GET", &path, Some("member"), Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(cache, "no-store");
+    assert_eq!(member["entries"][0]["described_by"], "person");
+    let (_, mut public, _) = request(
+        &f,
+        "GET",
+        &format!("/v1/public/projects/{project}/document"),
+        None,
+        Value::Null,
+    )
+    .await;
+    public.as_object_mut().unwrap().remove("project");
+    for entry in member["entries"].as_array_mut().unwrap() {
+        entry.as_object_mut().unwrap().remove("described_by");
+    }
+    assert_eq!(member, public);
+    assert!(!member.to_string().contains("PRIVATE_"));
+    assert_eq!(f.reader.raw_reads.load(Ordering::SeqCst), 0);
+}

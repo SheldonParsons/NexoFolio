@@ -27,24 +27,26 @@ pub(super) fn merged_tree(
         tree.insert(node.id, node.clone());
     }
     if tree.values().filter(|n| n.parent.is_none()).count() > MAX_TOP_LEVEL {
-        return Err(CompletionError(
+        return Err(CompletionError::InvalidReply(
             "保留旧目录后顶层超过上限，请复用旧 ID 调整分组，未写入".into(),
         ));
     }
     let mut names = HashSet::new();
     for node in tree.values() {
         if !names.insert((node.parent, node.name.as_str())) {
-            return Err(CompletionError("同层目录重名，未写入".into()));
+            return Err(CompletionError::InvalidReply("同层目录重名，未写入".into()));
         }
         let mut seen = HashSet::new();
         let mut at = Some(node.id);
         while let Some(id) = at {
             if !seen.insert(id) || seen.len() > MAX_DEPTH {
-                return Err(CompletionError("目录存在循环或超过两层，未写入".into()));
+                return Err(CompletionError::InvalidReply(
+                    "目录存在循环或超过两层，未写入".into(),
+                ));
             }
             at = tree
                 .get(&id)
-                .ok_or_else(|| CompletionError("目录父级不存在，未写入".into()))?
+                .ok_or_else(|| CompletionError::InvalidReply("目录父级不存在，未写入".into()))?
                 .parent;
         }
     }
@@ -68,7 +70,7 @@ pub(super) fn nonempty_new_groups(
         .keys()
         .any(|id| !existing.iter().any(|f| f.id == *id) && !populated.contains(id))
     {
-        return Err(CompletionError(
+        return Err(CompletionError::InvalidReply(
             "新目录没有有效接口（人工归属不能强行移动），未写入".into(),
         ));
     }
@@ -102,7 +104,7 @@ pub(super) fn stable_memberships(
             && !new_members.is_empty()
             && old_members.is_disjoint(&new_members)
         {
-            return Err(CompletionError(
+            return Err(CompletionError::InvalidReply(
                 "不能用旧目录 ID 替换完全不同的接口分组，请创建新目录或保留合理成员，未写入".into(),
             ));
         }

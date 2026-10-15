@@ -21,6 +21,13 @@ pub(crate) enum Status {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Progress {
+    pub task_id: Option<uuid::Uuid>,
+    pub task_state: Option<nexofolio_contracts::knowledge::TaskState>,
+    pub queued_tasks: usize,
+    pub next_retry_at: Option<DateTime<Utc>>,
+    pub retry_reason: Option<String>,
+    pub retry_count: u32,
+    pub task_timing: Option<nexofolio_contracts::knowledge::TaskTiming>,
     pub lifecycle_version: u64,
     pub lifecycle_stale: bool,
     pub candidate_id: Option<uuid::Uuid>,
@@ -60,6 +67,7 @@ pub(crate) struct Progress {
     pub fields_failed: usize,
     pub fields_reused: usize,
     pub retries: usize,
+    pub validation_failures: std::collections::BTreeMap<String, usize>,
     pub queued_batches: usize,
     pub total_batches: usize,
     pub completed_batches: usize,
@@ -78,6 +86,13 @@ pub(crate) struct Progress {
 impl Default for Progress {
     fn default() -> Self {
         Self {
+            task_id: None,
+            task_state: None,
+            queued_tasks: 0,
+            next_retry_at: None,
+            retry_reason: None,
+            retry_count: 0,
+            task_timing: None,
             lifecycle_version: 0,
             lifecycle_stale: false,
             candidate_id: None,
@@ -115,6 +130,7 @@ impl Default for Progress {
             fields_failed: 0,
             fields_reused: 0,
             retries: 0,
+            validation_failures: Default::default(),
             queued_batches: 0,
             total_batches: 0,
             completed_batches: 0,
@@ -210,6 +226,17 @@ impl Jobs {
             job.cancel();
         }
     }
+    pub(super) fn cancel_run(&self, project: ProjectId, expected: Option<uuid::Uuid>) {
+        if let Some(job) = self
+            .0
+            .lock()
+            .expect("jobs")
+            .get(&project)
+            .filter(|job| Some(job.run_id) == expected)
+        {
+            job.cancel();
+        }
+    }
     pub(super) fn cancel(&self, project: ProjectId) {
         if let Some(job) = self.0.lock().expect("jobs").get(&project) {
             job.cancel();
@@ -227,14 +254,24 @@ impl Jobs {
 
     /// A project's concurrent callers join the same run.
     pub fn start(&self, project: ProjectId, total: usize) -> (Arc<Job>, bool) {
+        self.start_owned(project, total, None)
+    }
+    pub(super) fn start_owned(
+        &self,
+        project: ProjectId,
+        total: usize,
+        owner: Option<uuid::Uuid>,
+    ) -> (Arc<Job>, bool) {
         let mut jobs = self.0.lock().expect("curate jobs");
-        if let Some(job) = jobs
-            .get(&project)
-            .filter(|job| job.snapshot().status == Status::Running)
-        {
+        if let Some(job) = jobs.get(&project).filter(|job| {
+            job.snapshot().status == Status::Running && owner.is_none_or(|id| id == job.run_id)
+        }) {
             return (job.clone(), false);
         }
-        let run_id = uuid::Uuid::new_v4();
+        if let Some(old) = jobs.get(&project) {
+            old.cancel();
+        }
+        let run_id = owner.unwrap_or_else(uuid::Uuid::new_v4);
         let job = Arc::new(Job {
             run_id,
             cancelled: std::sync::atomic::AtomicBool::new(false),

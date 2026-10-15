@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// addresses. All of it needs
 /// access configured, since collect targets and sites belong to its projects.
 pub fn build_api(config: &Config, databases: &Databases) -> Result<Option<axum::Router>> {
-    Ok(assemble_api(config, databases)?.map(|(router, _)| router))
+    Ok(assemble_api(config, databases)?.map(|(router, _, _)| router))
 }
 
 /// Only the serving API starts recovery. Admin/preflight construction stays idle.
@@ -25,18 +25,26 @@ pub fn build_api_with_recovery(
     config: &Config,
     databases: &Databases,
     shutdown: tokio_util::sync::CancellationToken,
+    audit: crate::audit::Audit,
 ) -> Result<(Option<axum::Router>, Option<tokio::task::JoinHandle<()>>)> {
-    let Some((router, curation)) = assemble_api(config, databases)? else {
+    let Some((router, curation, monitor)) = assemble_api(config, databases)? else {
         return Ok((None, None));
     };
-    let recovery = tokio::spawn(curation.recover_after_restart(shutdown));
+    let recovery = tokio::spawn(async move {
+        tokio::join!(
+            curation
+                .with_execution_audit(audit)
+                .recover_after_restart(shutdown.clone()),
+            monitor.run(shutdown),
+        );
+    });
     Ok((Some(router), Some(recovery)))
 }
 
 fn assemble_api(
     config: &Config,
     databases: &Databases,
-) -> Result<Option<(axum::Router, Curation)>> {
+) -> Result<Option<(axum::Router, Curation, crate::operations::Monitor)>> {
     let (Some(base), Some(key)) = (&config.zentao_base_url, &config.session_key) else {
         return Ok(None);
     };
@@ -67,7 +75,7 @@ fn assemble_api(
     .with_project_lifecycle(store.clone());
 
     // Curate: LLM-powered describe and organize passes
-    let completions: Arc<dyn Completions> = Arc::new(
+    let model = Arc::new(
         LlmClient::new(
             config
                 .catalog_model_base_url
@@ -82,6 +90,23 @@ fn assemble_api(
         .with_concurrency(config.model_max_concurrency)
         .with_options(config.model_options),
     );
+    let completions: Arc<dyn Completions> = model.clone();
+    let mut monitor = crate::operations::Monitor::new(
+        Arc::new(databases.knowledge.clone()),
+        model,
+        vec![
+            Arc::new(databases.access.clone()),
+            Arc::new(databases.knowledge.clone()),
+            Arc::new(databases.observe.clone()),
+            Arc::new(databases.intake.clone()),
+            Arc::new(databases.audit.clone()),
+        ],
+    );
+    let storage = crate::operations::storage::StorageMonitor::new(
+        vec![Arc::new(databases.observe.clone()), Arc::new(databases.knowledge.clone())],
+        Arc::new(databases.knowledge.clone()),
+    );
+    monitor.storage = Some(storage.clone());
     let describe = Arc::new(Describe::new(
         completions.clone(),
         config
@@ -104,6 +129,13 @@ fn assemble_api(
         organize,
     )
     .with_candidates(knowledge_svc.clone())
+    .with_queue(
+        knowledge_svc.clone(),
+        store.clone(),
+        store.clone(),
+        document_instance.clone(),
+        config.model_max_concurrency,
+    )
     .with_concurrency(
         config.field_concurrency.min(config.model_max_concurrency),
         config
@@ -119,6 +151,16 @@ fn assemble_api(
         curation: curation.clone(),
     });
     let access = AccessHttp::new(login, store.clone(), store.clone(), store.clone());
+    let diagnostics = crate::audit::console::Services {
+        sessions: store.clone(),
+        projects: store.clone(),
+        actors: store.clone(),
+        store: Arc::new(databases.audit.clone()),
+        candidates: knowledge_svc.clone(),
+        tasks: knowledge_svc.clone(),
+        knowledge: knowledge_svc.clone(),
+        endpoints: observe.clone(),
+    };
     let router = crate::http::access::routes(access)
         .merge(crate::http::public_documents::routes(
             document_instance,
@@ -126,15 +168,16 @@ fn assemble_api(
             observe.clone(),
             knowledge_svc.clone(),
         ))
-        .merge(crate::audit::console::routes(
-            crate::audit::console::Services {
-                sessions: store.clone(),
-                projects: store.clone(),
-                actors: store.clone(),
-                store: Arc::new(databases.audit.clone()),
-                candidates: knowledge_svc.clone(),
-                knowledge: knowledge_svc.clone(),
-                endpoints: observe.clone(),
+        .merge(crate::audit::console::routes(diagnostics.clone()))
+        .merge(crate::http::storage::routes(crate::http::storage::Services {
+            monitor: storage,
+            access: diagnostics.clone(),
+        }))
+        .merge(crate::http::operations::routes(
+            crate::http::operations::Services {
+                monitor: monitor.clone(),
+                tasks: Arc::new(databases.knowledge.clone()),
+                diagnostics,
             },
         ))
         .merge(crate::audit::routes::routes(
@@ -193,9 +236,13 @@ fn assemble_api(
             store.clone(),
             observe,
         ))
-        .merge(collect::routes_with_updates(
+        .merge(collect::routes_observed(
             Arc::new(intake),
-            databases.intake.clone(),
+            Some(crate::http::fetcher_updates::FetcherUpdates::new(
+                databases.intake.clone(),
+            )),
+            monitor.intake.clone(),
+            config.collect_in_flight,
         ))
         .layer(axum::middleware::from_fn_with_state(
             crate::http::project_writes::ProjectWriteGate {
@@ -204,7 +251,7 @@ fn assemble_api(
             },
             crate::http::project_writes::protect,
         ));
-    Ok(Some((router, curation)))
+    Ok(Some((router, curation, monitor)))
 }
 
 /// MCP composes saved knowledge and access ports, independently of business model configuration.

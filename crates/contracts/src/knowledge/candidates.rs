@@ -105,6 +105,44 @@ impl Candidate {
 /// Lifecycle and atomic application belong to knowledge, execution to runtime.
 #[async_trait]
 pub trait KnowledgeCandidates: Send + Sync {
+    async fn review_candidate(
+        &self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+        _query: &CandidateReviewQuery,
+    ) -> KnowledgeResult<serde_json::Value> {
+        Err(KnowledgeError::Unavailable)
+    }
+    async fn apply_candidate_observed(
+        &self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        actor: CandidateActor,
+        _observer: &dyn ApplyObserver,
+    ) -> KnowledgeResult<Vec<RoundId>> {
+        self.apply_candidate_as(project, id, actor).await
+    }
+    async fn put_frozen_chunk(
+        &self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        owner: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        content: &str,
+    ) -> KnowledgeResult<FrozenRef> {
+        let _ = (project, candidate, owner, snapshot, content);
+        Err(KnowledgeError::Unavailable)
+    }
+    async fn frozen_chunk(
+        &self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        reference: &FrozenRef,
+    ) -> KnowledgeResult<String> {
+        let _ = (project, candidate, snapshot, reference);
+        Err(KnowledgeError::Unavailable)
+    }
     /// Backend-only scan of expired running proposals, in ascending ID order.
     async fn recovery_candidates(
         &self,

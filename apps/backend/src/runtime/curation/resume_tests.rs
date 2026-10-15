@@ -29,7 +29,10 @@ impl Completions for Model {
                 .collect(),
         );
         if inputs.len() == 1 && inputs[0]["path"] == "f2" && self.fail.load(Ordering::SeqCst) {
-            return Err(CompletionError("HTTP 401".into()));
+            return Err(CompletionError::Status {
+                status: 401,
+                retry_after_seconds: None,
+            });
         }
         Ok(json!({"fields":inputs.iter().filter(|i|i["path"]!="f2" || !self.fail.load(Ordering::SeqCst)).map(|i|json!({"key":i["key"],"display_name":"合成字段","description":"合成业务字段"})).collect::<Vec<_>>()}).to_string())
     }

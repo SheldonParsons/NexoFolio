@@ -71,16 +71,16 @@ impl Navigation {
         if let Some(id) = q.endpoint_id
             && !summaries.iter().any(|s| s.id == id)
         {
-            let facts = self
+            let identity = self
                 .endpoints
-                .get(id)
+                .identity(id)
                 .await
                 .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?
                 .ok_or("ENDPOINT_NOT_IN_PROJECT")?;
-            if facts.summary.project_id != q.project_id {
+            if identity.project_id != q.project_id {
                 return Err("ENDPOINT_NOT_IN_PROJECT".into());
             }
-            q.endpoint_id = Some(facts.summary.id);
+            q.endpoint_id = Some(identity.id);
         }
         if let Some(id) = q.endpoint_id {
             let s = summaries

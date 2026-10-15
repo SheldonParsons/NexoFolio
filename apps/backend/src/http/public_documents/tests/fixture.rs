@@ -316,6 +316,12 @@ pub async fn setup() -> Fixture {
         Arc::new(reader.clone()),
         knowledge.clone(),
     )
+    .merge(crate::http::knowledge::routes(
+        access.clone(),
+        access.clone(),
+        knowledge.clone(),
+        Arc::new(reader.clone()),
+    ))
     .merge(crate::http::service_addresses::routes(
         access.clone(),
         access.clone(),

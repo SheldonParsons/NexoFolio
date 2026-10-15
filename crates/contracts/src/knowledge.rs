@@ -7,6 +7,14 @@
 //! every value was written by a person or by a curate pass, and every write
 //! names its author and the round it belongs to.
 
+mod review;
+pub use review::*;
+mod search;
+pub use search::*;
+mod tasks;
+pub use tasks::*;
+mod frozen;
+pub use frozen::*;
 mod lifecycle;
 pub use lifecycle::*;
 mod candidates;
@@ -200,6 +208,10 @@ pub enum Target {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KnowledgeError {
+    #[error("历史已精简，仅保留摘要；详情、对比与回滚已到期")]
+    HistoryExpired,
+    #[error("冻结资料缺失、损坏或身份不匹配；已保存成果保留，不能混用其他资料")]
+    FrozenInputInvalid,
     #[error("废弃状态已变化，请刷新后重试；旧整理结果保留，请开始新一轮整理")]
     LifecycleStale,
     #[error("无效的生命周期操作：{0}")]
@@ -308,6 +320,33 @@ pub trait KnowledgeReader: Send + Sync {
         Err(KnowledgeError::Unavailable)
     }
 
+    /// Saved notes for exact/legacy field identities and endpoint relations only.
+    async fn field_knowledge(
+        &self,
+        endpoint: EndpointId,
+        keys: &[String],
+    ) -> KnowledgeResult<FieldKnowledge> {
+        let k = self.endpoint(endpoint).await?;
+        Ok(FieldKnowledge {
+            fields: k
+                .fields
+                .into_iter()
+                .filter(|f| keys.contains(&f.path))
+                .collect(),
+            links: k.links,
+        })
+    }
+
+    async fn search(&self, query: KnowledgeSearch) -> KnowledgeResult<KnowledgeSearchPage> {
+        let notes = self.notes(query.project).await?;
+        let fields = if query.fields {
+            self.field_notes(query.project).await?
+        } else {
+            Vec::new()
+        };
+        Ok(query.select(&notes, &fields))
+    }
+
     /// Every link of a project, for diffing against a fresh pass.
     async fn links(&self, project: ProjectId) -> KnowledgeResult<Vec<Link>>;
 
@@ -328,6 +367,13 @@ pub struct EndpointKnowledge {
     pub fields: Vec<FieldNote>,
     /// Links in both directions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<Link>,
+}
+
+/// Exact field expansion, deliberately separate from a complete endpoint document.
+#[derive(Debug, Clone, Default)]
+pub struct FieldKnowledge {
+    pub fields: Vec<FieldNote>,
     pub links: Vec<Link>,
 }
 

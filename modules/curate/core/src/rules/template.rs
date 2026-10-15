@@ -2,17 +2,16 @@
 use super::navigation::{LinkProposal, NAVIGATION_RECIPE, scoped_before};
 use crate::SignalIndex;
 use nexofolio_contracts::{
-    endpoint::{EndpointFacts, FieldLocation},
+    endpoint::{EndpointSummary, FieldLocation},
     knowledge::{Confirmation, FieldMapping, LinkContext, Relation},
 };
-pub(super) fn proposals(facts: &[EndpointFacts], index: &SignalIndex<'_>) -> Vec<LinkProposal> {
+pub(super) fn proposals(facts: &[EndpointSummary], index: &SignalIndex<'_>) -> Vec<LinkProposal> {
     let mut out = Vec::new();
     for target in facts {
         let own: Vec<_> = index
-            .endpoint(target.summary.id)
+            .endpoint(target.id)
             .filter(|s| {
-                s.endpoint == target.summary.id
-                    && !matches!(s.location, FieldLocation::ResponseBody { .. })
+                s.endpoint == target.id && !matches!(s.location, FieldLocation::ResponseBody { .. })
             })
             .collect();
         for form in index.name("formKey").filter(|s| {
@@ -33,12 +32,11 @@ pub(super) fn proposals(facts: &[EndpointFacts], index: &SignalIndex<'_>) -> Vec
                 continue;
             }
             for template in facts.iter().filter(|f| {
-                f.summary
-                    .path_template
+                f.path_template
                     .ends_with(&format!("/listByFormKey/{}", form.value))
             }) {
-                for kind in index.endpoint(template.summary.id).filter(|s| {
-                    s.endpoint == template.summary.id
+                for kind in index.endpoint(template.id).filter(|s| {
+                    s.endpoint == template.id
                         && s.name == "type"
                         && matches!(s.location, FieldLocation::ResponseBody { .. })
                 }) {

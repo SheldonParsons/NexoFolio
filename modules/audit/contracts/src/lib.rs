@@ -7,7 +7,15 @@ use nexofolio_common::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Execution {
+    pub task_id: uuid::Uuid,
+    pub run_id: Option<uuid::Uuid>,
+    pub generation: i64,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Event {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Execution>,
     pub at: DateTime<Utc>,
     pub kind: String,
     pub action: String,
@@ -24,9 +32,10 @@ pub struct Event {
 impl Event {
     /// Validate at the persistence boundary as well as at the transport boundary.
     pub fn bounded(&self) -> bool {
-        [&self.kind, &self.action, &self.method, &self.code]
-            .iter()
-            .all(|s| s.len() <= 64)
+        self.execution.as_ref().is_none_or(|e| e.generation >= 0)
+            && [&self.kind, &self.action, &self.method, &self.code]
+                .iter()
+                .all(|s| s.len() <= 64)
             && self.actor.len() <= 64
             && self.route.len() <= 200
             && [&self.request_id, &self.project, &self.resource]
@@ -79,10 +88,11 @@ pub trait AuditStore: Send + Sync {
         })
     }
     /// Exact project AND candidate correlation, never a project-wide log merge.
-    async fn candidate_events(
+    async fn curation_events(
         &self,
         _project: &str,
-        _candidate: &str,
+        _candidate: Option<&str>,
+        _task: Option<&str>,
     ) -> Result<serde_json::Value> {
         Ok(serde_json::json!({"items":[],"total":0,"available":false}))
     }

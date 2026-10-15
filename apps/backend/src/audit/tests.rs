@@ -60,6 +60,7 @@ fn settings() -> Settings {
 }
 fn event() -> Event {
     Event {
+        execution: None,
         at: chrono::Utc::now(),
         kind: "api".into(),
         action: "request".into(),

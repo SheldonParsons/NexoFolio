@@ -77,6 +77,7 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 base64.workspace = true
 sha2 = "0.11"
+sysinfo = { version = "=0.37.2", default-features = false, features = ["system"] }
 
 [[test]]
 name = "navigation_mcp"
@@ -99,6 +100,7 @@ name = "mcp_tokens"
 path = "../../tests/integration/mcp_tokens.rs"
 
 [dev-dependencies]
+http-body = "1"
 tokio = { workspace = true, features = ["test-util"] }
 nexofolio-knowledge-contracts = { workspace = true, features = ["testing"] }
 nexofolio-intake-contracts = { workspace = true, features = ["testing"] }
@@ -137,3 +139,23 @@ path = "../../tests/integration/document_lifecycle.rs"
 [[test]]
 name = "audit_browser_fixture"
 path = "../../tests/integration/audit_browser_fixture.rs"
+
+[[test]]
+name = "curation_queue"
+path = "../../tests/integration/curation_queue.rs"
+
+[[test]]
+name = "curation_queue_audit"
+path = "../../tests/integration/curation_queue_audit.rs"
+
+[[test]]
+name = "curation_queue_browser"
+path = "../../tests/integration/curation_queue_browser.rs"
+
+[[test]]
+name = "curation_retry"
+path = "../../tests/integration/curation_retry.rs"
+
+[[test]]
+name = "operations"
+path = "../../tests/integration/operations.rs"

@@ -114,7 +114,7 @@ impl Navigation {
             }
             for field in visible {
                 fields += 1;
-                let note = note_for(field, &k);
+                let note = note_for(field, &k.fields);
                 let key = nexofolio_contracts::knowledge::field_note_key(field);
                 let has_text = note.is_some_and(|n| !n.text.trim().is_empty());
                 if has_text {

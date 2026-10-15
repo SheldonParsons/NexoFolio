@@ -6,7 +6,7 @@ use super::{
 };
 use nexofolio_contracts::{
     endpoint::FieldFacts,
-    knowledge::{EndpointKnowledge, EvidenceKind},
+    knowledge::{EvidenceKind, FieldKnowledge},
 };
 use std::collections::{BTreeMap, HashSet};
 const REFERENCES: usize = 3;
@@ -14,12 +14,12 @@ const REFERENCES: usize = 3;
 pub(super) fn read(
     q: &Query,
     field: &FieldFacts,
-    k: &EndpointKnowledge,
+    k: &FieldKnowledge,
     summaries: &[EndpointSummary],
 ) -> Result<Value, ReadError> {
     let key = nexofolio_contracts::knowledge::field_note_key(field);
-    let note = note_for(field, k);
-    let mut links = field_links(q, k, field);
+    let note = note_for(field, &k.fields);
+    let mut links = field_links(q, &k.links, field);
     links.sort_by_key(|l| l.id.to_string());
     let id = q.endpoint_id.ok_or("ENDPOINT_REQUIRED")?;
     let allowed: HashSet<_> = summaries.iter().map(|s| s.id).collect();

@@ -125,20 +125,25 @@ pub struct ApiProcess {
 }
 impl ApiProcess {
     pub async fn start(db: &str, upstream: &Upstream) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_nexofolio-api"))
+        Self::start_base(db, &upstream.base).await
+    }
+    pub async fn start_base(db: &str, base: &str) -> Self {
+        Self::start_binary(
+            db,
+            base,
+            std::path::Path::new(env!("CARGO_BIN_EXE_nexofolio-api")),
+        )
+        .await
+    }
+    pub async fn start_binary(db: &str, base: &str, binary: &std::path::Path) -> Self {
+        let mut child = Command::new(binary)
             .env_clear()
             .env("DATABASE_URL", db)
             .env("NEXOFOLIO_BIND_ADDR", "127.0.0.1:0")
             .env("NEXOFOLIO_LOG", "info")
-            .env(
-                "NEXOFOLIO_ZENTAO_BASE_URL",
-                format!("{}/api.php/v1", upstream.base),
-            )
+            .env("NEXOFOLIO_ZENTAO_BASE_URL", format!("{base}/api.php/v1"))
             .env("NEXOFOLIO_SESSION_KEY", "ab".repeat(32))
-            .env(
-                "NEXOFOLIO_CATALOG_MODEL_BASE_URL",
-                format!("{}/v1", upstream.base),
-            )
+            .env("NEXOFOLIO_CATALOG_MODEL_BASE_URL", format!("{base}/v1"))
             .env("NEXOFOLIO_CATALOG_MODEL", "fixture")
             .env("NEXOFOLIO_CATALOG_MODEL_API_KEY", "fixture-model-key")
             .env("NEXOFOLIO_MODEL_MAX_CONCURRENCY", "1")

@@ -121,8 +121,13 @@ impl AuditStore for PostgresAudit {
     ) -> Result<serde_json::Value> {
         self.read_access(query).await
     }
-    async fn candidate_events(&self, project: &str, candidate: &str) -> Result<serde_json::Value> {
-        self.read_candidate_events(project, candidate).await
+    async fn curation_events(
+        &self,
+        project: &str,
+        candidate: Option<&str>,
+        task: Option<&str>,
+    ) -> Result<serde_json::Value> {
+        self.read_candidate_events(project, candidate, task).await
     }
     async fn report(&self, f: &Filter) -> Result<serde_json::Value> {
         let limit = i64::from(f.limit.clamp(1, 200));
@@ -138,5 +143,18 @@ impl AuditStore for PostgresAudit {
         Ok(
             serde_json::json!({"events":events.into_iter().map(parse).collect::<Vec<_>>(),"buckets":if f.request_id.is_some() { Vec::new() } else { buckets.into_iter().map(parse).collect::<Vec<_>>() },"summary":if f.request_id.is_some() { Vec::new() } else { summary.into_iter().map(parse).collect::<Vec<_>>() },"storage":parse(stats)}),
         )
+    }
+}
+
+impl nexofolio_common::PoolTelemetry for PostgresAudit {
+    fn pool_snapshots(&self) -> Vec<nexofolio_common::PoolSnapshot> {
+        vec![nexofolio_common::PoolSnapshot {
+            name: "audit",
+            size: self.pool.size(),
+            idle: self.pool.num_idle(),
+            configured_max: self.pool.options().get_max_connections(),
+            waiting: None,
+            acquire_timeouts: None,
+        }]
     }
 }

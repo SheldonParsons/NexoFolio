@@ -126,3 +126,16 @@ impl BatchLedger for PostgresLedger {
             .map_err(unavailable)
     }
 }
+
+impl nexofolio_common::PoolTelemetry for PostgresLedger {
+    fn pool_snapshots(&self) -> Vec<nexofolio_common::PoolSnapshot> {
+        vec![nexofolio_common::PoolSnapshot {
+            name: "intake",
+            size: self.pool.size(),
+            idle: self.pool.num_idle(),
+            configured_max: self.pool.options().get_max_connections(),
+            waiting: None,
+            acquire_timeouts: None,
+        }]
+    }
+}

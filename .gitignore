@@ -47,6 +47,8 @@ __pycache__/
 /.codex-ppt-build/
 /presentations/
 /NexoFolio-能力介绍.pptx
+/NexoFolio-介绍.pptx
+/.~*.pptx
 /ppt-build-deck.js
 /nexofolio-promo.html
 /STORYBOARD.md
@@ -54,6 +56,9 @@ __pycache__/
 /style-demo-v*.html
 /ref-frames/
 /ref.mp4
+
+# Local browser evaluation binary, unrelated to backend source.
+/lightpanda
 
 # Machine-specific launcher; keep the actual configuration on this machine.
 /start-nexofolio.sh

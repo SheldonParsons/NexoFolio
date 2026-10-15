@@ -138,6 +138,35 @@ fn exchange() -> Value {
     })
 }
 
+#[tokio::test]
+async fn installation_quota_is_separate_from_platform_and_receipt_identity() {
+    let world = World::new(Limits {
+        rate_per_minute: 60,
+        burst: 1,
+    })
+    .await;
+    let raw = serde_json::to_vec(&world.batch(vec![exchange()])).unwrap();
+    let a = Uuid::new_v4();
+    let receipt = world.intake.submit_for_client(&raw, Some(a)).await.unwrap();
+    assert!(matches!(
+        world.intake.submit_for_client(&raw, Some(a)).await,
+        Err(CollectError::RateLimited { .. })
+    ));
+    assert_eq!(
+        world
+            .intake
+            .submit_for_client(&raw, Some(Uuid::new_v4()))
+            .await
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(world.intake.submit(&raw).await.unwrap(), receipt);
+    assert!(matches!(
+        world.intake.submit(&raw).await,
+        Err(CollectError::RateLimited { .. })
+    ));
+}
+
 fn declaration() -> Value {
     json!({
         "id": Uuid::new_v4(),

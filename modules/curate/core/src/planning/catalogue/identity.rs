@@ -17,7 +17,7 @@ impl<'a> Identities<'a> {
         let mut reserved = HashSet::new();
         for id in ids {
             if !existing.iter().any(|f| f.id == id) || !reserved.insert(id) {
-                return Err(CompletionError(
+                return Err(CompletionError::InvalidReply(
                     "目录引用了未知或重复的旧 ID，未写入".into(),
                 ));
             }
@@ -46,7 +46,9 @@ impl<'a> Identities<'a> {
                 .as_ref()
                 .is_some_and(|s| s.is_empty() || s.chars().count() > 400)
         {
-            return Err(CompletionError("目录名称或介绍为空/过长，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "目录名称或介绍为空/过长，未写入".into(),
+            ));
         }
         let available: Vec<_> = self
             .existing
@@ -61,7 +63,9 @@ impl<'a> Identities<'a> {
             .or_else(|| (available.len() == 1).then(|| available[0].id))
             .unwrap_or_default();
         if !self.used.insert(id) {
-            return Err(CompletionError("同一旧目录被重复使用，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "同一旧目录被重复使用，未写入".into(),
+            ));
         }
         let old = self.existing.iter().find(|f| f.id == id);
         // A missing generated introduction is not a request to erase old text.
@@ -70,12 +74,14 @@ impl<'a> Identities<'a> {
         if protected
             && old.is_some_and(|f| f.parent != parent || f.name != name || f.summary != summary)
         {
-            return Err(CompletionError(
+            return Err(CompletionError::InvalidReply(
                 "建议修改了人工或来源不明的目录，请保留其名称、父级和介绍".into(),
             ));
         }
         if old.is_none() && summary.is_none() {
-            return Err(CompletionError("新目录必须有简短介绍，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "新目录必须有简短介绍，未写入".into(),
+            ));
         }
         Ok(Node {
             id,

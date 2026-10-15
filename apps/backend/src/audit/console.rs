@@ -15,7 +15,7 @@ use nexofolio_audit_contracts::{AccessQuery, AuditStore};
 use nexofolio_common::{Error, ProjectId};
 use nexofolio_contracts::{
     endpoint::EndpointReader,
-    knowledge::{KnowledgeCandidates, KnowledgeError, KnowledgeReader},
+    knowledge::{KnowledgeCandidates, KnowledgeError, KnowledgeReader, KnowledgeTasks},
 };
 use serde_json::{Value, json};
 use std::{collections::HashSet, sync::Arc};
@@ -26,6 +26,7 @@ pub(crate) struct Services {
     pub actors: Arc<dyn ActorNames>,
     pub store: Arc<dyn AuditStore>,
     pub candidates: Arc<dyn KnowledgeCandidates>,
+    pub tasks: Arc<dyn KnowledgeTasks>,
     pub knowledge: Arc<dyn KnowledgeReader>,
     pub endpoints: Arc<dyn EndpointReader>,
 }
@@ -53,6 +54,10 @@ pub(crate) fn routes(s: Services) -> Router {
         .route("/v1/audit/access", get(access))
         .route("/v1/audit/curations/{project}", get(curations))
         .route("/v1/audit/curations/{project}/{candidate}", get(diagnostic))
+        .route(
+            "/v1/audit/curations/{project}/tasks/{task}",
+            get(task_diagnostic),
+        )
         .route_layer(middleware::from_fn_with_state(s.clone(), manager))
         .with_state(s)
         .layer(middleware::from_fn(no_store))
@@ -160,8 +165,27 @@ async fn curations(
         .candidates(project, 100)
         .await
         .map_err(knowledge_error)?;
+    let mut items = Vec::new();
+    for row in &rows {
+        let task = s
+            .tasks
+            .task_for_candidate(project, row.id)
+            .await
+            .map_err(knowledge_error)?;
+        items.push(diagnostics::summary(row, task.as_ref()));
+    }
+    for task in s
+        .tasks
+        .active_tasks(project)
+        .await
+        .map_err(knowledge_error)?
+    {
+        if task.candidate_id.is_none() {
+            items.push(diagnostics::task_summary(&task));
+        }
+    }
     Ok(Json(
-        json!({"project":{"id":project,"name":card.name},"items":rows.iter().map(diagnostics::summary).collect::<Vec<_>>(),"limit":100,"scope":"latest_100","note":"最近 100 轮持久化整理；旧轮次可按候选 ID 精确读取，不代表全部历史。"}),
+        json!({"project":{"id":project,"name":card.name},"items":items,"limit":100,"scope":"latest_100","note":"最近 100 轮候选及尚无候选的活动任务；旧轮次可按候选 ID 精确读取，不代表全部历史。"}),
     ))
 }
 async fn diagnostic(
@@ -175,10 +199,61 @@ async fn diagnostic(
         .candidate_diagnostics(project, candidate)
         .await
         .map_err(knowledge_error)?;
+    let task = s
+        .tasks
+        .task_for_candidate(project, candidate.summary.id)
+        .await
+        .map_err(knowledge_error)?;
+    let task_id = task.as_ref().map(|t| t.id.to_string());
     let events = s
         .store
-        .candidate_events(&project.to_string(), &candidate.summary.id.to_string())
+        .curation_events(
+            &project.to_string(),
+            Some(&candidate.summary.id.to_string()),
+            task_id.as_deref(),
+        )
         .await
         .unwrap_or(json!({"items":[],"available":false,"total":null}));
-    Ok(Json(diagnostics::package(&candidate, &card.name, events)))
+    Ok(Json(diagnostics::package(
+        Some(&candidate),
+        task.as_ref(),
+        project,
+        &card.name,
+        events,
+    )))
+}
+pub(crate) async fn task_diagnostic(
+    State(s): State<Services>,
+    Extension(p): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+) -> Result<Json<Value>, AccessError> {
+    let card = s.projects.require_project(&p, project).await?;
+    let task = s.tasks.task(project, id).await.map_err(knowledge_error)?;
+    let candidate = if let Some(id) = task.candidate_id {
+        Some(
+            s.candidates
+                .candidate_diagnostics(project, id)
+                .await
+                .map_err(knowledge_error)?,
+        )
+    } else {
+        None
+    };
+    let candidate_id = task.candidate_id.map(|id| id.to_string());
+    let events = s
+        .store
+        .curation_events(
+            &project.to_string(),
+            candidate_id.as_deref(),
+            Some(&task.id.to_string()),
+        )
+        .await
+        .unwrap_or(json!({"items":[],"available":false,"total":null}));
+    Ok(Json(diagnostics::package(
+        candidate.as_ref(),
+        Some(&task),
+        project,
+        &card.name,
+        events,
+    )))
 }

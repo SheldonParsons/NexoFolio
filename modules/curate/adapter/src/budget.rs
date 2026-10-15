@@ -19,6 +19,7 @@ struct State {
 pub(super) struct Budget {
     slots: Semaphore,
     state: Mutex<State>,
+    waiting: std::sync::atomic::AtomicUsize,
 }
 pub(super) struct Permit<'a> {
     permit: Option<SemaphorePermit<'a>>,
@@ -30,6 +31,7 @@ impl Budget {
         let limit = limit.clamp(1, 16);
         Self {
             slots: Semaphore::new(limit),
+            waiting: std::sync::atomic::AtomicUsize::new(0),
             state: Mutex::new(State {
                 ceiling: limit,
                 in_flight: 0,
@@ -43,25 +45,42 @@ impl Budget {
             }),
         }
     }
-    pub(super) async fn acquire(&self) -> Result<Permit<'_>, tokio::sync::AcquireError> {
+    #[cfg(test)]
+    pub(super) async fn acquire(&self) -> Result<Permit<'_>, super::LlmError> {
+        self.acquire_inner(true).await
+    }
+    pub(super) async fn acquire_ready(&self) -> Result<Permit<'_>, super::LlmError> {
+        self.acquire_inner(false).await
+    }
+    async fn acquire_inner(&self, wait_for_cooldown: bool) -> Result<Permit<'_>, super::LlmError> {
         loop {
             let deadline = self.state.lock().expect("model budget").not_before;
             if let Some(deadline) = deadline {
+                if !wait_for_cooldown && deadline > Instant::now() {
+                    return Err(super::LlmError::Cooldown {
+                        retry_after_seconds: deadline
+                            .saturating_duration_since(Instant::now())
+                            .as_secs()
+                            .saturating_add(1),
+                    });
+                }
                 tokio::time::sleep_until(deadline).await;
             }
-            let permit = self.slots.acquire().await?;
+            let waiting = super::telemetry::Gauge::enter(&self.waiting);
+            let permit = self
+                .slots
+                .acquire()
+                .await
+                .map_err(|_| super::LlmError::Transport("模型队列已关闭".into()))?;
+            drop(waiting);
             let mut state = self.state.lock().expect("model budget");
-            // A cancelled semaphore waiter may return a reserved permit before it
-            // acquires our wrapper. Reclaim shrink debt before admitting any new HTTP call.
+            // Reclaim permits reserved by cancelled waiters before admitting HTTP IO.
             if state.debt > 0 {
                 state.debt -= 1;
                 permit.forget();
-                drop(state);
                 continue;
             }
-            // Another in-flight request may have extended cooldown while this one queued.
             if state.not_before.is_some_and(|t| t > Instant::now()) {
-                drop(state);
                 drop(permit);
                 continue;
             }
@@ -72,6 +91,19 @@ impl Budget {
                 generation: state.generation,
             });
         }
+    }
+
+    pub(super) fn snapshot(&self) -> Option<(usize, usize, usize, usize, u64)> {
+        let state = self.state.lock().ok()?;
+        Some((
+            state.in_flight,
+            self.waiting.load(std::sync::atomic::Ordering::Relaxed),
+            state.limit,
+            state.ceiling,
+            state.not_before.map_or(0, |t| {
+                t.saturating_duration_since(Instant::now()).as_millis() as u64
+            }),
+        ))
     }
 
     fn observe(

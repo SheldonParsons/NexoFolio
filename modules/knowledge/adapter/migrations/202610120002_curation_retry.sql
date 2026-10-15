@@ -1,0 +1,11 @@
+ALTER TABLE curation_tasks DROP CONSTRAINT curation_tasks_state_check;
+ALTER TABLE curation_tasks ADD CONSTRAINT curation_tasks_state_check CHECK (state IN ('queued','running','waiting','needs_attention','done','failed','stopped'));
+ALTER TABLE curation_tasks ADD COLUMN next_retry_at timestamptz;
+ALTER TABLE curation_tasks ADD COLUMN retry_reason text;
+ALTER TABLE curation_tasks ADD COLUMN retry_count bigint NOT NULL DEFAULT 0;
+ALTER TABLE curation_tasks ADD COLUMN timing jsonb NOT NULL DEFAULT '{}'::jsonb;
+UPDATE curation_tasks SET timing=jsonb_build_object('since',updated_at);
+DROP INDEX curation_task_scope;
+CREATE UNIQUE INDEX curation_task_scope ON curation_tasks(project_id,target) NULLS NOT DISTINCT WHERE state IN ('queued','running','waiting','needs_attention');
+DROP INDEX curation_task_queue;
+CREATE INDEX curation_task_queue ON curation_tasks(created_at,id) WHERE state IN ('queued','running','waiting');

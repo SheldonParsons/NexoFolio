@@ -8,16 +8,26 @@ use sqlx::{
 };
 use std::{str::FromStr, time::Duration};
 
+mod apply_buffer;
 mod candidate_diagnostics;
 mod candidates;
 mod codec;
 mod folders;
+mod frozen;
 mod lifecycle;
 mod links;
 mod notes;
+mod operations;
 mod placements;
+mod retention;
+mod retention_references;
+mod review;
 mod revisions;
+mod storage;
+pub use retention::RetentionReport;
 mod rounds;
+mod search;
+mod tasks;
 mod transaction;
 mod value_archives;
 use codec::unavailable;
@@ -92,10 +102,44 @@ impl KnowledgeStore for PostgresKnowledge {
             .execute(&mut *tx)
             .await
             .map_err(unavailable)?;
-        Ok(Box::new(PostgresTx { tx }))
+        Ok(Box::new(PostgresTx {
+            tx,
+            apply_buffer: None,
+        }))
     }
     async fn begin(&self) -> StoreResult<Box<dyn KnowledgeTx>> {
         let tx = self.pool.begin().await.map_err(unavailable)?;
-        Ok(Box::new(PostgresTx { tx }))
+        Ok(Box::new(PostgresTx {
+            tx,
+            apply_buffer: None,
+        }))
+    }
+}
+
+impl nexofolio_common::PoolTelemetry for PostgresKnowledge {
+    fn pool_snapshots(&self) -> Vec<nexofolio_common::PoolSnapshot> {
+        vec![nexofolio_common::PoolSnapshot {
+            name: "knowledge",
+            size: self.pool.size(),
+            idle: self.pool.num_idle(),
+            configured_max: self.pool.options().get_max_connections(),
+            waiting: None,
+            acquire_timeouts: None,
+        }]
+    }
+}
+
+impl PostgresTx {
+    pub(super) async fn db_lock_project(
+        &mut self,
+        project: nexofolio_common::ProjectId,
+    ) -> nexofolio_knowledge_contracts::StoreResult<()> {
+        sqlx::query("SELECT pg_advisory_xact_lock($1,hashtext($2))")
+            .bind(PROJECT_LOCK)
+            .bind(project.to_string())
+            .execute(&mut *self.tx)
+            .await
+            .map(|_| ())
+            .map_err(unavailable)
     }
 }

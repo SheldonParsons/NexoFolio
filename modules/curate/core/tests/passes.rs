@@ -23,7 +23,7 @@ struct Broken;
 #[async_trait]
 impl Completions for Broken {
     async fn complete(&self, _prompt: &str) -> Result<String, CompletionError> {
-        Err(CompletionError("model is down".into()))
+        Err(CompletionError::InvalidReply("model is down".into()))
     }
 }
 

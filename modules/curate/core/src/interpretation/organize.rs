@@ -51,9 +51,9 @@ impl<C: Completions> Organize<C> {
             ))
             .await?;
         let json = json_slice(&reply)
-            .ok_or_else(|| CompletionError("目录回复缺少 JSON，未写入".into()))?;
+            .ok_or_else(|| CompletionError::InvalidReply("目录回复缺少 JSON，未写入".into()))?;
         let proposal: Proposal = serde_json::from_str(json)
-            .map_err(|_| CompletionError("目录回复不符合两层结构，未写入".into()))?;
+            .map_err(|_| CompletionError::InvalidReply("目录回复不符合两层结构，未写入".into()))?;
         plan(proposal, summaries, existing, placements)
     }
     pub fn author(&self) -> Author {

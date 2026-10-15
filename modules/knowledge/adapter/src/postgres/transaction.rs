@@ -3,33 +3,168 @@ use super::codec::unavailable;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use nexofolio_common::{EndpointId, FolderId, LinkId, ProjectId, RoundId};
+use nexofolio_contracts::field_values::{FieldValueArchive, FieldValueQuery};
 use nexofolio_contracts::knowledge::{
-    EndpointNote, FieldNote, Link, Revision, Round, RoundState, Target,
+    Candidate, CandidateDiagnostics, CandidateEntryKind, CandidateOperationHistory,
+    CandidateRecovery, CandidateState, CandidateSummary, Command, CurationTask, DocumentLifecycle,
+    EndpointNote, FieldNote, KnowledgeSearch, KnowledgeSearchPage, Link, Revision, Round,
+    RoundState, Target,
 };
 use nexofolio_knowledge_contracts::{
-    FolderRow, KnowledgeTx, LinkIdentity, PlacementRow, StoreResult,
+    CandidateAppend, CandidateAppendRound, FolderRow, KnowledgeTx, LinkIdentity, PlacementRow,
+    StoreResult,
 };
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 
-use super::PROJECT_LOCK;
-
 pub(super) struct PostgresTx {
     pub(super) tx: Transaction<'static, Postgres>,
+    pub(super) apply_buffer: Option<super::apply_buffer::ApplyBuffer>,
 }
 
 #[async_trait]
 impl KnowledgeTx for PostgresTx {
-    async fn lifecycle(
+    async fn review_field_notes(
         &mut self,
         project: ProjectId,
-    ) -> StoreResult<nexofolio_contracts::knowledge::DocumentLifecycle> {
+        id: uuid::Uuid,
+        endpoint: EndpointId,
+        keys: &[String],
+    ) -> StoreResult<Vec<FieldNote>> {
+        self.db_review_field_notes(project, id, endpoint, keys)
+            .await
+    }
+
+    async fn snapshot_fields(
+        &mut self,
+        project: ProjectId,
+        endpoints: &[EndpointId],
+    ) -> StoreResult<Vec<FieldNote>> {
+        let owned: std::collections::HashSet<_> = endpoints.iter().copied().collect();
+        Ok(self
+            .db_project_field_notes(project)
+            .await?
+            .into_iter()
+            .filter(|f| owned.contains(&f.endpoint))
+            .collect())
+    }
+
+    async fn prepare_application(
+        &mut self,
+        project: ProjectId,
+        view: &nexofolio_contracts::knowledge::KnowledgeSnapshot,
+    ) -> StoreResult<()> {
+        self.apply_buffer = Some(super::apply_buffer::ApplyBuffer::new(project, view));
+        Ok(())
+    }
+    async fn flush_application(&mut self) -> StoreResult<()> {
+        self.flush_apply().await
+    }
+
+    async fn review_candidate(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        query: &nexofolio_contracts::knowledge::CandidateReviewQuery,
+    ) -> StoreResult<Option<Value>> {
+        self.db_review_candidate(project, id, query).await
+    }
+    async fn candidate_application(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<Candidate>> {
+        self.db_candidate_application(project, id).await
+    }
+    async fn put_candidate_decision(&mut self, c: &Candidate) -> StoreResult<()> {
+        self.db_put_candidate_decision(c).await
+    }
+
+    async fn search(&mut self, query: &KnowledgeSearch) -> StoreResult<KnowledgeSearchPage> {
+        self.db_search(query).await
+    }
+
+    async fn candidate_input(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+    ) -> StoreResult<Option<Value>> {
+        self.db_candidate_input(project, candidate).await
+    }
+    async fn frozen_chunk(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        hash: &str,
+    ) -> StoreResult<Option<String>> {
+        self.db_frozen_chunk(project, candidate, snapshot, hash)
+            .await
+    }
+    async fn put_frozen_chunk(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        hash: &str,
+        content: &str,
+    ) -> StoreResult<()> {
+        self.db_put_frozen_chunk(project, candidate, snapshot, hash, content)
+            .await
+    }
+
+    async fn candidate_task(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+    ) -> StoreResult<Option<CurationTask>> {
+        self.db_candidate_task(project, candidate).await
+    }
+    async fn task(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<CurationTask>> {
+        self.db_task(project, id).await
+    }
+    async fn active_tasks(&mut self, project: ProjectId) -> StoreResult<Vec<CurationTask>> {
+        self.db_active_tasks(project).await
+    }
+    async fn put_task(&mut self, task: &CurationTask) -> StoreResult<()> {
+        self.db_put_task(task).await
+    }
+    async fn next_task(
+        &mut self,
+        now: DateTime<Utc>,
+        capacity: usize,
+    ) -> StoreResult<Option<CurationTask>> {
+        self.db_next_task(now, capacity).await
+    }
+    async fn valid_worker(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        owner: Option<uuid::Uuid>,
+        now: DateTime<Utc>,
+    ) -> StoreResult<bool> {
+        self.db_valid_worker(project, candidate, owner, now).await
+    }
+    async fn close_candidate_tasks(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        now: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        self.db_close_candidate_tasks(project, candidate, now).await
+    }
+
+    async fn lifecycle(&mut self, project: ProjectId) -> StoreResult<DocumentLifecycle> {
         self.db_lifecycle(project).await
     }
     async fn put_lifecycle(
         &mut self,
         project: ProjectId,
-        state: &nexofolio_contracts::knowledge::DocumentLifecycle,
+        state: &DocumentLifecycle,
     ) -> StoreResult<()> {
         self.db_put_lifecycle(project, state).await
     }
@@ -39,22 +174,30 @@ impl KnowledgeTx for PostgresTx {
         before: DateTime<Utc>,
         after: Option<uuid::Uuid>,
         limit: usize,
-    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
+    ) -> StoreResult<Vec<CandidateRecovery>> {
         self.db_recovery_candidates(before, after, limit).await
+    }
+
+    async fn value_archive_field(
+        &mut self,
+        q: &FieldValueQuery,
+        value_id: Option<&str>,
+    ) -> StoreResult<Option<FieldValueArchive>> {
+        self.db_value_archive_field(q, value_id).await
     }
 
     async fn value_archive(
         &mut self,
         project: ProjectId,
         candidate: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::field_values::FieldValueArchive>> {
+    ) -> StoreResult<Option<FieldValueArchive>> {
         self.db_value_archive(project, candidate).await
     }
     async fn put_value_archive(
         &mut self,
         project: ProjectId,
         candidate: uuid::Uuid,
-        archive: &nexofolio_contracts::field_values::FieldValueArchive,
+        archive: &FieldValueArchive,
     ) -> StoreResult<()> {
         self.db_put_value_archive(project, candidate, archive).await
     }
@@ -62,7 +205,7 @@ impl KnowledgeTx for PostgresTx {
     async fn active_candidate(
         &mut self,
         project: ProjectId,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateSummary>> {
+    ) -> StoreResult<Option<CandidateSummary>> {
         self.db_active_candidate(project).await
     }
     async fn candidate_owner(
@@ -84,14 +227,14 @@ impl KnowledgeTx for PostgresTx {
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateState>> {
+    ) -> StoreResult<Option<CandidateState>> {
         self.db_candidate_state(project, id).await
     }
     async fn checkpoint_candidate(
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-        state: nexofolio_contracts::knowledge::CandidateState,
+        state: CandidateState,
         progress: &Value,
         at: DateTime<Utc>,
     ) -> StoreResult<()> {
@@ -102,55 +245,67 @@ impl KnowledgeTx for PostgresTx {
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::Candidate>> {
+    ) -> StoreResult<Option<Candidate>> {
         self.db_candidate(project, id).await
     }
     async fn candidate_diagnostics(
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateDiagnostics>> {
+    ) -> StoreResult<Option<CandidateDiagnostics>> {
         self.db_candidate_diagnostics(project, id).await
     }
     async fn candidate_projection(
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::Candidate>> {
+    ) -> StoreResult<Option<Candidate>> {
         self.db_candidate_projection(project, id).await
     }
-    async fn put_candidate_projection(
+    async fn candidate_append(
         &mut self,
-        candidate: &nexofolio_contracts::knowledge::Candidate,
+        project: ProjectId,
+        id: uuid::Uuid,
+        round: RoundId,
+    ) -> StoreResult<Option<CandidateAppend>> {
+        self.db_candidate_append(project, id, round).await
+    }
+    async fn append_candidate_commands(
+        &mut self,
+        context: &CandidateAppend,
+        round: &CandidateAppendRound,
+        proposed: &[Command],
+        at: DateTime<Utc>,
     ) -> StoreResult<()> {
+        self.db_append_candidate_commands(context, round, proposed, at)
+            .await
+    }
+    async fn put_candidate_projection(&mut self, candidate: &Candidate) -> StoreResult<()> {
         self.db_put_candidate_projection(candidate).await
     }
     async fn candidates(
         &mut self,
         project: ProjectId,
         limit: usize,
-    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateSummary>> {
+    ) -> StoreResult<Vec<CandidateSummary>> {
         self.db_candidates(project, limit).await
     }
     async fn candidate_operations(
         &mut self,
         project: ProjectId,
         id: uuid::Uuid,
-    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateOperationHistory>> {
+    ) -> StoreResult<Option<CandidateOperationHistory>> {
         self.db_candidate_operations(project, id).await
     }
     async fn entry_candidates(
         &mut self,
         project: ProjectId,
-        kind: nexofolio_contracts::knowledge::CandidateEntryKind,
+        kind: CandidateEntryKind,
         selected: Option<uuid::Uuid>,
-    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateSummary>> {
+    ) -> StoreResult<Vec<CandidateSummary>> {
         self.db_entry_candidates(project, kind, selected).await
     }
-    async fn put_candidate(
-        &mut self,
-        candidate: &nexofolio_contracts::knowledge::Candidate,
-    ) -> StoreResult<()> {
+    async fn put_candidate(&mut self, candidate: &Candidate) -> StoreResult<()> {
         self.db_put_candidate(candidate).await
     }
     async fn commit(self: Box<Self>) -> StoreResult<()> {
@@ -158,13 +313,7 @@ impl KnowledgeTx for PostgresTx {
     }
 
     async fn lock_project(&mut self, project: ProjectId) -> StoreResult<()> {
-        sqlx::query("SELECT pg_advisory_xact_lock($1,hashtext($2))")
-            .bind(PROJECT_LOCK)
-            .bind(project.to_string())
-            .execute(&mut *self.tx)
-            .await
-            .map(|_| ())
-            .map_err(unavailable)
+        self.db_lock_project(project).await
     }
 
     async fn create_round(&mut self, round: &Round) -> StoreResult<()> {

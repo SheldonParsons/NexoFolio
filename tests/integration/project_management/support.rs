@@ -163,6 +163,8 @@ impl Harness {
             "../../../contracts/collect/v1/fixtures/batch/valid/fetcher-exchanges.json"
         ))
         .unwrap();
+        // A synthetic API producer keeps lifecycle tests independent of the live Fetcher release gate.
+        batch["platform"] = json!("lifecycle-fixture");
         batch["batch_id"] = json!(uuid::Uuid::new_v4());
         batch["target"]["project_id"] = json!(project);
         batch["target"]["environment"]["id"] = json!(environment.to_string());

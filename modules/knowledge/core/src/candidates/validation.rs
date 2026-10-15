@@ -24,7 +24,10 @@ pub(super) async fn load_projection(
         .ok_or(KnowledgeError::NoSuchCandidate)
 }
 pub(super) fn running(candidate: &Candidate) -> KnowledgeResult<()> {
-    if candidate.state != CandidateState::Running {
+    running_state(candidate.state)
+}
+pub(super) fn running_state(state: CandidateState) -> KnowledgeResult<()> {
+    if state != CandidateState::Running {
         return Err(KnowledgeError::CandidateClosed);
     }
     Ok(())
@@ -36,6 +39,17 @@ pub(super) async fn commands(
     batch: &CandidateBatch,
     at: chrono::DateTime<chrono::Utc>,
     offset: i64,
+) -> KnowledgeResult<()> {
+    commands_observed(tx, project, owned, batch, at, offset, &mut |_| {}).await
+}
+pub(super) async fn commands_observed(
+    tx: &mut dyn KnowledgeTx,
+    project: ProjectId,
+    owned: &[EndpointId],
+    batch: &CandidateBatch,
+    at: chrono::DateTime<chrono::Utc>,
+    offset: i64,
+    progress: &mut (dyn FnMut(usize) + Send),
 ) -> KnowledgeResult<()> {
     for (index, command) in batch.commands.iter().enumerate() {
         if touched(command).iter().any(|e| !owned.contains(e)) {
@@ -76,6 +90,7 @@ pub(super) async fn commands(
             command,
         )
         .await?;
+        progress(index + 1);
     }
     Ok(())
 }

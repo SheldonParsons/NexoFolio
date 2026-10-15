@@ -13,7 +13,12 @@ pub(super) struct FrozenInput {
     #[serde(default)]
     pub lifecycle_version: u64,
     pub summaries: Vec<EndpointSummary>,
+    #[serde(default)]
     pub prepared: PreparedProject,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<nexofolio_contracts::knowledge::FrozenManifest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_hash: Option<String>,
     pub baseline_batches: Vec<RoundId>,
     pub legacy: bool,
 }
@@ -76,48 +81,56 @@ pub(super) async fn prepared(
     project: ProjectId,
     summaries: &[EndpointSummary],
     job: &Job,
-) -> Result<PreparedProject, CurationError> {
+) -> Result<super::frozen_input::ExecutionInput, CurationError> {
+    use super::{frozen_input::ExecutionInput, preparation_progress::PreparationPhase};
     if let Some(input) = &s.frozen {
-        return Ok(input.prepared.clone());
+        return if let Some(manifest) = &input.manifest {
+            ExecutionInput::chunked(
+                s,
+                manifest.clone(),
+                input.summaries.iter().map(|e| e.id).collect(),
+            )
+            .await
+        } else {
+            Ok(ExecutionInput::legacy(input.prepared.clone()))
+        };
     }
-    use super::preparation_progress::PreparationPhase;
     job.prepare_start(summaries.len());
     s.checkpoint(project, job, CandidateState::Running).await?;
-    let prepared = super::preparation::prepare_for_job(s, summaries, job).await?;
-    if let (Some(candidates), Some(id)) = (&s.candidates, job.snapshot().candidate_id) {
-        let candidate = candidates.candidate(project, id).await?;
-        job.prepare_phase(
-            PreparationPhase::SavingValues,
-            "字段与关系分析完成，正在保存完整观测值",
-        );
-        s.checkpoint(project, job, CandidateState::Running).await?;
-        candidates
-            .freeze_candidate_values(project, id, job.run_id, &prepared.value_archive)
-            .await?;
-        job.update(|p| p.values_archived = true);
-        job.prepare_phase(
-            PreparationPhase::SavingInput,
-            "完整观测值已保存，正在保存本轮整理输入",
-        );
-        s.checkpoint(project, job, CandidateState::Running).await?;
-        let frozen = FrozenInput {
-            version: 2,
-            lifecycle_version: candidate.base.lifecycle.version,
-            summaries: summaries.to_vec(),
-            prepared: prepared.clone(),
-            baseline_batches: candidate.batches.iter().map(|b| b.id).collect(),
-            legacy: false,
-        };
-        candidates
-            .freeze_candidate_input(
-                project,
-                id,
-                job.run_id,
-                serde_json::to_value(frozen).expect("snapshot"),
+    let prepared =
+        if let (Some(candidates), Some(id)) = (&s.candidates, job.snapshot().candidate_id) {
+            let frozen = super::chunk_preparation::prepare(s, project, summaries, job).await?;
+            job.prepare_phase(
+                PreparationPhase::SavingInput,
+                "分块资料已保存，正在核验并发布完整清单",
+            );
+            s.checkpoint(project, job, CandidateState::Running).await?;
+            candidates
+                .freeze_candidate_input(
+                    project,
+                    id,
+                    job.run_id,
+                    serde_json::to_value(&frozen).expect("manifest"),
+                )
+                .await?;
+            job.update(|p| {
+                p.resume_available = Some(true);
+                p.values_archived = true;
+            });
+            ExecutionInput::chunked(
+                s,
+                frozen.manifest.expect("new format"),
+                summaries.iter().map(|e| e.id).collect(),
             )
-            .await?;
-        job.update(|p| p.resume_available = Some(true));
-    }
+            .await?
+        } else {
+            ExecutionInput::legacy(super::preparation::prepare_for_job(s, summaries, job).await?)
+        };
+    job.update(|p| {
+        if let Some(preparation) = &mut p.preparation {
+            preparation.relations = prepared.links.len();
+        }
+    });
     job.prepare_phase(
         PreparationPhase::Ready,
         "整理资料已就绪，开始核对接口名称与用途",
@@ -182,6 +195,8 @@ pub(super) async fn legacy_input(
     }
     Ok(FrozenInput {
         version: 2,
+        manifest: None,
+        manifest_hash: None,
         lifecycle_version: candidate.base.lifecycle.version,
         summaries,
         prepared,

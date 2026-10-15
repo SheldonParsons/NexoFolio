@@ -18,7 +18,7 @@ pub(super) async fn run(
     s: &Curation,
     project: ProjectId,
     job: &Job,
-    prepared: &super::preparation::PreparedProject,
+    prepared: &super::frozen_input::ExecutionInput,
 ) -> Result<(), CurationError> {
     let notes: HashMap<_, _> = s
         .reader
@@ -32,19 +32,13 @@ pub(super) async fn run(
         p.unchanged = 0;
     });
     let mut pending = Vec::new();
-    for facts in &prepared.facts {
+    for endpoint in &prepared.endpoints {
+        let loaded = prepared.endpoint(s, *endpoint).await?;
+        let facts = &loaded.facts;
         let input = nexofolio_curate::endpoint_input_from_fields(
             facts,
-            prepared
-                .inputs
-                .get(&facts.summary.id)
-                .cloned()
-                .unwrap_or_default(),
-            prepared
-                .authentication
-                .get(&facts.summary.id)
-                .cloned()
-                .unwrap_or_default(),
+            loaded.inputs,
+            loaded.authentication,
         );
         let previous = notes.get(&facts.summary.id).cloned();
         if !(s.resuming
@@ -53,7 +47,7 @@ pub(super) async fn run(
             }))
             && nexofolio_curate::description_pending(&input, previous.as_ref())
         {
-            pending.push((facts.clone(), input, previous));
+            pending.push((*endpoint, previous));
         } else {
             job.update(|p| {
                 p.completed += 1;
@@ -68,7 +62,7 @@ pub(super) async fn run(
 
     let round = s.knowledge.begin(project, s.describe.author()).await?;
     tracing::info!(round = %round, endpoints = pending.len(), "description round opened");
-    let result = describe_pending(s, project, round, pending, job).await;
+    let result = describe_pending(s, project, round, pending, job, prepared).await;
     job.update(|p| p.unchanged = p.completed.saturating_sub(p.generated));
     let count = job.snapshot().generated;
     let state = if result.is_ok() {
@@ -87,15 +81,16 @@ async fn describe_pending(
     project: ProjectId,
     round: nexofolio_common::RoundId,
     facts: Vec<(
-        EndpointFacts,
-        nexofolio_curate::EndpointInput,
+        nexofolio_common::EndpointId,
         Option<nexofolio_contracts::knowledge::EndpointNote>,
     )>,
     job: &Job,
+    prepared: &super::frozen_input::ExecutionInput,
 ) -> Result<(), CurationError> {
     let mut pending = facts.into_iter();
     let mut requests = JoinSet::new();
     for work in pending.by_ref().take(s.description_concurrency) {
+        let work = load_work(s, prepared, work).await?;
         launch(s, work, 1, 0, round, job, &mut requests);
     }
     let mut failure = None;
@@ -115,24 +110,31 @@ async fn describe_pending(
                     ..
                 },
             ) => Ok(command),
-            _ => Err(nexofolio_curate::CompletionError(
+            _ => Err(nexofolio_curate::CompletionError::InvalidReply(
                 "接口说明缺少完整名称和用途，请重试".into(),
             )),
         });
         let command = match result {
             Ok(command) => command,
             Err(error) => {
-                let code = super::field_worker::error_code(&error.0);
+                let code = error.code();
                 tracing::warn!(endpoint = %endpoint, attempt, code, "description request failed");
-                if code == "model_rejected" {
-                    return Err(error.into());
+                let key = format!("describe/{endpoint}");
+                if matches!(error, nexofolio_curate::CompletionError::InvalidReply(_)) {
+                    job.update(|p| *p.validation_failures.entry(key.clone()).or_default() += 1);
                 }
-                if attempt < 4 && failure.is_none() {
-                    let delay = match code {
-                        "model_rate_limited" => 30 * 2u64.pow((attempt - 1) as u32),
-                        "model_unavailable" => 2u64.pow(attempt as u32),
-                        _ => 1,
-                    };
+                if job
+                    .snapshot()
+                    .validation_failures
+                    .get(&key)
+                    .copied()
+                    .unwrap_or(0)
+                    < 4
+                    && matches!(error, nexofolio_curate::CompletionError::InvalidReply(_))
+                    && attempt < 4
+                    && failure.is_none()
+                {
+                    let delay = 1;
                     job.update(|p| p.retries += 1);
                     let reason = match code {
                         "model_rate_limited" => "模型服务限流，等待额度恢复",
@@ -154,11 +156,7 @@ async fn describe_pending(
                     job.record(Activity::new(nexofolio_curate::Pass::Describe,"gap",
                         "该接口重试后仍未完成，停止安排新接口，正在保存其他在途结果；之后可续跑本轮")
                         .endpoint(endpoint));
-                    failure.get_or_insert_with(|| {
-                        CurationError::Failed(format!(
-                            "接口说明重试后仍未完成，已保存结果保留，可续跑本轮；{error}"
-                        ))
-                    });
+                    failure.get_or_insert(CurationError::Model(error));
                 }
                 continue;
             }
@@ -183,6 +181,8 @@ async fn describe_pending(
         );
         job.update(|p| {
             p.completed += 1;
+            p.validation_failures
+                .remove(&format!("describe/{endpoint}"));
             p.generated += 1;
             p.save_ms += save_ms;
         });
@@ -195,10 +195,28 @@ async fn describe_pending(
         if failure.is_none()
             && let Some(work) = pending.next()
         {
+            let work = load_work(s, prepared, work).await?;
             launch(s, work, 1, 0, round, job, &mut requests);
         }
     }
     failure.map_or(Ok(()), Err)
+}
+
+async fn load_work(
+    s: &Curation,
+    prepared: &super::frozen_input::ExecutionInput,
+    work: (
+        nexofolio_common::EndpointId,
+        Option<nexofolio_contracts::knowledge::EndpointNote>,
+    ),
+) -> Result<DescriptionWork, CurationError> {
+    let loaded = prepared.endpoint(s, work.0).await?;
+    let input = nexofolio_curate::endpoint_input_from_fields(
+        &loaded.facts,
+        loaded.inputs,
+        loaded.authentication,
+    );
+    Ok((loaded.facts, input, work.1))
 }
 
 type DescriptionWork = (

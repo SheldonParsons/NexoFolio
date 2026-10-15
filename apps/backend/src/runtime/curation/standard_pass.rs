@@ -1,5 +1,5 @@
 //! Persist generic protocol/structure notes through the same ownership and ACK boundary.
-use super::{Curation, CurationError, activity::Activity, jobs::Job, preparation::PreparedProject};
+use super::{Curation, CurationError, activity::Activity, frozen_input::ExecutionInput, jobs::Job};
 use nexofolio_common::ProjectId;
 use nexofolio_contracts::knowledge::{Author, CandidateState, Command, RoundState};
 use nexofolio_curate::Pass;
@@ -7,21 +7,20 @@ pub(super) async fn run(
     s: &Curation,
     project: ProjectId,
     job: &Job,
-    prepared: &PreparedProject,
+    prepared: &ExecutionInput,
 ) -> Result<(), CurationError> {
     let mut commands = Vec::new();
     let target = job.snapshot().target;
-    for facts in prepared
-        .facts
+    for endpoint in prepared
+        .endpoints
         .iter()
-        .filter(|f| target.is_none_or(|id| id == f.summary.id))
+        .copied()
+        .filter(|e| target.is_none_or(|id| *e == id))
     {
-        let knowledge = s.reader.endpoint(facts.summary.id).await?;
-        let inputs = prepared
-            .inputs
-            .get(&facts.summary.id)
-            .cloned()
-            .unwrap_or_default();
+        let loaded = prepared.endpoint(s, endpoint).await?;
+        let facts = &loaded.facts;
+        let knowledge = s.reader.endpoint(endpoint).await?;
+        let inputs = loaded.inputs;
         for input in nexofolio_curate::pending_fields(facts, &knowledge, inputs) {
             if let Some(mut command) =
                 nexofolio_curate::standard_field_command(facts, &knowledge, &input)

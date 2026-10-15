@@ -4,7 +4,7 @@ use crate::http::access::{AccessError, no_store, session_auth};
 use crate::runtime::curation::{Curation, CurationError, Progress};
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     middleware,
     response::{IntoResponse, Response},
@@ -51,6 +51,15 @@ pub(crate) fn routes(
             "/v1/projects/{project_id}/curate/candidates/{candidate_id}/cancel",
             post(cancel),
         )
+        .route("/v1/projects/{project_id}/curate/tasks", get(tasks))
+        .route(
+            "/v1/projects/{project_id}/curate/tasks/{task_id}",
+            get(task),
+        )
+        .route(
+            "/v1/projects/{project_id}/curate/tasks/{task_id}/stop",
+            post(stop_task),
+        )
         .route_layer(middleware::from_fn_with_state(
             sessions.clone(),
             session_auth,
@@ -82,9 +91,17 @@ impl IntoResponse for CurateHttpError {
     fn into_response(self) -> Response {
         let (status, code, message) = match self {
             Self::Access(error) => return error.into_response(),
+            Self::Curation(CurationError::Model(error)) => {
+                (StatusCode::BAD_GATEWAY, "MODEL_FAILED", error.to_string())
+            }
             Self::Curation(CurationError::NotFound) => {
                 (StatusCode::NOT_FOUND, "NOT_FOUND", "接口不存在".to_string())
             }
+            Self::Curation(error @ CurationError::NotSubmitted) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "CURATION_NOT_SUBMITTED",
+                error.to_string(),
+            ),
             Self::Curation(CurationError::Unavailable) => (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "SERVICE_UNAVAILABLE",
@@ -171,15 +188,24 @@ async fn start(
     Ok((StatusCode::ACCEPTED, Json(progress)))
 }
 
+#[derive(Default, Deserialize)]
+struct ProgressOptions {
+    task_id: Option<uuid::Uuid>,
+}
 async fn progress(
     State(s): State<CurateHttp>,
     Extension(principal): Extension<SessionPrincipal>,
     Path(project): Path<ProjectId>,
+    Query(options): Query<ProgressOptions>,
 ) -> Result<Json<Progress>, CurateHttpError> {
     s.projects
         .require_project(&principal, project)
         .await
         .map_err(AccessError::from)?;
+    if let Some(id) = options.task_id {
+        let task = s.curation.task_by_id(project, id).await?;
+        return Ok(Json(s.curation.task_progress(&task).await?));
+    }
     Ok(Json(s.curation.saved_progress(project).await?))
 }
 
@@ -220,4 +246,45 @@ async fn cancel(
         .map_err(AccessError::from)?;
     s.curation.cancel(project, id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn task(
+    State(s): State<CurateHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+) -> Result<Json<nexofolio_contracts::knowledge::CurationTask>, CurateHttpError> {
+    s.projects
+        .require_project(&principal, project)
+        .await
+        .map_err(AccessError::from)?;
+    Ok(Json(s.curation.task_by_id(project, id).await?))
+}
+async fn stop_task(
+    State(s): State<CurateHttp>,
+    audit: Option<Extension<crate::audit::Context>>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+) -> Result<StatusCode, CurateHttpError> {
+    s.projects
+        .require_project(&principal, project)
+        .await
+        .map_err(AccessError::from)?;
+    let task = s.curation.task_by_id(project, id).await?;
+    if let Some(Extension(audit)) = audit {
+        audit.associate_task(&task);
+    }
+    s.curation.stop_task(project, id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn tasks(
+    State(s): State<CurateHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path(project): Path<ProjectId>,
+) -> Result<Json<Vec<nexofolio_contracts::knowledge::CurationTask>>, CurateHttpError> {
+    s.projects
+        .require_project(&principal, project)
+        .await
+        .map_err(AccessError::from)?;
+    Ok(Json(s.curation.active_tasks(project).await?))
 }

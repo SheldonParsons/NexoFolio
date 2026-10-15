@@ -85,6 +85,7 @@ impl<S, R, C> Knowledge<S, R, C> {
 fn store_error(error: StoreError) -> KnowledgeError {
     match error {
         StoreError::Unavailable => KnowledgeError::Unavailable,
+        StoreError::HistoryExpired => KnowledgeError::HistoryExpired,
     }
 }
 

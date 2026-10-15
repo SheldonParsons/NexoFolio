@@ -18,6 +18,7 @@ pub struct Config {
     pub session_key: Option<Secret>,
     pub emergency_password_hash: Option<Secret>,
     pub collect_limits: Limits,
+    pub collect_in_flight: usize,
     pub catalog_model_base_url: Option<String>,
     pub catalog_model: Option<String>,
     pub catalog_model_api_key: Option<String>,
@@ -101,6 +102,11 @@ impl Config {
                 rate_per_minute: number("NEXOFOLIO_COLLECT_RATE_PER_MINUTE", 120, 60_000)? as u32,
                 burst: number("NEXOFOLIO_COLLECT_BURST", 30, 10_000)? as u32,
             },
+            collect_in_flight: number(
+                "NEXOFOLIO_COLLECT_IN_FLIGHT",
+                crate::http::collect_admission::DEFAULT_IN_FLIGHT as u64,
+                8,
+            )? as usize,
             catalog_model_base_url: lookup("NEXOFOLIO_CATALOG_MODEL_BASE_URL")
                 .filter(|s| !s.trim().is_empty()),
             catalog_model: lookup("NEXOFOLIO_CATALOG_MODEL").filter(|s| !s.trim().is_empty()),
@@ -148,6 +154,23 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn collect_admission_default_and_bounds_are_explicit() {
+        let config = |limit: Option<&str>| {
+            Config::from_lookup(|key| match key {
+                "DATABASE_URL" => Some("postgres://localhost/unused".into()),
+                "NEXOFOLIO_COLLECT_IN_FLIGHT" => limit.map(str::to_owned),
+                _ => None,
+            })
+        };
+        assert_eq!(config(None).unwrap().collect_in_flight, 4);
+        for limit in ["1", "2", "4", "8"] {
+            assert!(config(Some(limit)).is_ok());
+        }
+        for limit in ["0", "9", "invalid"] {
+            assert!(config(Some(limit)).is_err());
+        }
+    }
     #[test]
     fn missing_and_invalid_configuration_is_actionable_without_values() {
         assert!(

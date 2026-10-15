@@ -312,3 +312,121 @@ async fn worker_writes_never_reload_or_rewrite_immutable_input() {
         .unwrap();
     pool.close().await;
 }
+
+#[tokio::test]
+#[ignore = "requires isolated TEST_DATABASE_URL"]
+async fn batched_fields_preserve_repeated_revisions_manual_ownership_and_rollback() {
+    let store = store().await;
+    let facts = support::facts();
+    let (project, endpoint) = (facts.0.project_id, facts.0.id);
+    let knowledge = Knowledge::new(store.clone(), facts);
+    let user = UserId::new();
+    let at = "2026-10-14T00:00:00Z".parse().unwrap();
+    let manual = FieldNote {
+        endpoint,
+        path: "manual".into(),
+        text: "keep".into(),
+        values: vec![],
+        context: Default::default(),
+        author: Author::Person { user },
+        at,
+    };
+    let original = FieldNote {
+        path: "repeat".into(),
+        text: "original".into(),
+        author: support::author(),
+        ..manual.clone()
+    };
+    let mut tx = store.begin().await.unwrap();
+    tx.put_field_note(project, &manual).await.unwrap();
+    tx.put_field_note(project, &original).await.unwrap();
+    tx.commit().await.unwrap();
+    let field = |path: &str, text: &str| Command::PutFieldNote {
+        endpoint,
+        path: path.into(),
+        text: text.into(),
+        values: vec![],
+        context: Default::default(),
+    };
+    let candidate = knowledge
+        .create_candidate(project, None, None)
+        .await
+        .unwrap();
+    let batch = knowledge
+        .open_candidate_batch(project, candidate.id, None, support::author())
+        .await
+        .unwrap();
+    let mut commands = vec![
+        field("manual", "keep"),
+        field("repeat", "one"),
+        field("repeat", "two"),
+        Command::RemoveFieldNote {
+            endpoint,
+            path: "repeat".into(),
+        },
+        field("repeat", "three"),
+    ];
+    commands.extend((0..105).map(|i| field(&format!("field-{i}"), "generated")));
+    knowledge
+        .append_candidate(project, candidate.id, None, batch, &commands)
+        .await
+        .unwrap();
+    knowledge
+        .close_candidate_batch(project, candidate.id, None, batch, RoundState::Done)
+        .await
+        .unwrap();
+    knowledge
+        .checkpoint_candidate(project, candidate.id, CandidateState::Ready, json!({}))
+        .await
+        .unwrap();
+    let rounds = knowledge
+        .apply_candidate(project, candidate.id, user)
+        .await
+        .unwrap();
+    let mut tx = store.begin_read().await.unwrap();
+    assert_eq!(
+        tx.field_note(endpoint, "manual").await.unwrap(),
+        Some(manual.clone())
+    );
+    assert_eq!(
+        tx.field_note(endpoint, "repeat")
+            .await
+            .unwrap()
+            .unwrap()
+            .text,
+        "three"
+    );
+    let revisions = tx.revisions(rounds[0]).await.unwrap();
+    assert_eq!(revisions.len(), 109); // The identical human-owned write is a no-op.
+    let repeated: Vec<_> = revisions
+        .iter()
+        .filter(|r| matches!(&r.target,Target::FieldNote{path,..} if path=="repeat"))
+        .collect();
+    assert_eq!(
+        repeated.iter().map(|r| r.seq).collect::<Vec<_>>(),
+        vec![4, 3, 2, 1]
+    );
+    assert_eq!(repeated[0].before, None);
+    assert_eq!(repeated[1].before.as_ref().unwrap()["text"], "two");
+    assert_eq!(repeated[2].before.as_ref().unwrap()["text"], "one");
+    assert_eq!(repeated[3].before.as_ref().unwrap()["text"], "original");
+    drop(tx);
+    assert_eq!(
+        knowledge
+            .apply_candidate(project, candidate.id, user)
+            .await
+            .unwrap(),
+        rounds
+    );
+    knowledge.roll_back(rounds[0]).await.unwrap();
+    let mut tx = store.begin_read().await.unwrap();
+    assert_eq!(
+        tx.field_note(endpoint, "manual").await.unwrap(),
+        Some(manual)
+    );
+    assert_eq!(
+        tx.field_note(endpoint, "repeat").await.unwrap(),
+        Some(original)
+    );
+    assert_eq!(tx.field_notes(endpoint).await.unwrap().len(), 2);
+}

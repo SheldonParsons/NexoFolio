@@ -2,12 +2,20 @@ use super::{
     codec::{id, json, parse, text, unavailable, uuid},
     transaction::PostgresTx,
 };
-use nexofolio_common::ProjectId;
-use nexofolio_contracts::knowledge::{Candidate, CandidateEntryKind, CandidateSummary};
-use nexofolio_knowledge_contracts::StoreResult;
-use sqlx::{Row, postgres::PgRow};
+use nexofolio_common::{ProjectId, RoundId};
+use nexofolio_contracts::knowledge::{Candidate, CandidateEntryKind, CandidateSummary, Command};
+use nexofolio_knowledge_contracts::{CandidateAppend, CandidateAppendRound, StoreResult};
+use sqlx::{Row, postgres::PgRow, types::Json};
 
 fn candidate(row: &PgRow) -> StoreResult<Candidate> {
+    if row
+        .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("history_pruned_at")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return Err(nexofolio_knowledge_contracts::StoreError::HistoryExpired);
+    }
     Ok(Candidate {
         id: row.get("id"),
         project_id: id(row.get("project_id")),
@@ -32,7 +40,9 @@ fn summary(row: &PgRow) -> StoreResult<CandidateSummary> {
     if !progress.is_object() {
         progress = serde_json::json!({});
     }
-    progress["lifecycle_version"] = row.get::<serde_json::Value, _>("lifecycle_version");
+    if progress.get("history_available") != Some(&serde_json::json!(false)) {
+        progress["lifecycle_version"] = row.get::<serde_json::Value, _>("lifecycle_version");
+    }
     if progress.is_object() {
         if row.get::<&str, _>("state") == "running" {
             progress["heartbeat_at"] =
@@ -56,11 +66,122 @@ fn summary(row: &PgRow) -> StoreResult<CandidateSummary> {
         state: parse(row.get("state"))?,
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
+        commands: progress
+            .get("retained_commands")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(row.get::<i64, _>("commands") as u64) as usize,
         progress,
-        commands: row.get::<i64, _>("commands") as usize,
     })
 }
 impl PostgresTx {
+    pub(super) async fn db_candidate_application(
+        &mut self,
+        project: ProjectId,
+        key: uuid::Uuid,
+    ) -> StoreResult<Option<Candidate>> {
+        // v2 validation has no execution-body dependency. v3 still carries the
+        // complete signed header; all frozen references retain integrity checks.
+        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,base_hash,base,view,batches,progress,parent,applied_rounds,reviewed_by,operations,history_pruned_at,CASE WHEN execution_input->>'version'='3' THEN execution_input END AS execution_input FROM candidates WHERE project_id=$1 AND id=$2")
+            .bind(uuid(project)).bind(key).fetch_optional(&mut *self.tx).await.map_err(unavailable)?;
+        row.as_ref().map(candidate).transpose()
+    }
+    pub(super) async fn db_put_candidate_decision(&mut self, c: &Candidate) -> StoreResult<()> {
+        let result = sqlx::query("UPDATE candidates SET state=$3,updated_at=$4,applied_rounds=$5,reviewed_by=$6,operations=$7 WHERE project_id=$1 AND id=$2")
+            .bind(uuid(c.project_id)).bind(c.id).bind(text(c.state)).bind(c.updated_at)
+            .bind(Json(&c.applied_rounds)).bind(c.reviewed_by.map(uuid)).bind(Json(&c.operations))
+            .execute(&mut *self.tx).await.map_err(unavailable)?;
+        if result.rows_affected() != 1 {
+            return Err(nexofolio_knowledge_contracts::StoreError::Unavailable);
+        }
+        Ok(())
+    }
+
+    pub(super) async fn db_candidate_append(
+        &mut self,
+        project: ProjectId,
+        key: uuid::Uuid,
+        round: RoundId,
+    ) -> StoreResult<Option<CandidateAppend>> {
+        // JSONB extraction can still detoast base/batches, but old fields and commands
+        // never cross the wire or enter the application's serde object graph.
+        let row = sqlx::query(
+            r#"
+            SELECT state,progress->>'run_id' AS owner,base->'endpoints' AS endpoints,view,
+                (SELECT coalesce(jsonb_agg(jsonb_build_object(
+                    'id',b->'id','stored_id',b->>'id','author',b->'author','stored_author',(b->'author')::text,'state',b->'state',
+                    'position',ord-1,'command_count',jsonb_array_length(b->'commands'))
+                    ORDER BY ord),'[]'::jsonb)
+                 FROM jsonb_array_elements(batches) WITH ORDINALITY AS r(b,ord)) AS rounds
+            FROM candidates WHERE project_id=$1 AND id=$2
+        "#,
+        )
+        .bind(uuid(project))
+        .bind(key)
+        .fetch_optional(&mut *self.tx)
+        .await
+        .map_err(unavailable)?;
+        row.map(|r| {
+            // Decode identities with the original serde contract, including UUID
+            // spellings PostgreSQL's uuid input parser may not accept.
+            let mut rounds = r
+                .try_get::<Json<Vec<CandidateAppendRound>>, _>("rounds")
+                .map_err(unavailable)?
+                .0;
+            rounds.retain(|r| r.id == round);
+            Ok(CandidateAppend {
+                project,
+                id: key,
+                state: parse(r.try_get("state").map_err(unavailable)?)?,
+                owner: r
+                    .try_get::<Option<String>, _>("owner")
+                    .map_err(unavailable)?
+                    .and_then(|s| s.parse().ok()),
+                endpoints: r.try_get::<Json<_>, _>("endpoints").map_err(unavailable)?.0,
+                view: r.try_get::<Json<_>, _>("view").map_err(unavailable)?.0,
+                rounds,
+            })
+        })
+        .transpose()
+    }
+    pub(super) async fn db_append_candidate_commands(
+        &mut self,
+        c: &CandidateAppend,
+        round: &CandidateAppendRound,
+        proposed: &[Command],
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> StoreResult<()> {
+        // One UPDATE keeps view/history atomic. PostgreSQL may still rewrite all
+        // batches JSONB/TOAST; this is not incremental physical storage.
+        let result = sqlx::query(
+            r#"
+            UPDATE candidates SET updated_at=$3,view=$4,
+                batches=jsonb_set(batches,ARRAY[$5::text,'commands'],
+                    (batches->$5::int->'commands') || $6::jsonb,false)
+            WHERE project_id=$1 AND id=$2 AND state='running'
+                AND batches->$5::int->>'id'=$7
+                AND batches->$5::int->>'state'='running'
+                AND (batches->$5::int->'author')::text=$8
+                AND jsonb_array_length(batches->$5::int->'commands')=$9
+                AND (SELECT count(*) FROM jsonb_array_elements(batches) b WHERE b->>'id'=$7)=1
+        "#,
+        )
+        .bind(uuid(c.project))
+        .bind(c.id)
+        .bind(at)
+        .bind(Json(&c.view))
+        .bind(round.position.to_string())
+        .bind(Json(proposed))
+        .bind(&round.stored_id)
+        .bind(&round.stored_author)
+        .bind(round.command_count as i64)
+        .execute(&mut *self.tx)
+        .await
+        .map_err(unavailable)?;
+        if result.rows_affected() != 1 {
+            return Err(nexofolio_knowledge_contracts::StoreError::Unavailable);
+        }
+        Ok(())
+    }
     pub(super) async fn db_recovery_candidates(
         &mut self,
         before: chrono::DateTime<chrono::Utc>,
@@ -108,7 +229,7 @@ impl PostgresTx {
         &mut self,
         project: ProjectId,
     ) -> StoreResult<Option<CandidateSummary>> {
-        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 AND state='running' ORDER BY created_at LIMIT 1")
+        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version' IN ('2','3'),false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 AND state='running' ORDER BY created_at LIMIT 1")
             .bind(uuid(project)).fetch_optional(&mut *self.tx).await.map_err(unavailable)?;
         row.as_ref().map(summary).transpose()
     }
@@ -180,20 +301,28 @@ impl PostgresTx {
         project: ProjectId,
         candidate_id: uuid::Uuid,
     ) -> StoreResult<Option<Candidate>> {
+        let started = std::time::Instant::now();
         let row = sqlx::query("SELECT * FROM candidates WHERE project_id=$1 AND id=$2")
             .bind(uuid(project))
             .bind(candidate_id)
             .fetch_optional(&mut *self.tx)
             .await
             .map_err(unavailable)?;
-        row.as_ref().map(candidate).transpose()
+        let fetched = started.elapsed();
+        let decoded = row.as_ref().map(candidate).transpose();
+        tracing::info!(
+            fetch_us = fetched.as_micros() as u64,
+            decode_us = (started.elapsed() - fetched).as_micros() as u64,
+            "candidate full read timing"
+        );
+        decoded
     }
     pub(super) async fn db_candidate_projection(
         &mut self,
         project: ProjectId,
         key: uuid::Uuid,
     ) -> StoreResult<Option<Candidate>> {
-        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,base_hash,base,view,batches,progress,parent,applied_rounds,reviewed_by,operations,NULL::jsonb AS execution_input FROM candidates WHERE project_id=$1 AND id=$2")
+        let row=sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,base_hash,base,view,batches,progress,parent,applied_rounds,reviewed_by,operations,history_pruned_at,NULL::jsonb AS execution_input FROM candidates WHERE project_id=$1 AND id=$2")
             .bind(uuid(project)).bind(key).fetch_optional(&mut *self.tx).await.map_err(unavailable)?;
         row.as_ref().map(candidate).transpose()
     }
@@ -213,7 +342,7 @@ impl PostgresTx {
         project: ProjectId,
         limit: usize,
     ) -> StoreResult<Vec<CandidateSummary>> {
-        let rows = sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 ORDER BY created_at DESC LIMIT $2")
+        let rows = sqlx::query("SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version' IN ('2','3'),false) AS input_frozen,progress,(SELECT coalesce(sum(jsonb_array_length(b->'commands')),0)::bigint FROM jsonb_array_elements(batches) b) AS commands FROM candidates WHERE project_id=$1 ORDER BY created_at DESC LIMIT $2")
             .bind(uuid(project)).bind(limit as i64).fetch_all(&mut *self.tx).await.map_err(unavailable)?;
         rows.iter().map(summary).collect()
     }
@@ -233,7 +362,7 @@ impl PostgresTx {
                     WHEN $2 AND state='applied' THEN 2
                     WHEN $2 AND state='discarded' THEN 3 ELSE 4 END,
                     created_at DESC,id DESC LIMIT 1)
-            SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version'='2',false) AS input_frozen,
+            SELECT id,project_id,target,state,created_at,updated_at,coalesce(base->'lifecycle'->'version','0'::jsonb) AS lifecycle_version,coalesce(execution_input->>'version' IN ('2','3'),false) AS input_frozen,
                 (CASE WHEN jsonb_typeof(progress)='object' THEN progress ELSE '{}'::jsonb END)
                 || jsonb_build_object('folders_saved', coalesce(nullif(progress->'folders_saved','null'::jsonb),
                     to_jsonb(jsonb_array_length(view->'folders')))) AS progress,

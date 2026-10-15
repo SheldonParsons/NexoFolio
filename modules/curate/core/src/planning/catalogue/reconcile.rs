@@ -36,7 +36,9 @@ pub(crate) fn plan(
             hint,
         )?;
         if module.children.is_empty() && !existing.iter().any(|f| f.id == root.id) {
-            return Err(CompletionError("新业务模块必须有功能子目录，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "新业务模块必须有功能子目录，未写入".into(),
+            ));
         }
         for (index, group) in module.children.into_iter().enumerate() {
             let members = member_ids(group.endpoints.iter(), summaries);
@@ -58,12 +60,14 @@ pub(crate) fn plan(
     }
     for entry in proposal.unplaced {
         if entry.reason.trim().is_empty() || entry.reason.chars().count() > 240 {
-            return Err(CompletionError("待分类接口必须说明原因，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "待分类接口必须说明原因，未写入".into(),
+            ));
         }
         decide(&entry.key, None, summaries, &mut decisions)?;
     }
     if decisions.len() != summaries.len() {
-        return Err(CompletionError(
+        return Err(CompletionError::InvalidReply(
             "目录建议遗漏接口，请逐项分类或明确待分类，未写入".into(),
         ));
     }
@@ -137,9 +141,13 @@ fn decide(
         .parse::<usize>()
         .ok()
         .filter(|i| i.to_string() == key && *i < summaries.len())
-        .ok_or_else(|| CompletionError("目录引用了不存在的接口编号，未写入".into()))?;
+        .ok_or_else(|| {
+            CompletionError::InvalidReply("目录引用了不存在的接口编号，未写入".into())
+        })?;
     if decisions.insert(summaries[index].id, folder).is_some() {
-        return Err(CompletionError("同一接口被重复分类，未写入".into()));
+        return Err(CompletionError::InvalidReply(
+            "同一接口被重复分类，未写入".into(),
+        ));
     }
     Ok(())
 }

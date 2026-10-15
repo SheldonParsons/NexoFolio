@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 mod budget;
 mod options;
+mod telemetry;
 use budget::Budget;
 use options::Format;
 pub use options::{Completion, Measurement, ModelOptions, Thinking};
@@ -21,12 +22,19 @@ pub struct LlmClient {
     api_key: String,
     slots: Budget,
     options: ModelOptions,
+    telemetry: telemetry::Telemetry,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
+    #[error("模型请求配置无效")]
+    Configuration,
     #[error("request failed: {0}")]
     Transport(String),
+    #[error("模型请求超时")]
+    Timeout,
+    #[error("模型服务正在冷却")]
+    Cooldown { retry_after_seconds: u64 },
     // An upstream error body may echo a prompt or a credential. Never forward it.
     #[error("模型服务返回 HTTP {status}，请检查服务状态后重试")]
     Status {
@@ -93,6 +101,7 @@ impl LlmClient {
             api_key,
             slots: Budget::new(4),
             options: ModelOptions::default(),
+            telemetry: telemetry::Telemetry::default(),
         }
     }
     pub fn with_concurrency(mut self, limit: usize) -> Self {
@@ -112,12 +121,15 @@ impl LlmClient {
     }
 
     pub async fn complete_measured(&self, prompt: &str) -> Result<Completion, LlmError> {
+        let attempt = self.telemetry.attempt();
         let queued = Instant::now();
-        let permit = self
-            .slots
-            .acquire()
-            .await
-            .map_err(|_| LlmError::Transport("模型队列已关闭".into()))?;
+        let permit = match self.slots.acquire_ready().await {
+            Ok(permit) => permit,
+            Err(error) => {
+                attempt.finish(queued.elapsed().as_millis() as u64, None, Some(&error));
+                return Err(error);
+            }
+        };
         let queue_ms = queued.elapsed().as_millis() as u64;
         let started = Instant::now();
         let mut result = self.request(prompt).await;
@@ -158,6 +170,11 @@ impl LlmClient {
             success = result.is_ok(),
             "model request measured"
         );
+        attempt.finish(
+            queue_ms,
+            Some(started.elapsed().as_millis() as u64),
+            result.as_ref().err(),
+        );
         result
     }
 
@@ -177,6 +194,7 @@ impl LlmClient {
         };
 
         let started = Instant::now();
+        let _http = telemetry::Gauge::enter(&self.telemetry.http);
         let response = self
             .http
             .post(format!("{}/chat/completions", self.base_url))
@@ -184,13 +202,7 @@ impl LlmClient {
             .json(&body)
             .send()
             .await
-            .map_err(|e| {
-                LlmError::Transport(if e.is_timeout() {
-                    "模型服务响应超时，请重试；已完成的字段说明会保留".into()
-                } else {
-                    "模型服务连接失败，请重试；已完成的字段说明会保留".into()
-                })
-            })?;
+            .map_err(transport_error)?;
 
         let headers_ms = started.elapsed().as_millis() as u64;
         let status = response.status();
@@ -209,11 +221,7 @@ impl LlmClient {
             if e.is_decode() {
                 return LlmError::InvalidResponse;
             }
-            LlmError::Transport(if e.is_timeout() {
-                "模型服务响应超时，请重试；已完成的字段说明会保留".into()
-            } else {
-                "模型服务连接失败，请重试；已完成的字段说明会保留".into()
-            })
+            transport_error(e)
         })?;
 
         // Optional provider usage is aggregate telemetry only, never prompt/reply content.
@@ -270,9 +278,21 @@ impl LlmClient {
     }
 }
 
+fn transport_error(error: reqwest::Error) -> LlmError {
+    if error.is_builder() {
+        LlmError::Configuration
+    } else if error.is_timeout() {
+        LlmError::Timeout
+    } else {
+        LlmError::Transport("模型服务连接失败".into())
+    }
+}
+
 fn retry_after_seconds(value: &str) -> Option<u64> {
     if let Ok(seconds) = value.trim().parse::<u64>() {
-        return Some(seconds.min(86_400));
+        return std::time::SystemTime::now()
+            .checked_add(std::time::Duration::from_secs(seconds))
+            .map(|_| seconds);
     }
     httpdate::parse_http_date(value).ok().map(|deadline| {
         deadline
@@ -280,8 +300,30 @@ fn retry_after_seconds(value: &str) -> Option<u64> {
             .unwrap_or_default()
             .as_secs()
             .saturating_add(1)
-            .min(86_400)
     })
+}
+
+impl LlmError {
+    fn classification(&self) -> CompletionError {
+        match self {
+            Self::Configuration => CompletionError::Configuration,
+            Self::Timeout => CompletionError::Timeout,
+            Self::Transport(_) => CompletionError::Network,
+            Self::Status {
+                status,
+                retry_after_seconds,
+            } => CompletionError::Status {
+                status: *status,
+                retry_after_seconds: *retry_after_seconds,
+            },
+            Self::Cooldown {
+                retry_after_seconds,
+            } => CompletionError::Cooldown {
+                retry_after_seconds: *retry_after_seconds,
+            },
+            Self::Empty | Self::InvalidResponse => CompletionError::InvalidReply(self.to_string()),
+        }
+    }
 }
 
 #[async_trait]
@@ -289,7 +331,7 @@ impl Completions for LlmClient {
     async fn complete(&self, prompt: &str) -> Result<String, CompletionError> {
         LlmClient::complete(self, prompt)
             .await
-            .map_err(|e| CompletionError(e.to_string()))
+            .map_err(|e| e.classification())
     }
 }
 
@@ -359,3 +401,6 @@ mod tests {
 
 #[cfg(test)]
 mod request_tests;
+
+#[cfg(test)]
+mod telemetry_tests;

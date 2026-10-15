@@ -11,8 +11,8 @@ use axum::{
 use nexofolio_access_contracts::{ActorNames, ProjectAccess, SessionPrincipal, Sessions};
 use nexofolio_common::ProjectId;
 use nexofolio_contracts::knowledge::{
-    Candidate, CandidateActor, CandidateEntryKind, CandidateSummary, KnowledgeCandidates,
-    KnowledgeError,
+    ApplyObserver, ApplyProgress, ApplyStage, CandidateActor, CandidateEntryKind,
+    CandidateReviewQuery, CandidateSummary, KnowledgeCandidates, KnowledgeError, ReviewPart,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -23,6 +23,7 @@ struct ReviewHttp {
     actors: Arc<dyn ActorNames>,
     projects: Arc<dyn ProjectAccess>,
     candidates: Arc<dyn KnowledgeCandidates>,
+    observations: super::curation_apply::ApplyObservations,
 }
 pub(crate) fn routes(
     sessions: Arc<dyn Sessions>,
@@ -35,6 +36,14 @@ pub(crate) fn routes(
         .route(
             "/v1/projects/{project}/curate/candidates/{candidate}",
             get(detail),
+        )
+        .route(
+            "/v1/projects/{project}/curate/candidates/{candidate}/review",
+            get(review),
+        )
+        .route(
+            "/v1/projects/{project}/curate/candidates/{candidate}/apply-status",
+            get(apply_status),
         )
         .route(
             "/v1/projects/{project}/curate/candidates/{candidate}/apply",
@@ -57,10 +66,12 @@ pub(crate) fn routes(
             actors,
             projects,
             candidates,
+            observations: Default::default(),
         })
         .layer(middleware::from_fn(no_store))
 }
 enum ReviewError {
+    Changed,
     Access(AccessError),
     Knowledge(KnowledgeError),
 }
@@ -77,10 +88,16 @@ impl From<AccessError> for ReviewError {
 impl IntoResponse for ReviewError {
     fn into_response(self) -> Response {
         let error = match self {
+            Self::Changed => return (StatusCode::CONFLICT,Json(json!({"error":{"code":"REVIEW_CHANGED","message":"候选内容已更新，请重新读取当前范围"}}))).into_response(),
             Self::Access(e) => return e.into_response(),
             Self::Knowledge(e) => e,
         };
         let (status, code, message) = match error {
+            KnowledgeError::HistoryExpired => (
+                StatusCode::GONE,
+                "HISTORY_EXPIRED",
+                "历史已精简，仅保留摘要；详情、对比与回滚已到期",
+            ),
             KnowledgeError::NoSuchCandidate => {
                 (StatusCode::NOT_FOUND, "NOT_FOUND", "整理结果不存在")
             }
@@ -167,27 +184,120 @@ async fn detail(
     State(s): State<ReviewHttp>,
     Extension(principal): Extension<SessionPrincipal>,
     Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
-) -> Result<Json<Candidate>, ReviewError> {
+) -> Result<Response, ReviewError> {
     authorize(&s, &principal, project).await?;
-    Ok(Json(s.candidates.candidate(project, id).await?))
+    let start = std::time::Instant::now();
+    let value = s.candidates.candidate(project, id).await?;
+    let read = start.elapsed();
+    let response = Json(value).into_response();
+    tracing::info!(
+        read_ms = read.as_millis() as u64,
+        serialize_ms = (start.elapsed() - read).as_millis() as u64,
+        "candidate detail timing"
+    );
+    Ok(response)
+}
+async fn review(
+    State(s): State<ReviewHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+    Query(query): Query<CandidateReviewQuery>,
+) -> Result<Response, ReviewError> {
+    authorize(&s, &principal, project).await?;
+    let start = std::time::Instant::now();
+    let value = s
+        .candidates
+        .review_candidate(project, id, &query)
+        .await
+        .map_err(|e| {
+            if matches!(e, KnowledgeError::CandidateStale) {
+                ReviewError::Changed
+            } else {
+                e.into()
+            }
+        })?;
+    let read = start.elapsed();
+    let response = Json(value).into_response();
+    tracing::info!(
+        read_ms = read.as_millis() as u64,
+        serialize_ms = (start.elapsed() - read).as_millis() as u64,
+        "candidate review timing"
+    );
+    Ok(response)
+}
+#[derive(serde::Deserialize)]
+struct ApplyQuery {
+    operation: Option<uuid::Uuid>,
+}
+async fn apply_status(
+    State(s): State<ReviewHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+    Query(query): Query<ApplyQuery>,
+) -> Result<Json<Value>, ReviewError> {
+    authorize(&s, &principal, project).await?;
+    let state = s
+        .candidates
+        .review_candidate(
+            project,
+            id,
+            &CandidateReviewQuery {
+                part: ReviewPart::Status,
+                ..Default::default()
+            },
+        )
+        .await?;
+    let progress = query
+        .operation
+        .and_then(|op| s.observations.get(project, id, op));
+    Ok(Json(
+        json!({"candidate":state,"operation":query.operation,"progress":progress}),
+    ))
 }
 async fn apply(
     State(s): State<ReviewHttp>,
     Extension(principal): Extension<SessionPrincipal>,
     Path((project, id)): Path<(ProjectId, uuid::Uuid)>,
+    Query(query): Query<ApplyQuery>,
 ) -> Result<Json<Value>, ReviewError> {
     authorize(&s, &principal, project).await?;
-    let rounds = s
+    let actor = super::curation_actor::from_session(s.sessions.as_ref(), &principal)
+        .await
+        .map_err(AccessError::from)?;
+    let operation = query.operation.unwrap_or_else(uuid::Uuid::new_v4);
+    let observer = s
+        .observations
+        .start(project, id, operation)
+        .ok_or(KnowledgeError::CandidateClosed)?;
+    let result = s
         .candidates
-        .apply_candidate_as(
-            project,
-            id,
-            super::curation_actor::from_session(s.sessions.as_ref(), &principal)
-                .await
-                .map_err(AccessError::from)?,
-        )
-        .await?;
-    Ok(Json(json!({"status":"applied","rounds":rounds})))
+        .apply_candidate_observed(project, id, actor, &observer)
+        .await;
+    match result {
+        Ok(rounds) => {
+            observer.update(ApplyProgress {
+                stage: ApplyStage::Committed,
+                processed: 0,
+                total: 0,
+            });
+            Ok(Json(
+                json!({"status":"applied","rounds":rounds,"operation":operation}),
+            ))
+        }
+        Err(error) => {
+            // A lost COMMIT acknowledgement is uncertain, not proof of rollback.
+            observer.update(ApplyProgress {
+                stage: if matches!(error, KnowledgeError::Unavailable) {
+                    ApplyStage::Unknown
+                } else {
+                    ApplyStage::Failed
+                },
+                processed: 0,
+                total: 0,
+            });
+            Err(error.into())
+        }
+    }
 }
 async fn discard(
     State(s): State<ReviewHttp>,

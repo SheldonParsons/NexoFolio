@@ -77,7 +77,7 @@ pub(crate) async fn observe(audit: Audit, mut request: Request, next: Next) -> R
             "apply" => "curation.apply",
             "discard" => "curation.discard",
             "resume" => "curation.resume",
-            "cancel" => "curation.cancel",
+            "cancel" | "stop" => "curation.cancel",
             _ => "curation.start",
         }
     } else {
@@ -86,6 +86,7 @@ pub(crate) async fn observe(audit: Audit, mut request: Request, next: Next) -> R
     let ctx = Context {
         audit: audit.clone(),
         event: Arc::new(Mutex::new(Event {
+            execution: None,
             at: chrono::Utc::now(),
             kind: "api".into(),
             action: action.into(),
@@ -106,7 +107,7 @@ pub(crate) async fn observe(audit: Audit, mut request: Request, next: Next) -> R
                 .map(|i| i.0.clone())
                 .unwrap_or_default(),
             project: resource(path, "projects"),
-            resource: ["candidates", "endpoints", "folders"]
+            resource: ["candidates", "tasks", "endpoints", "folders"]
                 .iter()
                 .map(|segment| resource(path, segment))
                 .find(|id| !id.is_empty())

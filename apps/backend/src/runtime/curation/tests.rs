@@ -168,7 +168,9 @@ impl Completions for Model {
         self.memory.data.lock().unwrap().prompts.push(prompt.into());
         if prompt.contains("字段和可核查的证据") {
             if prompt.contains("/api/2") && self.fail_field_second.load(Ordering::SeqCst) {
-                return Err(CompletionError("field service unavailable".into()));
+                return Err(CompletionError::InvalidReply(
+                    "field service unavailable".into(),
+                ));
             }
             return Ok(
                 r#"{"fields":[{"key":"0","display_name":"合成字段","description":"业务状态，具体含义待确认"}]}"#.into(),
@@ -189,7 +191,9 @@ impl Completions for Model {
                 if pending {
                     self.memory.saved.notified().await;
                 }
-                return Err(CompletionError("model temporarily unavailable".into()));
+                return Err(CompletionError::InvalidReply(
+                    "model temporarily unavailable".into(),
+                ));
             }
             Ok(r#"{"name":"接口二","purpose":"用途二"}"#.into())
         } else {
@@ -226,6 +230,9 @@ pub(super) fn fixture(fail_second: bool) -> (Curation, ProjectId, Arc<Memory>, A
     });
     let completions: Arc<dyn Completions> = model.clone();
     let state = Curation {
+        execution_audit: None,
+        queue: None,
+        task: None,
         knowledge: memory.clone(),
         reader: memory.clone(),
         endpoints: Arc::new(Endpoints(facts)),

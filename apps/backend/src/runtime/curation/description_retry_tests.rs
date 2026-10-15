@@ -34,7 +34,17 @@ impl Completions for Model {
                 *self.sibling_was_saved_on_retry.lock().unwrap() = true;
             }
             if attempt <= self.failures {
-                return Err(CompletionError(self.code.into()));
+                return Err(match self.code {
+                    "HTTP 429" => CompletionError::Status {
+                        status: 429,
+                        retry_after_seconds: Some(30),
+                    },
+                    "HTTP 401" => CompletionError::Status {
+                        status: 401,
+                        retry_after_seconds: None,
+                    },
+                    _ => CompletionError::InvalidReply(self.code.into()),
+                });
             }
         } else {
             tokio::time::sleep(Duration::from_secs(self.sibling_delay)).await;
@@ -74,31 +84,27 @@ async fn setup(
     (s, project, memory, model, prepared, job)
 }
 #[tokio::test(start_paused = true)]
-async fn transient_429_waits_and_retries_only_that_endpoint_preserving_other_inflight_results() {
+async fn transient_429_returns_policy_to_queue_and_preserves_inflight_results() {
     let (s, project, memory, model, prepared, job) = setup(2, "HTTP 429", 3).await;
-    super::descriptions::run(&s, project, &job, &prepared)
-        .await
-        .unwrap();
-    {
-        let attempts = model.attempts.lock().unwrap();
-        assert_eq!(attempts["/api/1"].len(), 3);
-        assert_eq!(attempts["/api/2"].len(), 1);
-        assert!(attempts["/api/1"][1] - attempts["/api/1"][0] >= Duration::from_secs(30));
-        assert!(attempts["/api/1"][2] - attempts["/api/1"][1] >= Duration::from_secs(60));
-    }
-    assert!(*model.sibling_was_saved_on_retry.lock().unwrap());
-    assert_eq!(memory.notes(project).await.unwrap().len(), 2);
-    assert_eq!(job.snapshot().completed, 2);
-    assert_eq!(job.snapshot().retries, 2);
-    assert!(
-        job.snapshot()
-            .activity
-            .iter()
-            .any(|a| a.kind == "retry" && a.message.contains("等待额度恢复"))
-    );
+    let error = super::descriptions::run(
+        &s,
+        project,
+        &job,
+        &super::frozen_input::ExecutionInput::legacy(prepared.clone()),
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        CurationError::Model(CompletionError::Status { status: 429, .. })
+    ));
+    assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 1);
+    assert_eq!(memory.notes(project).await.unwrap().len(), 1);
+    assert_eq!(job.snapshot().retries, 0);
 }
 #[tokio::test(start_paused = true)]
-async fn exhausted_429_does_not_multiply_stage_budget_or_cancel_sibling_and_next_run_skips_saved() {
+async fn persistent_429_does_not_multiply_stage_budget_or_cancel_sibling_and_next_run_skips_saved()
+{
     let (s, project, memory, model, prepared, job) = setup(usize::MAX, "HTTP 429", 215).await;
     let summaries = s.endpoints.list(project).await.unwrap();
     let result = super::stages::run(
@@ -107,12 +113,12 @@ async fn exhausted_429_does_not_multiply_stage_budget_or_cancel_sibling_and_next
         &summaries,
         &job,
         None,
-        &prepared,
+        &super::frozen_input::ExecutionInput::legacy(prepared.clone()),
         Pass::Describe,
     )
     .await;
     assert!(result.is_err());
-    assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 4);
+    assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 1);
     assert_eq!(model.attempts.lock().unwrap()["/api/2"].len(), 1);
     assert_eq!(memory.notes(project).await.unwrap().len(), 1);
     assert_eq!(job.snapshot().completed, 1);
@@ -132,9 +138,14 @@ async fn exhausted_429_does_not_multiply_stage_budget_or_cancel_sibling_and_next
         fresh.clone() as Arc<dyn Completions>,
         "fixture".into(),
     ));
-    super::descriptions::run(&resumed, project, &job, &prepared)
-        .await
-        .unwrap();
+    super::descriptions::run(
+        &resumed,
+        project,
+        &job,
+        &super::frozen_input::ExecutionInput::legacy(prepared.clone()),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         fresh
             .attempts
@@ -150,16 +161,26 @@ async fn exhausted_429_does_not_multiply_stage_budget_or_cancel_sibling_and_next
 #[tokio::test(start_paused = true)]
 async fn malformed_reply_retries_locally_and_authentication_rejection_does_not_retry() {
     let (s, project, _, model, prepared, job) = setup(1, "接口说明返回 JSON 格式无效", 0).await;
-    super::descriptions::run(&s, project, &job, &prepared)
-        .await
-        .unwrap();
+    super::descriptions::run(
+        &s,
+        project,
+        &job,
+        &super::frozen_input::ExecutionInput::legacy(prepared.clone()),
+    )
+    .await
+    .unwrap();
     assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 2);
     assert_eq!(model.attempts.lock().unwrap()["/api/2"].len(), 1);
     let (s, project, _, model, prepared, job) = setup(usize::MAX, "HTTP 401", 0).await;
     assert!(
-        super::descriptions::run(&s, project, &job, &prepared)
-            .await
-            .is_err()
+        super::descriptions::run(
+            &s,
+            project,
+            &job,
+            &super::frozen_input::ExecutionInput::legacy(prepared.clone())
+        )
+        .await
+        .is_err()
     );
     assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 1);
 }
@@ -173,7 +194,12 @@ async fn cancellation_during_backoff_stops_retries() {
     };
     let result = super::supervision::supervise(
         &job,
-        super::descriptions::run(&s, project, &job, &prepared),
+        super::descriptions::run(
+            &s,
+            project,
+            &job,
+            &super::frozen_input::ExecutionInput::legacy(prepared.clone()),
+        ),
         cancel,
         Duration::from_secs(900),
     )
@@ -181,4 +207,37 @@ async fn cancellation_during_backoff_stops_retries() {
     assert!(result.is_err());
     tokio::time::advance(Duration::from_secs(300)).await;
     assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn restored_invalid_reply_count_does_not_restart_the_local_repair_budget() {
+    let (s, project, _, model, prepared, job) = setup(usize::MAX, "invalid JSON", 0).await;
+    let endpoint = prepared
+        .facts
+        .iter()
+        .find(|f| f.summary.path_template == "/api/1")
+        .unwrap()
+        .summary
+        .id;
+    job.update(|p| {
+        p.validation_failures
+            .insert(format!("describe/{endpoint}"), 3);
+    });
+    assert!(
+        super::descriptions::run(
+            &s,
+            project,
+            &job,
+            &super::frozen_input::ExecutionInput::legacy(prepared.clone())
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(model.attempts.lock().unwrap()["/api/1"].len(), 1);
+    let restored: Progress =
+        serde_json::from_value(serde_json::to_value(job.snapshot()).unwrap()).unwrap();
+    assert_eq!(
+        restored.validation_failures[&format!("describe/{endpoint}")],
+        4
+    );
 }

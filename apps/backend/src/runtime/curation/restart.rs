@@ -1,4 +1,4 @@
-//! Periodic recovery of abandoned workers; no new queue or business scheduling.
+//! One runtime loop owns durable dispatch and expired-lease recovery.
 use super::{Curation, CurationError};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 const PAGE: usize = 20;
 impl Curation {
     pub(crate) async fn recover_after_restart(self, shutdown: CancellationToken) {
-        let mut ticker = tokio::time::interval(Duration::from_secs(20));
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {
@@ -26,6 +26,9 @@ impl Curation {
         }
     }
     pub(super) async fn recover_expired(&self) -> Result<(), CurationError> {
+        if self.queue.is_some() {
+            return self.dispatch().await;
+        }
         let Some(candidates) = &self.candidates else {
             return Ok(());
         };

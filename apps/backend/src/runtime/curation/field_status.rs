@@ -1,22 +1,21 @@
 //! Status comes from durable field results, not the number of model replies/writes.
-use super::{Curation, CurationError, jobs::Job, preparation::PreparedProject};
+use super::{Curation, CurationError, frozen_input::ExecutionInput, jobs::Job};
 pub(super) async fn refresh(
     s: &Curation,
-    prepared: &PreparedProject,
+    prepared: &ExecutionInput,
     job: &Job,
 ) -> Result<(), CurationError> {
     let mut outcomes = std::collections::BTreeMap::new();
-    for facts in prepared
-        .facts
+    for endpoint in prepared
+        .endpoints
         .iter()
-        .filter(|f| job.snapshot().target.is_none_or(|e| e == f.summary.id))
+        .copied()
+        .filter(|e| job.snapshot().target.is_none_or(|id| *e == id))
     {
-        let knowledge = s.reader.endpoint(facts.summary.id).await?;
-        let inputs = prepared
-            .inputs
-            .get(&facts.summary.id)
-            .cloned()
-            .unwrap_or_default();
+        let loaded = prepared.endpoint(s, endpoint).await?;
+        let facts = &loaded.facts;
+        let knowledge = s.reader.endpoint(endpoint).await?;
+        let inputs = loaded.inputs;
         let gaps = nexofolio_curate::pending_fields(facts, &knowledge, inputs.clone());
         for input in &inputs {
             let key = format!("{}/{}", facts.summary.id, input.key);

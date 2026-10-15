@@ -36,7 +36,7 @@ impl Completions for BatchModel {
                 .collect(),
         );
         if fields.iter().any(|f| f["path"] == "f24") && self.fail.load(Ordering::SeqCst) {
-            return Err(CompletionError("模型服务响应超时".into()));
+            return Err(CompletionError::InvalidReply("模型服务响应超时".into()));
         }
         Ok(
             serde_json::json!({"fields": fields.iter().map(|f| serde_json::json!({
@@ -96,10 +96,10 @@ async fn late_batch_failure_keeps_acknowledged_chunks_and_retry_only_requests_mi
         ),
         (49, 48, 1)
     );
-    assert_eq!(failed.issues[0].code, "model_timeout");
+    assert_eq!(failed.issues[0].code, "invalid_reply");
     assert_eq!(failed.issues[0].fields, 1);
     assert!(failed.retries >= 3);
-    assert_eq!(failed.recovery_sweeps, 2);
+    assert_eq!(failed.recovery_sweeps, 0);
     assert!(failed.active.is_empty());
     assert_eq!(memory.data.lock().unwrap().fields.len(), 48);
     assert_eq!(memory.data.lock().unwrap().directory_writes, 2);
@@ -118,15 +118,19 @@ async fn late_batch_failure_keeps_acknowledged_chunks_and_retry_only_requests_mi
 #[test]
 fn upstream_error_details_are_classified_without_forwarding_content() {
     assert_eq!(
-        super::field_worker::error_code("模型服务返回 HTTP 401"),
+        nexofolio_curate::CompletionError::Status {
+            status: 401,
+            retry_after_seconds: None
+        }
+        .code(),
         "model_rejected"
     );
     assert_eq!(
-        super::field_worker::error_code("字段回复含未知或重复 key"),
+        nexofolio_curate::CompletionError::InvalidReply("字段回复含未知或重复 key".into()).code(),
         "invalid_reply"
     );
     assert_eq!(
-        super::field_worker::error_code("upstream timeout"),
+        nexofolio_curate::CompletionError::Timeout.code(),
         "model_timeout"
     );
 }

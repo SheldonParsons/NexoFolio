@@ -6,7 +6,7 @@ use super::{
     jobs::{ActiveState, Job},
 };
 use nexofolio_common::{EndpointId, ProjectId, RoundId};
-use nexofolio_curate::{Pass, field_batches};
+use nexofolio_curate::Pass;
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
@@ -15,35 +15,39 @@ use std::{
 use tokio::{sync::mpsc, task::JoinSet};
 use tracing::Instrument;
 
+struct QueuedBatch {
+    id: u64,
+    endpoint: EndpointId,
+    keys: Vec<String>,
+    batch: usize,
+    batches: usize,
+}
+
 pub(super) async fn run(
     s: &Curation,
     project: ProjectId,
     round: RoundId,
     pending: Vec<Pending>,
     job: &Job,
+    prepared: &super::frozen_input::ExecutionInput,
 ) -> Result<(), CurationError> {
-    let total = pending.iter().map(|(_, _, inputs)| inputs.len()).sum();
+    let total = pending.iter().map(|(_, _, count)| count).sum();
     let mut groups = Vec::new();
     let mut remaining = HashMap::new();
-    for (facts, knowledge, inputs) in pending {
-        let chunks = field_batches(inputs, &knowledge);
-        remaining.insert(facts.summary.id, (chunks.len(), false));
+    for (endpoint, chunks, _) in pending {
+        remaining.insert(endpoint, (chunks.len(), false));
         let count = chunks.len();
-        groups.push((
-            Arc::new(Work { facts, knowledge }),
-            VecDeque::from(chunks),
-            count,
-        ));
+        groups.push((endpoint, VecDeque::from(chunks), count));
     }
     let mut queue = VecDeque::new();
     loop {
         let before = queue.len();
         for (work, chunks, count) in &mut groups {
             if let Some(inputs) = chunks.pop_front() {
-                queue.push_back(Task {
+                queue.push_back(QueuedBatch {
                     id: job.snapshot().total_batches as u64 + queue.len() as u64 + 1,
-                    work: work.clone(),
-                    inputs,
+                    endpoint: *work,
+                    keys: inputs,
                     batch: *count - chunks.len(),
                     batches: *count,
                 });
@@ -74,15 +78,14 @@ pub(super) async fn run(
     let mut workers = JoinSet::new();
     // Provider admission/backoff belongs to the shared adapter budget only.
     // Worker elapsed time includes queueing and must never throttle another layer.
-    let capacity = s.field_concurrency;
-    fill(s, round, &mut queue, &mut workers, &events, job, capacity);
+    fill(s, round, &mut queue, &mut workers, &events, job, prepared).await?;
     while !workers.is_empty() {
         let result = tokio::select! {
             Some(event) = updates.recv() => {
                 handle(s, project, round, event, &mut remaining, job).await
             },
             result = workers.join_next() => match result {
-                Some(Ok(())) => { fill(s, round, &mut queue, &mut workers, &events, job, capacity); Ok(()) }
+                Some(Ok(())) => { fill(s, round, &mut queue, &mut workers, &events, job, prepared).await?; Ok(()) }
                 _ => Err(CurationError::Failed("字段批次被中断，已保存内容保留，可继续整理".into())),
             }
         };
@@ -103,20 +106,40 @@ pub(super) async fn run(
     }
 }
 
-fn fill(
+async fn fill(
     s: &Curation,
     round: RoundId,
-    queue: &mut VecDeque<Task>,
+    queue: &mut VecDeque<QueuedBatch>,
     workers: &mut JoinSet<()>,
     events: &mpsc::Sender<Event>,
     job: &Job,
-    capacity: usize,
-) {
-    while workers.len() < capacity {
+    prepared: &super::frozen_input::ExecutionInput,
+) -> Result<(), CurationError> {
+    while workers.len() < s.field_concurrency {
         let Some(task) = queue.pop_front() else {
             break;
         };
-        let endpoint = task.work.facts.summary.id;
+        let endpoint = task.endpoint;
+        let loaded = prepared.batch(s, endpoint, &task.keys).await?;
+        let inputs = loaded
+            .inputs
+            .into_iter()
+            .filter(|i| task.keys.contains(&i.key))
+            .collect::<Vec<_>>();
+        if inputs.len() != task.keys.len() {
+            return Err(nexofolio_contracts::knowledge::frozen_invalid().into());
+        }
+        let knowledge = s.reader.endpoint(endpoint).await?;
+        let task = Task {
+            id: task.id,
+            work: Arc::new(Work {
+                facts: loaded.facts,
+                knowledge,
+            }),
+            inputs,
+            batch: task.batch,
+            batches: task.batches,
+        };
         workers.spawn(
             field_worker::execute(s.describe.clone(), task, events.clone()).instrument(
                 tracing::info_span!("curation_endpoint", endpoint = %endpoint, round = %round),
@@ -124,6 +147,7 @@ fn fill(
         );
     }
     job.update(|p| p.queued_batches = queue.len());
+    Ok(())
 }
 
 async fn handle(
@@ -136,6 +160,7 @@ async fn handle(
 ) -> Result<(), CurationError> {
     let mut acknowledgement = None;
     match event {
+        Event::Fault(error) => return Err(error.into()),
         Event::Started(active) => {
             let name = active.name.as_deref().unwrap_or(&active.path);
             job.record(
@@ -178,13 +203,30 @@ async fn handle(
             endpoint,
             code,
             fields,
+            keys,
         } => {
             job.update(|p| {
                 p.retries += 1;
+                for key in &keys {
+                    *p.validation_failures.entry(key.clone()).or_default() += 1;
+                }
                 if let Some(active) = p.active.iter_mut().find(|a| a.task_id == task) {
                     active.attempt = 2;
                 }
             });
+            if keys.iter().any(|key| {
+                job.snapshot()
+                    .validation_failures
+                    .get(key)
+                    .copied()
+                    .unwrap_or(0)
+                    >= 4
+            }) {
+                return Err(nexofolio_curate::CompletionError::InvalidReply(
+                    "同一字段反复返回无效或不完整结果，需要处理".into(),
+                )
+                .into());
+            }
             let reason = match code {
                 "model_timeout" => "模型超时，拆小重试",
                 "model_rate_limited" => "模型限流，等待后重试",
@@ -233,6 +275,9 @@ async fn handle(
                         let key = format!("{endpoint}/{path}");
                         p.saved_field_keys.insert(key.clone());
                         let state = super::field_status::outcome(context);
+                        if state != 0 {
+                            p.validation_failures.remove(&key);
+                        }
                         if p.field_outcomes.get(&key) == Some(&0) && state != 0 {
                             newly_addressed += 1;
                         }
@@ -275,7 +320,7 @@ async fn handle(
                 )
                 .await?;
                 return Err(CurationError::Failed(
-                    "模型服务持续拒绝请求，已停止本轮；请修复服务配置后补齐本轮缺口".into(),
+                    "模型反复返回无效或不完整结果，需要处理；已保存成果保留".into(),
                 ));
             }
         }

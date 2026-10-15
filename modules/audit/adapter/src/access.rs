@@ -141,10 +141,11 @@ impl PostgresAudit {
     pub(super) async fn read_candidate_events(
         &self,
         project: &str,
-        candidate: &str,
+        candidate: Option<&str>,
+        task: Option<&str>,
     ) -> Result<Value> {
-        let value:Value=sqlx::query_scalar("WITH selected AS (SELECT * FROM events WHERE project=$1 AND data->>'resource'=$2), recent AS (SELECT * FROM selected ORDER BY at DESC,id DESC LIMIT 200) SELECT jsonb_build_object('items',coalesce((SELECT jsonb_agg(data) FROM recent),'[]'::jsonb),'total',(SELECT count(*) FROM selected),'limit',200,'available',true)")
-            .bind(project).bind(candidate).fetch_one(&self.pool).await.map_err(unavailable)?;
+        let value:Value=sqlx::query_scalar("WITH selected AS (SELECT * FROM events WHERE project=$1 AND (($2::text IS NOT NULL AND data->>'resource'=$2 AND ($3::text IS NULL OR data->'execution'->>'task_id' IS NULL OR data->'execution'->>'task_id'=$3)) OR ($3::text IS NOT NULL AND data->>'resource'=$3 AND data->'execution'->>'task_id'=$3))), recent AS (SELECT * FROM selected ORDER BY at DESC,id DESC LIMIT 200) SELECT jsonb_build_object('items',coalesce((SELECT jsonb_agg(data) FROM recent),'[]'::jsonb),'total',(SELECT count(*) FROM selected),'limit',200,'available',true)")
+            .bind(project).bind(candidate).bind(task).fetch_one(&self.pool).await.map_err(unavailable)?;
         Ok(value)
     }
 }

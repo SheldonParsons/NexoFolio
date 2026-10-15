@@ -11,11 +11,9 @@ use nexofolio_contracts::{
 use nexofolio_curate::{FieldInput, LinkProposal, ProjectEvidence};
 use std::{collections::HashMap, time::Instant};
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(super) struct PreparedProject {
     pub facts: Vec<EndpointFacts>,
-    #[serde(default, skip_serializing)]
-    pub value_archive: nexofolio_contracts::field_values::FieldValueArchive,
     pub inputs: HashMap<EndpointId, Vec<FieldInput>>,
     pub links: Vec<LinkProposal>,
     pub authentication: HashMap<EndpointId, Vec<AuthenticationUse>>,
@@ -129,7 +127,6 @@ async fn prepare_mode(
             );
             PreparedProject {
                 facts,
-                value_archive,
                 inputs,
                 links,
                 authentication,

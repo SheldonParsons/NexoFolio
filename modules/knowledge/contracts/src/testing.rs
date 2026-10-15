@@ -5,6 +5,7 @@
 //! newest first, and an uncommitted transaction leaving nothing behind. The
 //! Postgres store is checked separately against a real database.
 
+mod transaction_gate;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +24,7 @@ use crate::{
 
 #[derive(Clone, Default)]
 struct State {
+    frozen_chunks: HashMap<(ProjectId, uuid::Uuid, uuid::Uuid, String), String>,
     lifecycles: HashMap<ProjectId, nexofolio_contracts::knowledge::DocumentLifecycle>,
     value_archives:
         HashMap<(ProjectId, uuid::Uuid), nexofolio_contracts::field_values::FieldValueArchive>,
@@ -63,6 +65,7 @@ impl State {
 #[derive(Clone, Default)]
 pub struct InMemoryKnowledge {
     state: Arc<Mutex<State>>,
+    transactions: Arc<Mutex<transaction_gate::Gate>>,
 }
 
 impl InMemoryKnowledge {
@@ -106,9 +109,11 @@ impl InMemoryKnowledge {
 #[async_trait]
 impl KnowledgeStore for InMemoryKnowledge {
     async fn begin(&self) -> StoreResult<Box<dyn KnowledgeTx>> {
+        let guard = transaction_gate::acquire(self.transactions.clone()).await;
         // A copy of the rows: dropping it without committing discards the copy.
         let working = self.state.lock().expect("fake lock").clone();
         Ok(Box::new(InMemoryTx {
+            _guard: guard,
             shared: Arc::clone(&self.state),
             working,
         }))
@@ -116,12 +121,40 @@ impl KnowledgeStore for InMemoryKnowledge {
 }
 
 struct InMemoryTx {
+    _guard: transaction_gate::Guard,
     shared: Arc<Mutex<State>>,
     working: State,
 }
 
 #[async_trait]
 impl KnowledgeTx for InMemoryTx {
+    async fn frozen_chunk(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        hash: &str,
+    ) -> StoreResult<Option<String>> {
+        Ok(self
+            .working
+            .frozen_chunks
+            .get(&(project, candidate, snapshot, hash.into()))
+            .cloned())
+    }
+    async fn put_frozen_chunk(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+        snapshot: uuid::Uuid,
+        hash: &str,
+        content: &str,
+    ) -> StoreResult<()> {
+        self.working
+            .frozen_chunks
+            .insert((project, candidate, snapshot, hash.into()), content.into());
+        Ok(())
+    }
+
     async fn lifecycle(
         &mut self,
         project: ProjectId,
@@ -295,7 +328,7 @@ impl KnowledgeTx for InMemoryTx {
         Ok(())
     }
 
-    /// Nothing to serialise: the fake is not concurrent.
+    /// Transactions are serialized at begin, including blocking preparation workers.
     async fn lock_project(&mut self, _project: ProjectId) -> StoreResult<()> {
         Ok(())
     }

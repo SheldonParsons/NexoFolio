@@ -10,6 +10,7 @@ fn event(
     actor: &str,
 ) -> Event {
     Event {
+        execution: None,
         at: chrono::Utc::now(),
         kind: kind.into(),
         action: if kind == "mcp" {

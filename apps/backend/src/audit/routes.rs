@@ -251,6 +251,7 @@ async fn ingest(
         actor = format!("user:{}", p.user_id);
     }
     audit.emit(Event {
+        execution: None,
         at: chrono::Utc::now(),
         kind: body.kind.clone(),
         action: if body.kind == "page" {

@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+tracing.workspace = true
 nexofolio-common.workspace = true
 nexofolio-contracts.workspace = true
 nexofolio-knowledge-contracts.workspace = true

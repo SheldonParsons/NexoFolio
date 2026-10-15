@@ -19,6 +19,40 @@ where
     R: EndpointReader,
     C: Clock,
 {
+    async fn field_knowledge(
+        &self,
+        endpoint: EndpointId,
+        keys: &[String],
+    ) -> KnowledgeResult<nexofolio_contracts::knowledge::FieldKnowledge> {
+        let mut tx = self.store.begin_read().await.map_err(store_error)?;
+        let mut fields = Vec::new();
+        for key in keys {
+            if !fields.iter().any(|f: &FieldNote| &f.path == key)
+                && let Some(field) = tx.field_note(endpoint, key).await.map_err(store_error)?
+            {
+                fields.push(field);
+            }
+        }
+        fields.sort_by(|a, b| a.path.cmp(&b.path));
+        Ok(nexofolio_contracts::knowledge::FieldKnowledge {
+            fields,
+            links: tx.links_of(endpoint).await.map_err(store_error)?,
+        })
+    }
+
+    async fn search(
+        &self,
+        query: nexofolio_contracts::knowledge::KnowledgeSearch,
+    ) -> KnowledgeResult<nexofolio_contracts::knowledge::KnowledgeSearchPage> {
+        self.store
+            .begin_read()
+            .await
+            .map_err(store_error)?
+            .search(&query)
+            .await
+            .map_err(store_error)
+    }
+
     async fn lifecycle(
         &self,
         project: ProjectId,

@@ -57,6 +57,7 @@ pub fn routes(
     endpoints: Arc<dyn nexofolio_contracts::endpoint::EndpointReader>,
 ) -> Router {
     Router::new()
+        .route("/v1/projects/{project_id}/document", get(document))
         .route("/v1/projects/{project_id}/catalog", get(catalog))
         .route(
             "/v1/projects/{project_id}/catalog/interfaces",
@@ -114,6 +115,17 @@ impl IntoResponse for KnowledgeHttpError {
         )
             .into_response()
     }
+}
+
+async fn document(
+    State(s): State<KnowledgeHttp>,
+    Extension(principal): Extension<SessionPrincipal>,
+    Path(project): Path<ProjectId>,
+) -> Result<Json<super::document_index::DocumentIndex>, AccessError> {
+    s.projects.require_project(&principal, project).await?;
+    Ok(Json(
+        super::document_index::read(project, &*s.knowledge, &*s.endpoints).await?,
+    ))
 }
 
 async fn catalog(

@@ -26,7 +26,9 @@ impl<C: Completions> Describe<C> {
     ) -> Result<Vec<Command>, CompletionError> {
         let output = self.fields_batch_partial(facts, knowledge, batch).await?;
         if !output.missing.is_empty() {
-            return Err(CompletionError("部分字段缺少说明，请重试".into()));
+            return Err(CompletionError::InvalidReply(
+                "部分字段缺少说明，请重试".into(),
+            ));
         }
         Ok(output.commands)
     }
@@ -94,9 +96,10 @@ impl<C: Completions> Describe<C> {
         );
         let reply = self.complete_fields(&prompt).await?;
         let parsed: Reply = serde_json::from_str(
-            json_slice(&reply).ok_or_else(|| CompletionError("字段说明未返回 JSON".into()))?,
+            json_slice(&reply)
+                .ok_or_else(|| CompletionError::InvalidReply("字段说明未返回 JSON".into()))?,
         )
-        .map_err(|_| CompletionError("字段说明返回格式不完整，请重试".into()))?;
+        .map_err(|_| CompletionError::InvalidReply("字段说明返回格式不完整，请重试".into()))?;
         let valid_keys: BTreeMap<_, _> = batch
             .iter()
             .enumerate()
@@ -108,7 +111,9 @@ impl<C: Completions> Describe<C> {
                 .get(&f.key)
                 .is_none_or(|index| !seen.insert(*index))
         }) {
-            return Err(CompletionError("字段回复含未知或重复 key，未写入".into()));
+            return Err(CompletionError::InvalidReply(
+                "字段回复含未知或重复 key，未写入".into(),
+            ));
         }
         let descriptions: BTreeMap<_, _> = parsed
             .fields

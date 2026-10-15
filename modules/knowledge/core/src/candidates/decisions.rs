@@ -1,7 +1,4 @@
-use super::{
-    snapshot,
-    validation::{commands, load},
-};
+use super::{snapshot, validation::load};
 use crate::{Clock, Knowledge, store_error};
 use nexofolio_common::{ProjectId, RoundId};
 use nexofolio_contracts::{endpoint::EndpointReader, knowledge::*};
@@ -13,10 +10,28 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         project: ProjectId,
         id: uuid::Uuid,
         actor: CandidateActor,
+        observer: Option<&dyn ApplyObserver>,
     ) -> KnowledgeResult<Vec<RoundId>> {
+        let started = std::time::Instant::now();
+        let notify = |stage, processed, total| {
+            if let Some(observer) = observer {
+                observer.update(ApplyProgress {
+                    stage,
+                    processed,
+                    total,
+                });
+            }
+        };
+        notify(ApplyStage::Waiting, 0, 0);
         let mut tx = self.store.begin().await.map_err(store_error)?;
         tx.lock_project(project).await.map_err(store_error)?;
-        let mut candidate = load(tx.as_mut(), project, id).await?;
+        let locked = started.elapsed();
+        notify(ApplyStage::Validating, 0, 0);
+        let mut candidate = tx
+            .candidate_application(project, id)
+            .await
+            .map_err(store_error)?
+            .ok_or(KnowledgeError::NoSuchCandidate)?;
         if candidate.state == CandidateState::Applied {
             return Ok(candidate.applied_rounds);
         }
@@ -25,6 +40,9 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             CandidateState::Ready | CandidateState::Partial
         ) {
             return Err(KnowledgeError::CandidateClosed);
+        }
+        if let Some(input) = &candidate.execution_input {
+            super::frozen::validate(tx.as_mut(), &candidate, input).await?;
         }
         let owned: Vec<_> = self
             .endpoints
@@ -44,6 +62,13 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         let lifecycle =
             crate::lifecycle::resolve(&self.endpoints, current.lifecycle.clone()).await?;
         super::validation::lifecycle_view(&candidate.view, &lifecycle)?;
+        tx.prepare_application(project, &current)
+            .await
+            .map_err(store_error)?;
+        let validated = started.elapsed();
+        let total = candidate.batches.iter().map(|b| b.commands.len()).sum();
+        let mut processed = 0;
+        notify(ApplyStage::Writing, 0, total);
         let mut applied = Vec::new();
         if candidate.target.is_none() {
             for p in &current.placements {
@@ -104,7 +129,18 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             tx.create_round(&round).await.map_err(store_error)?;
             let mut writes = group.clone();
             writes.id = round.id;
-            commands(tx.as_mut(), project, &owned, &writes, self.clock.now(), 0).await?;
+            super::validation::commands_observed(
+                tx.as_mut(),
+                project,
+                &owned,
+                &writes,
+                self.clock.now(),
+                0,
+                &mut |count| notify(ApplyStage::Writing, processed + count, total),
+            )
+            .await?;
+            processed += writes.commands.len();
+            tx.flush_application().await.map_err(store_error)?;
             tx.finish_round(
                 round.id,
                 RoundState::Done,
@@ -134,8 +170,20 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             actor,
             candidate.updated_at,
         ));
-        tx.put_candidate(&candidate).await.map_err(store_error)?;
+        tx.close_candidate_tasks(project, id, self.clock.now())
+            .await
+            .map_err(store_error)?;
+        tx.put_candidate_decision(&candidate)
+            .await
+            .map_err(store_error)?;
+        let written = started.elapsed();
+        notify(ApplyStage::Committing, processed, total);
         tx.commit().await.map_err(store_error)?;
+        notify(ApplyStage::Committed, processed, total);
+        tracing::info!(project=%project, candidate=%id, lock_ms=locked.as_millis() as u64,
+            validate_ms=(validated-locked).as_millis() as u64, write_ms=(written-validated).as_millis() as u64,
+            commit_ms=(started.elapsed()-written).as_millis() as u64, total_ms=started.elapsed().as_millis() as u64,
+            commands=total, "candidate apply timing");
         Ok(applied)
     }
     pub(super) async fn discard_proposal_as(
@@ -164,6 +212,9 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
             actor,
             candidate.updated_at,
         ));
+        tx.close_candidate_tasks(project, id, self.clock.now())
+            .await
+            .map_err(store_error)?;
         tx.put_candidate(&candidate).await.map_err(store_error)?;
         tx.commit().await.map_err(store_error)
     }

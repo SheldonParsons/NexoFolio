@@ -1,5 +1,6 @@
 //! Best-effort bounded audit: no database await on the request path.
 pub(crate) mod console;
+mod diagnostic_task;
 mod diagnostics;
 pub(crate) mod http;
 pub(crate) mod routes;
@@ -234,6 +235,46 @@ pub(crate) struct Context {
     event: Arc<Mutex<Event>>,
 }
 impl Context {
+    pub(crate) fn execution(
+        audit: Audit,
+        task: &nexofolio_contracts::knowledge::CurationTask,
+    ) -> Self {
+        let ctx = Self {
+            audit,
+            event: Arc::new(Mutex::new(Event {
+                execution: None,
+                at: chrono::Utc::now(),
+                kind: "operation".into(),
+                action: String::new(),
+                actor: task
+                    .actor
+                    .user_id()
+                    .map(|id| format!("user:{id}"))
+                    .unwrap_or_else(|| "unknown".into()),
+                route: "/v1/projects/{project_id}/curate/tasks/{task_id}".into(),
+                method: "WORKER".into(),
+                status: 0,
+                duration_ms: 0,
+                request_id: String::new(),
+                project: task.project_id.to_string(),
+                resource: task.candidate_id.unwrap_or(task.id).to_string(),
+                code: String::new(),
+            })),
+        };
+        ctx.associate_task(task);
+        ctx
+    }
+    pub(crate) fn associate_task(&self, task: &nexofolio_contracts::knowledge::CurationTask) {
+        self.event
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .execution = Some(nexofolio_audit_contracts::Execution {
+            task_id: task.id,
+            run_id: task.run_id,
+            generation: task.generation,
+        });
+    }
+
     pub fn identify(&self, user: impl std::fmt::Display) {
         self.event.lock().unwrap_or_else(|e| e.into_inner()).actor = format!("user:{user}");
     }

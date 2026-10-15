@@ -1,5 +1,5 @@
 //! Dispatch endpoint-local workers and retry directory proposals from acknowledged writes.
-use super::{Curation, CurationError, activity::Activity, jobs::Job, preparation::PreparedProject};
+use super::{Curation, CurationError, activity::Activity, frozen_input::ExecutionInput, jobs::Job};
 use nexofolio_common::{EndpointId, ProjectId};
 use nexofolio_contracts::endpoint::EndpointSummary;
 use nexofolio_curate::Pass;
@@ -10,7 +10,7 @@ pub(super) async fn run(
     summaries: &[EndpointSummary],
     job: &Job,
     target: Option<EndpointId>,
-    prepared: &PreparedProject,
+    prepared: &ExecutionInput,
     pass: Pass,
 ) -> Result<(), CurationError> {
     for attempt in 1..=3 {
@@ -32,10 +32,26 @@ pub(super) async fn run(
             return result;
         }
         match result {
-            Err(CurationError::Failed(message))
-                if attempt < 3 && super::field_worker::error_code(&message) != "model_rejected" =>
+            Err(CurationError::Model(nexofolio_curate::CompletionError::InvalidReply(_)))
+                if attempt < 3 =>
             {
-                job.update(|p| p.retries += 1);
+                job.update(|p| {
+                    p.retries += 1;
+                    *p.validation_failures.entry("organize".into()).or_default() += 1;
+                });
+                if job
+                    .snapshot()
+                    .validation_failures
+                    .get("organize")
+                    .copied()
+                    .unwrap_or(0)
+                    >= 3
+                {
+                    return Err(nexofolio_curate::CompletionError::InvalidReply(
+                        "目录回复持续无效，需要处理".into(),
+                    )
+                    .into());
+                }
                 job.record(Activity::new(
                     pass,
                     "retry",

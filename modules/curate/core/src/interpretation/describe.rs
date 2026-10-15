@@ -56,11 +56,12 @@ impl<C: Completions> Describe<C> {
         );
         let reply = self.completions.complete(&p).await?;
         let Some(json_part) = json_slice(&reply) else {
-            return Err(CompletionError("no JSON in reply".into()));
+            return Err(CompletionError::InvalidReply("no JSON in reply".into()));
         };
 
-        let parsed: Parsed = serde_json::from_str(json_part)
-            .map_err(|_| CompletionError("接口说明返回 JSON 格式无效，请重试".into()))?;
+        let parsed: Parsed = serde_json::from_str(json_part).map_err(|_| {
+            CompletionError::InvalidReply("接口说明返回 JSON 格式无效，请重试".into())
+        })?;
 
         let name = if parsed.name.trim().is_empty() {
             None

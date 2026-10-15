@@ -63,7 +63,7 @@ impl Navigation {
                         .iter()
                         .find(|f| nexofolio_contracts::knowledge::field_note_key(f) == *key)
                         .ok_or("FIELD_NOT_FOUND")?;
-                    super::interface::note_for(field, &k)
+                    super::interface::note_for(field, &k.fields)
                         .cloned()
                         .ok_or("FIELD_NOT_FOUND")?
                 };

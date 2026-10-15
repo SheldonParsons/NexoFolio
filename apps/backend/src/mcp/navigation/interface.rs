@@ -14,20 +14,16 @@ pub(super) fn field_visible(f: &FieldFacts, env: Option<EnvironmentId>) -> bool 
             })
     })
 }
-pub(super) fn note_for<'a>(f: &FieldFacts, k: &'a EndpointKnowledge) -> Option<&'a FieldNote> {
+pub(super) fn note_for<'a>(f: &FieldFacts, notes: &'a [FieldNote]) -> Option<&'a FieldNote> {
     let key = nexofolio_contracts::knowledge::field_note_key(f);
-    k.fields
+    notes
         .iter()
         .find(|n| n.path == key || (n.context.location.is_none() && n.path == f.path.to_string()))
 }
-pub(super) fn field_links<'a>(
-    q: &Query,
-    k: &'a EndpointKnowledge,
-    f: &FieldFacts,
-) -> Vec<&'a Link> {
+pub(super) fn field_links<'a>(q: &Query, links: &'a [Link], f: &FieldFacts) -> Vec<&'a Link> {
     let endpoint = q.endpoint_id.expect("field endpoint");
     let path = f.path.to_string();
-    k.links
+    links
         .iter()
         .filter(|l| {
             q.environment_id
@@ -152,30 +148,80 @@ impl Navigation {
         {
             return Err("SECTION_ARGUMENT_MISMATCH".into());
         }
-        let k = self
-            .knowledge
-            .endpoint(id)
-            .await
-            .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?;
+        let precise =
+            q.field_key.is_some() && matches!(section, "field" | "field_summary" | "relations");
+        let mut complete = if precise {
+            None
+        } else {
+            Some(
+                self.knowledge
+                    .endpoint(id)
+                    .await
+                    .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?,
+            )
+        };
         if section == "overview" {
             let summary = summaries.iter().find(|s| s.id == id).ok_or("NOT_FOUND")?;
-            return Ok(overview(q, summary, &k));
+            return Ok(overview(
+                q,
+                summary,
+                complete.as_ref().expect("complete overview"),
+            ));
         }
         if section == "description" {
-            return document("read_interface", q, json!({"endpoint_id":id,"note":k.note}));
+            return document(
+                "read_interface",
+                q,
+                json!({"endpoint_id":id,"note":complete.as_ref().expect("complete description").note}),
+            );
         }
         if section == "relations" && q.field_key.is_none() {
-            return relation_page(q, &k.links);
+            return relation_page(q, &complete.as_ref().expect("complete relations").links);
         }
-        let f = self
-            .endpoints
-            .get(id)
-            .await
-            .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?
-            .ok_or("NOT_FOUND")?;
-        let fields: Vec<_> = f
-            .fields
-            .iter()
+        let exact = if precise {
+            self.endpoints
+                .field(id, q.field_key.as_deref().expect("precise key"))
+                .await
+                .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?
+        } else {
+            None
+        };
+        let f = if precise {
+            None
+        } else {
+            Some(
+                self.endpoints
+                    .get(id)
+                    .await
+                    .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?
+                    .ok_or("NOT_FOUND")?,
+            )
+        };
+        let k = if let Some(k) = &mut complete {
+            nexofolio_contracts::knowledge::FieldKnowledge {
+                fields: std::mem::take(&mut k.fields),
+                links: std::mem::take(&mut k.links),
+            }
+        } else {
+            let field = exact.as_ref().ok_or("FIELD_NOT_FOUND")?;
+            self.knowledge
+                .field_knowledge(
+                    id,
+                    &[
+                        q.field_key.clone().expect("precise key"),
+                        field.path.to_string(),
+                    ],
+                )
+                .await
+                .map_err(|_| "KNOWLEDGE_UNAVAILABLE")?
+        };
+        let fields: Vec<_> = if let Some(f) = &f {
+            f.fields.iter().collect()
+        } else {
+            exact.iter().collect()
+        };
+        let fields: Vec<_> = fields
+            .into_iter()
             .filter(|f| field_visible(f, q.environment_id))
             .collect();
         let mut result = match section {
@@ -194,7 +240,7 @@ impl Navigation {
                     .iter()
                     .find(|f| nexofolio_contracts::knowledge::field_note_key(f) == key)
                     .ok_or("FIELD_NOT_FOUND")?;
-                let note = note_for(field, &k);
+                let note = note_for(field, &k.fields);
                 let mut scoped_field = (*field).clone();
                 if let Some(env) = q.environment_id {
                     scoped_field.labels.retain(|l| l.environment_id == env);
@@ -206,7 +252,7 @@ impl Navigation {
                             .is_none_or(|env| e.environment.is_none_or(|v| v == env))
                     });
                 }
-                let links = field_links(q, &k, field);
+                let links = field_links(q, &k.links, field);
                 let mut value = json!({"key":key,"facts":scoped_field,"knowledge":scoped_note,"relations":links.iter().map(|l|link_card(q,l)).collect::<Vec<_>>(),
      "text_lookup":action("search_interfaces",q,json!({"query":"","endpoint_id":Value::Null})),"evidence":action("read_source_evidence",q,json!({"field_key":key})),
      "note":"Textual mentions remain search clues; saved related evidence and links retain their original confirmation state."});
@@ -228,7 +274,7 @@ impl Navigation {
                         .iter()
                         .find(|f| nexofolio_contracts::knowledge::field_note_key(f) == *key)
                         .ok_or("FIELD_NOT_FOUND")?;
-                    field_links(q, &k, field)
+                    field_links(q, &k.links, field)
                 } else {
                     k.links
                         .iter()
@@ -255,7 +301,11 @@ impl Navigation {
                     links.iter().map(|l| link_card(q, l)).collect(),
                 )?
             }
-            "samples" => page("read_interface", q, sample_cards(q, &f))?,
+            "samples" => page(
+                "read_interface",
+                q,
+                sample_cards(q, f.as_ref().expect("sample facts")),
+            )?,
             _ => return Err("INVALID_ARGUMENTS".into()),
         };
         result["scope_note"] = json!(

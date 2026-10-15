@@ -1,16 +1,21 @@
 pub mod access;
 pub mod collect;
+pub(crate) mod collect_admission;
+pub(crate) mod collect_telemetry;
 pub mod curate;
 mod curation_actor;
+mod curation_apply;
 mod curation_operations;
 pub(crate) mod curation_review;
+mod document_index;
 pub mod document_lifecycle;
 pub mod downloads;
 pub mod endpoints;
-mod fetcher_updates;
+pub(crate) mod fetcher_updates;
 pub mod knowledge;
 mod management;
 pub mod mcp_tokens;
+pub(crate) mod operations;
 pub(crate) mod profile;
 pub(crate) mod project_management;
 pub(crate) mod project_writes;
@@ -196,3 +201,5 @@ mod deadline_tests {
         assert_eq!(request_deadline("/health/ready", normal), normal);
     }
 }
+
+pub(crate) mod storage;

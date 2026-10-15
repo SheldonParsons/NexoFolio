@@ -35,6 +35,12 @@ pub(super) fn owned(candidate: &Candidate, owner: Option<uuid::Uuid>) -> Knowled
         .get("run_id")
         .and_then(Value::as_str)
         .and_then(|s| s.parse::<uuid::Uuid>().ok());
+    owned_by(expected, owner)
+}
+pub(super) fn owned_by(
+    expected: Option<uuid::Uuid>,
+    owner: Option<uuid::Uuid>,
+) -> KnowledgeResult<()> {
     if expected != owner {
         return Err(KnowledgeError::CandidateClosed);
     }
@@ -97,6 +103,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         {
             return Err(KnowledgeError::CandidateStale);
         }
+        super::frozen::validate(tx.as_mut(), &candidate, &input).await?;
         candidate.execution_input = Some(input);
         // Close old batches and fence late results from the previous worker.
         claim(&mut candidate, owner, actor, self.clock.now());
@@ -116,6 +123,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         let mut candidate = load(tx.as_mut(), project, id).await?;
         super::running(&candidate)?;
         owned(&candidate, Some(owner))?;
+        super::tasks::worker(tx.as_mut(), project, id, Some(owner), self.clock.now()).await?;
         if candidate
             .execution_input
             .as_ref()
@@ -123,6 +131,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         {
             return Err(KnowledgeError::CandidateStale);
         }
+        super::frozen::validate(tx.as_mut(), &candidate, &input).await?;
         candidate.execution_input = Some(input);
         candidate.updated_at = self.clock.now();
         tx.put_candidate(&candidate).await.map_err(store_error)?;
@@ -136,9 +145,15 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         let mut tx = self.store.begin().await.map_err(store_error)?;
         tx.lock_project(project).await.map_err(store_error)?;
         let mut candidate = load(tx.as_mut(), project, id).await?;
-        super::running(&candidate)?;
+        tx.close_candidate_tasks(project, id, self.clock.now())
+            .await
+            .map_err(store_error)?;
+        if candidate.state != CandidateState::Running {
+            return tx.commit().await.map_err(store_error);
+        }
         candidate.state = CandidateState::Interrupted;
         candidate.progress["status"] = serde_json::json!("failed");
+        candidate.progress["task_state"] = serde_json::json!(TaskState::Stopped);
         candidate.progress["message"] =
             serde_json::json!("用户已停止本轮；已保存批次保留，可补齐本轮缺口");
         candidate.progress["active"] = serde_json::json!([]);
@@ -169,6 +184,7 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         {
             return Err(KnowledgeError::CandidateClosed);
         }
+        super::tasks::worker(tx.as_mut(), project, id, Some(owner), self.clock.now()).await?;
         tx.heartbeat_candidate(project, id, self.clock.now())
             .await
             .map_err(store_error)?;

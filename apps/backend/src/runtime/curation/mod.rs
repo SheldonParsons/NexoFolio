@@ -4,6 +4,7 @@ mod activity;
 mod candidate_tests;
 #[cfg(test)]
 mod checkpoint_tests;
+mod chunk_preparation;
 #[cfg(test)]
 mod description_retry_tests;
 mod descriptions;
@@ -11,10 +12,12 @@ mod directories;
 #[cfg(test)]
 mod efficiency_tests;
 mod error;
+mod execution_audit;
 mod field_scheduler;
 mod field_status;
 mod field_worker;
 mod fields;
+mod frozen_input;
 mod jobs;
 #[cfg(test)]
 mod lifecycle_tests;
@@ -28,6 +31,7 @@ mod model_stage_benchmark_tests;
 mod performance_snapshot_tests;
 mod preparation;
 mod preparation_progress;
+mod queue;
 #[cfg(test)]
 mod readonly_resume_tests;
 mod recovery;
@@ -37,6 +41,7 @@ mod restart_tests;
 #[cfg(test)]
 mod resume_tests;
 mod resumption;
+mod retry;
 mod review_run;
 #[cfg(test)]
 mod semantic_retry_tests;
@@ -71,6 +76,8 @@ pub(crate) struct Curation {
     describe: Arc<Describe<Arc<dyn Completions>>>,
     organize: Arc<Organize<Arc<dyn Completions>>>,
     jobs: Arc<Jobs>,
+    queue: Option<Arc<queue::Queue>>,
+    task: Option<nexofolio_contracts::knowledge::CurationTask>,
     candidates: Option<Arc<dyn KnowledgeCandidates>>,
     field_concurrency: usize,
     idle_budget: std::time::Duration,
@@ -79,6 +86,7 @@ pub(crate) struct Curation {
     resuming: bool,
     actor: CandidateActor,
     audit: Option<crate::audit::Context>,
+    execution_audit: Option<crate::audit::Audit>,
 }
 impl Curation {
     pub(crate) fn new(
@@ -95,6 +103,8 @@ impl Curation {
             describe,
             organize,
             jobs: Arc::new(Jobs::default()),
+            queue: None,
+            task: None,
             candidates: None,
             field_concurrency: 8,
             idle_budget: std::time::Duration::from_secs(900),
@@ -103,6 +113,7 @@ impl Curation {
             resuming: false,
             actor: CandidateActor::Unknown,
             audit: None,
+            execution_audit: None,
         }
     }
 
@@ -171,6 +182,9 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 CandidateState::Ready
             }
             Ok(Err(error)) => {
+                if checkpoint.defer(&job, &error).await {
+                    return;
+                }
                 let failure_code = error.diagnostic_code().to_owned();
                 let state = if matches!(error, CurationError::Unavailable) {
                     CandidateState::Interrupted
@@ -234,34 +248,32 @@ fn spawn(s: Curation, project: ProjectId, summaries: Vec<EndpointSummary>, job: 
                 .message
                 .unwrap_or_else(|| "本轮候选已保存，等待你的审阅".into()),
         ));
-        if checkpoint
+        let saved = checkpoint
             .checkpoint(project, &job, candidate_state)
             .await
-            .is_err()
-        {
+            .is_ok();
+        if !saved {
             job.update(|p| {
                 p.status = Status::Failed;
                 p.message = Some("结果保存暂时失败，已保存批次保留，请刷新或补跑".into());
             });
         }
-        if let Some(audit) = &checkpoint.audit {
-            let progress = job.snapshot();
-            let successful = progress.status == Status::Done;
-            let code = if successful {
-                "READY"
-            } else if candidate_state == CandidateState::Interrupted {
-                "INTERRUPTED"
-            } else {
-                "PARTIAL_OR_SAVE_FAILED"
-            };
-            audit.record(
-                if successful { "operation" } else { "error" },
-                "curation.finished",
+        let code = if saved && candidate_state == CandidateState::Ready {
+            "READY"
+        } else if saved {
+            "PARTIAL"
+        } else {
+            "EXECUTION_NOT_SAVED"
+        };
+        checkpoint
+            .record_execution_end(
+                project,
+                &job,
                 code,
-                progress.candidate_id.map(|id| id.to_string()),
+                saved && candidate_state == CandidateState::Ready,
                 started.elapsed().as_millis().min(u32::MAX as u128) as u32,
-            );
-        }
+            )
+            .await;
     });
 }
 
@@ -275,7 +287,7 @@ async fn run(
     let mut prepared = recovery::prepared(s, project, summaries, job).await?;
     let target = job.snapshot().target;
     if let Some(target) = target {
-        prepared.facts.retain(|f| f.summary.id == target);
+        prepared.endpoints.retain(|id| *id == target);
     }
     job.update(|p| p.message = None);
     let mut field_failure = None;
@@ -300,14 +312,9 @@ async fn run(
         if result.is_err() {
             tracing::warn!(stage = ?pass, "curation stage failed");
         }
-        // Incomplete field meanings must not prevent browsing the known APIs.
-        // A storage failure remains fatal; model failures leave explicit gaps.
         match result {
             Err(error @ CurationError::Failed(_)) if pass == Pass::Fields => {
-                if job.snapshot().issues.iter().any(|i| !i.retryable) {
-                    return Err(error);
-                }
-                field_failure = Some(error);
+                field_failure = Some(error)
             }
             other => other?,
         }
@@ -316,45 +323,15 @@ async fn run(
             job.record(activity::Activity::new(pass, "saved", "两层目录候选已保存"));
         }
     }
-    // Final coverage check reads the acknowledged projection; only still-missing inputs are retried.
-    for sweep in 0..2 {
-        field_status::refresh(s, &prepared, job).await?;
-        let (missing, incomplete_endpoints) = fields::coverage(s, &prepared).await?;
-        job.update(|p| p.fields_failed = incomplete_endpoints);
-        if missing == 0 {
-            field_failure = None;
-            break;
-        }
-        job.update(|p| {
-            p.recovery_sweeps += 1;
-            p.stage = Some(Pass::Fields);
-        });
-        job.record(activity::Activity::new(
-            Pass::Fields,
-            "coverage_retry",
-            format!(
-                "收尾复查发现缺口，正在本轮补跑（{}/2）；已保存字段不重跑",
-                sweep + 1
-            ),
-        ));
-        tokio::time::sleep(std::time::Duration::from_secs(2u64.pow(sweep + 1))).await;
-        match fields::run(s, project, job, target, &prepared).await {
-            Ok(()) => field_failure = None,
-            Err(error @ CurationError::Failed(_)) => {
-                if job.snapshot().issues.iter().any(|i| !i.retryable) {
-                    return Err(error);
-                }
-                field_failure = Some(error);
-            }
-            Err(error) => return Err(error),
-        }
-    }
     field_status::refresh(s, &prepared, job).await?;
     let (missing, incomplete_endpoints) = fields::coverage(s, &prepared).await?;
     job.update(|p| p.fields_failed = incomplete_endpoints);
-    if missing > 0 && field_failure.is_none() {
-        field_failure = Some(CurationError::Failed(format!(
-            "收尾复查仍有 {missing} 个字段未完成；补跑预算已用完，已保存批次保留"
+    if let Some(error) = field_failure {
+        return Err(error);
+    }
+    if missing > 0 {
+        return Err(CurationError::Failed(format!(
+            "仍有 {missing} 个字段未通过完整性校验，需要处理；已保存批次保留"
         )));
     }
     tracing::info!(
@@ -362,5 +339,5 @@ async fn run(
         fields_updated = job.snapshot().fields_updated,
         "curation completed"
     );
-    field_failure.map_or(Ok(()), Err)
+    Ok(())
 }

@@ -36,7 +36,7 @@ struct ExactPrompt {
 impl Completions for ExactPrompt {
     async fn complete(&self, prompt: &str) -> Result<String, CompletionError> {
         if digest(&prompt) != self.expected {
-            return Err(CompletionError(
+            return Err(CompletionError::InvalidReply(
                 "Benchmark input changed; no model request made".into(),
             ));
         }

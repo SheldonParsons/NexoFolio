@@ -190,6 +190,9 @@ impl KnowledgeTx for SnapshotTx {
             .find(|n| n.endpoint == endpoint && n.path == path)
             .cloned())
     }
+    async fn project_field_notes(&mut self, _: ProjectId) -> StoreResult<Vec<FieldNote>> {
+        Ok(self.view.fields.clone())
+    }
     async fn field_notes(&mut self, endpoint: EndpointId) -> StoreResult<Vec<FieldNote>> {
         Ok(self
             .view

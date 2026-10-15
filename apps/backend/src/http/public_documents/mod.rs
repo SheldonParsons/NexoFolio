@@ -15,7 +15,7 @@ use nexofolio_access_contracts::{DocumentProject, ProjectDocuments};
 use nexofolio_common::{EndpointId, EnvironmentId, Error, ProjectId};
 use nexofolio_contracts::{endpoint::EndpointReader, knowledge::KnowledgeReader};
 use serde::Deserialize;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Clone)]
 struct PublicDocuments {
@@ -63,37 +63,17 @@ async fn index(
     Path(project): Path<ProjectId>,
 ) -> Result<Json<types::DocumentIndex>, AccessError> {
     let metadata = s.project(project).await?;
-    let (navigation, notes, summaries) = tokio::try_join!(
-        async {
-            s.knowledge
-                .catalogue_navigation(project)
-                .await
-                .map_err(unavailable)
-        },
-        async { s.knowledge.notes(project).await.map_err(unavailable) },
-        async { s.endpoints.list(project).await.map_err(unavailable) },
-    )?;
-    let notes: HashMap<_, _> = notes.iter().map(|n| (n.endpoint, n)).collect();
-    let placements: HashMap<_, _> = navigation
-        .placements
-        .iter()
-        .map(|p| (p.endpoint, p.folder))
-        .collect();
-    let entries = summaries
-        .into_iter()
-        .filter(|e| e.project_id == project)
-        .map(|e| {
-            let id = e.id;
-            projection::entry(e, notes.get(&id).copied(), placements.get(&id).copied())
-        })
-        .collect();
+    let mut index = super::document_index::read(project, &*s.knowledge, &*s.endpoints).await?;
+    // Public documents expose prose, never member authorship.
+    for entry in &mut index.entries {
+        entry.described_by = None;
+    }
     Ok(Json(types::DocumentIndex {
-        lifecycle: s.knowledge.lifecycle(project).await.map_err(unavailable)?,
         project: metadata,
-        catalog: projection::catalogue(navigation.catalogue),
-        entries,
+        index,
     }))
 }
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Scope {

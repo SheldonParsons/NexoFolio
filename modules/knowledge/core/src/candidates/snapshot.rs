@@ -39,10 +39,10 @@ pub(super) async fn capture(
         .collect();
     let notes = tx.endpoint_notes(project).await.map_err(store_error)?;
     let links = tx.links(project).await.map_err(store_error)?;
-    let mut fields = Vec::new();
-    for endpoint in &endpoints {
-        fields.extend(tx.field_notes(*endpoint).await.map_err(store_error)?);
-    }
+    let fields = tx
+        .snapshot_fields(project, &endpoints)
+        .await
+        .map_err(store_error)?;
     Ok(KnowledgeSnapshot {
         lifecycle: tx.lifecycle(project).await.map_err(store_error)?,
         endpoints,

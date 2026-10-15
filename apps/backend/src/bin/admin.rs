@@ -12,6 +12,17 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// One bounded project batch. Preview by default; first execution starts a 7-day grace.
+    RetainHistory {
+        #[arg(long)]
+        project: ProjectId,
+        #[arg(long)]
+        execute: bool,
+        #[arg(long, default_value = "10")]
+        limit: usize,
+        #[arg(long)]
+        after: Option<uuid::Uuid>,
+    },
     CheckConfig,
     /// Write a new MCP credential to a protected local file; stdout contains only its ID.
     IssueMcpToken {
@@ -46,11 +57,49 @@ enum ObserveCommand {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    if let Command::RetainHistory {
+        project,
+        execute,
+        limit,
+        after,
+    } = cli.command
+    {
+        // Dedicated URL; never load ordinary application/model configuration here.
+        if execute && std::env::var("NEXOFOLIO_RETENTION_ENABLED").as_deref() != Ok("1") {
+            return Err("execution requires NEXOFOLIO_RETENTION_ENABLED=1".into());
+        }
+        let url = nexofolio_common::Secret::new(std::env::var("NEXOFOLIO_RETENTION_DATABASE_URL")?);
+        let store = nexofolio_knowledge_adapter::PostgresKnowledge::new(
+            &url,
+            1,
+            std::time::Duration::from_secs(2),
+        )?;
+        let started = std::time::Instant::now();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            store.retain_history(
+                project,
+                chrono::DateTime::from(std::time::SystemTime::now()),
+                after,
+                limit,
+                execute,
+            ),
+        )
+        .await;
+        store.close().await;
+        let report = result??;
+        println!(
+            "{}",
+            serde_json::json!({"elapsed_ms":started.elapsed().as_millis(),"report":report})
+        );
+        return Ok(());
+    }
     let config = Config::from_env()?;
     init_logging(&config.log_filter)?;
     let databases = Databases::new(&config)?;
     let _api = build_api(&config, &databases)?;
     match cli.command {
+        Command::RetainHistory { .. } => unreachable!(),
         Command::IssueMcpToken { user, output, days } => {
             use std::io::Write;
             // Create the file first: an existing file never gets overwritten.

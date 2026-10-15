@@ -12,8 +12,22 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
         parent: Option<uuid::Uuid>,
         actor: CandidateActor,
     ) -> KnowledgeResult<Candidate> {
+        self.create_proposal_for_task(project, target, parent, actor, None)
+            .await
+    }
+    pub(super) async fn create_proposal_for_task(
+        &self,
+        project: ProjectId,
+        target: Option<EndpointId>,
+        parent: Option<uuid::Uuid>,
+        actor: CandidateActor,
+        task: Option<&CurationTask>,
+    ) -> KnowledgeResult<Candidate> {
         let mut tx = self.store.begin().await.map_err(store_error)?;
         tx.lock_project(project).await.map_err(store_error)?;
+        if let Some(task) = task {
+            super::tasks::owned(tx.as_mut(), task, self.clock.now()).await?;
+        }
         recovery::available(tx.as_mut(), project, self.clock.now()).await?;
         let endpoints: Vec<_> = self
             .endpoints
@@ -98,6 +112,12 @@ impl<S: KnowledgeStore, R: EndpointReader, C: Clock> Knowledge<S, R, C> {
                     b
                 })
                 .collect();
+        }
+        if let Some(task) = task {
+            candidate.progress["run_id"] = serde_json::json!(task.run_id);
+            let mut task = task.clone();
+            task.candidate_id = Some(candidate.id);
+            tx.put_task(&task).await.map_err(store_error)?;
         }
         tx.put_candidate(&candidate).await.map_err(store_error)?;
         tx.commit().await.map_err(store_error)?;

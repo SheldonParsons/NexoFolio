@@ -13,9 +13,11 @@ use chrono::{DateTime, Utc};
 use nexofolio_common::{EndpointId, FolderId, LinkId, ProjectId, RoundId};
 pub use nexofolio_contracts::knowledge::LinkIdentity;
 use nexofolio_contracts::knowledge::{
-    Author, Candidate, CandidateSummary, EndpointNote, FieldNote, Link, Revision, Round, RoundState,
+    Author, Candidate, CandidateState, CandidateSummary, Command, EndpointNote, FieldNote,
+    KnowledgeSnapshot, Link, Revision, Round, RoundState,
 };
 use serde_json::Value;
+pub mod operations;
 
 #[cfg(feature = "testing")]
 pub mod testing;
@@ -44,12 +46,38 @@ pub struct PlacementRow {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
+    #[error("history has expired; only summary remains")]
+    HistoryExpired,
     /// Retryable: storage is down.
     #[error("knowledge storage unavailable")]
     Unavailable,
 }
 
 pub type StoreResult<T> = Result<T, StoreError>;
+
+/// Transaction-local append input. This is not a complete candidate or baseline.
+pub struct CandidateAppend {
+    pub project: ProjectId,
+    pub id: uuid::Uuid,
+    pub state: CandidateState,
+    pub owner: Option<uuid::Uuid>,
+    pub endpoints: Vec<EndpointId>,
+    pub view: KnowledgeSnapshot,
+    pub rounds: Vec<CandidateAppendRound>,
+}
+
+/// Identity and position are checked again when persisting, under the project lock.
+#[derive(serde::Deserialize)]
+pub struct CandidateAppendRound {
+    pub id: RoundId,
+    pub stored_id: Option<String>,
+    pub author: Author,
+    /// Opaque stored JSON for SQL fencing; serde may accept omitted/unknown fields.
+    pub stored_author: Option<String>,
+    pub state: RoundState,
+    pub position: usize,
+    pub command_count: usize,
+}
 
 #[async_trait]
 pub trait KnowledgeStore: Send + Sync {
@@ -65,6 +93,162 @@ pub trait KnowledgeStore: Send + Sync {
 
 #[async_trait]
 pub trait KnowledgeTx: Send {
+    async fn review_field_notes(
+        &mut self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+        _endpoint: EndpointId,
+        _keys: &[String],
+    ) -> StoreResult<Vec<FieldNote>> {
+        Err(StoreError::Unavailable)
+    }
+
+    async fn snapshot_fields(
+        &mut self,
+        _project: ProjectId,
+        endpoints: &[EndpointId],
+    ) -> StoreResult<Vec<FieldNote>> {
+        let mut fields = Vec::new();
+        for endpoint in endpoints {
+            fields.extend(self.field_notes(*endpoint).await?);
+        }
+        Ok(fields)
+    }
+
+    /// Optional adapter IO batching. Interpret commands through the same transaction.
+    async fn prepare_application(
+        &mut self,
+        _project: ProjectId,
+        _view: &nexofolio_contracts::knowledge::KnowledgeSnapshot,
+    ) -> StoreResult<()> {
+        Ok(())
+    }
+    async fn flush_application(&mut self) -> StoreResult<()> {
+        Ok(())
+    }
+
+    async fn review_candidate(
+        &mut self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+        _query: &nexofolio_contracts::knowledge::CandidateReviewQuery,
+    ) -> StoreResult<Option<Value>> {
+        Err(StoreError::Unavailable)
+    }
+    async fn candidate_application(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+    ) -> StoreResult<Option<Candidate>> {
+        self.candidate(project, id).await
+    }
+    async fn put_candidate_decision(&mut self, candidate: &Candidate) -> StoreResult<()> {
+        self.put_candidate(candidate).await
+    }
+
+    async fn search(
+        &mut self,
+        query: &nexofolio_contracts::knowledge::KnowledgeSearch,
+    ) -> StoreResult<nexofolio_contracts::knowledge::KnowledgeSearchPage> {
+        let notes = self.endpoint_notes(query.project).await?;
+        let fields = if query.fields {
+            self.project_field_notes(query.project).await?
+        } else {
+            Vec::new()
+        };
+        Ok(query.select(&notes, &fields))
+    }
+
+    /// New manifest or a legacy version marker; never return the large legacy body here.
+    async fn candidate_input(
+        &mut self,
+        project: ProjectId,
+        candidate: uuid::Uuid,
+    ) -> StoreResult<Option<Value>> {
+        Ok(self
+            .candidate(project, candidate)
+            .await?
+            .and_then(|c| c.execution_input)
+            .map(|v| {
+                if v["version"] == 3 {
+                    v
+                } else {
+                    serde_json::json!({"version":v["version"]})
+                }
+            }))
+    }
+    async fn frozen_chunk(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+        _snapshot: uuid::Uuid,
+        _hash: &str,
+    ) -> StoreResult<Option<String>> {
+        Ok(None)
+    }
+    async fn put_frozen_chunk(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+        _snapshot: uuid::Uuid,
+        _hash: &str,
+        _content: &str,
+    ) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+    async fn candidate_task(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CurationTask>> {
+        Ok(None)
+    }
+    async fn task(
+        &mut self,
+        _project: ProjectId,
+        _id: uuid::Uuid,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CurationTask>> {
+        Err(StoreError::Unavailable)
+    }
+    async fn active_tasks(
+        &mut self,
+        _project: ProjectId,
+    ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CurationTask>> {
+        Ok(vec![])
+    }
+    async fn put_task(
+        &mut self,
+        _task: &nexofolio_contracts::knowledge::CurationTask,
+    ) -> StoreResult<()> {
+        Err(StoreError::Unavailable)
+    }
+    /// Serializes admission to execution globally, then locks the chosen project.
+    async fn next_task(
+        &mut self,
+        _now: DateTime<Utc>,
+        _capacity: usize,
+    ) -> StoreResult<Option<nexofolio_contracts::knowledge::CurationTask>> {
+        Err(StoreError::Unavailable)
+    }
+    /// Called under the project lock on every worker write, including checkpoints.
+    async fn valid_worker(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+        _owner: Option<uuid::Uuid>,
+        _now: DateTime<Utc>,
+    ) -> StoreResult<bool> {
+        Ok(true)
+    }
+    async fn close_candidate_tasks(
+        &mut self,
+        _project: ProjectId,
+        _candidate: uuid::Uuid,
+        _now: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        Ok(())
+    }
+
     async fn lifecycle(
         &mut self,
         _project: ProjectId,
@@ -86,6 +270,34 @@ pub trait KnowledgeTx: Send {
         _limit: usize,
     ) -> StoreResult<Vec<nexofolio_contracts::knowledge::CandidateRecovery>> {
         Err(StoreError::Unavailable)
+    }
+
+    async fn value_archive_field(
+        &mut self,
+        q: &nexofolio_contracts::field_values::FieldValueQuery,
+        value_id: Option<&str>,
+    ) -> StoreResult<Option<nexofolio_contracts::field_values::FieldValueArchive>> {
+        Ok(self
+            .value_archive(q.project, q.archive)
+            .await?
+            .map(|mut a| {
+                a.fields
+                    .retain(|key, _| key == &format!("{}/{}", q.endpoint, q.field));
+                if let Some(id) = value_id {
+                    for f in a.fields.values_mut() {
+                        f.values.retain(|v| v.id == id);
+                    }
+                }
+                let needed: std::collections::HashSet<_> = a
+                    .fields
+                    .values()
+                    .flat_map(|f| &f.values)
+                    .flat_map(|v| &v.occurrences)
+                    .map(|p| &p.document)
+                    .collect();
+                a.documents.retain(|id, _| needed.contains(id));
+                a
+            }))
     }
 
     async fn value_archive(
@@ -164,6 +376,74 @@ pub trait KnowledgeTx: Send {
         id: uuid::Uuid,
     ) -> StoreResult<Option<nexofolio_contracts::knowledge::CandidateDiagnostics>> {
         Ok(self.candidate(project, id).await?.map(Into::into))
+    }
+    /// Read only the append context; call after acquiring the project lock.
+    async fn candidate_append(
+        &mut self,
+        project: ProjectId,
+        id: uuid::Uuid,
+        round: RoundId,
+    ) -> StoreResult<Option<CandidateAppend>> {
+        Ok(self.candidate(project, id).await?.map(|c| CandidateAppend {
+            project: c.project_id,
+            id: c.id,
+            state: c.state,
+            owner: c
+                .progress
+                .get("run_id")
+                .and_then(Value::as_str)
+                .and_then(|s| s.parse().ok()),
+            endpoints: c.base.endpoints,
+            view: c.view,
+            rounds: c
+                .batches
+                .into_iter()
+                .enumerate()
+                .filter(|(_, b)| b.id == round)
+                .map(|(position, b)| CandidateAppendRound {
+                    id: b.id,
+                    stored_id: None,
+                    author: b.author,
+                    stored_author: None,
+                    state: b.state,
+                    position,
+                    command_count: b.commands.len(),
+                })
+                .collect(),
+        }))
+    }
+    /// Persist the view and new commands atomically; never replace earlier commands.
+    async fn append_candidate_commands(
+        &mut self,
+        context: &CandidateAppend,
+        round: &CandidateAppendRound,
+        proposed: &[Command],
+        at: DateTime<Utc>,
+    ) -> StoreResult<()> {
+        let mut c = self
+            .candidate(context.project, context.id)
+            .await?
+            .ok_or(StoreError::Unavailable)?;
+        if c.state != CandidateState::Running
+            || c.batches.iter().filter(|b| b.id == round.id).count() != 1
+        {
+            return Err(StoreError::Unavailable);
+        }
+        let b = c
+            .batches
+            .get_mut(round.position)
+            .ok_or(StoreError::Unavailable)?;
+        if b.id != round.id
+            || b.author != round.author
+            || b.state != RoundState::Running
+            || b.commands.len() != round.command_count
+        {
+            return Err(StoreError::Unavailable);
+        }
+        b.commands.extend_from_slice(proposed);
+        c.view = context.view.clone();
+        c.updated_at = at;
+        self.put_candidate(&c).await
     }
     /// Mutable working projection; deliberately omits the immutable execution input.
     async fn candidate_projection(
@@ -328,3 +608,5 @@ pub trait KnowledgeTx: Send {
         before: Option<&Value>,
     ) -> StoreResult<()>;
 }
+
+pub mod retention;

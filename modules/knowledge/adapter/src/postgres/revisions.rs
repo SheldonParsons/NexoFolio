@@ -15,6 +15,13 @@ use sqlx::Row;
 
 impl PostgresTx {
     pub(super) async fn db_record_revision(&mut self, revision: &Revision) -> StoreResult<()> {
+        if let Some(buffer) = &mut self.apply_buffer {
+            if matches!(revision.target, Target::FieldNote { .. }) {
+                buffer.revisions.push(revision.clone());
+                return Ok(());
+            }
+            self.flush_apply().await?;
+        }
         sqlx::query("INSERT INTO revisions (round_id, seq, target, before) VALUES ($1,$2,$3,$4)")
             .bind(uuid(revision.round))
             .bind(revision.seq)
@@ -27,6 +34,16 @@ impl PostgresTx {
     }
 
     pub(super) async fn db_revisions(&mut self, round: RoundId) -> StoreResult<Vec<Revision>> {
+        let expired: bool =
+            sqlx::query_scalar("SELECT history_pruned_at IS NOT NULL FROM rounds WHERE id=$1")
+                .bind(uuid(round))
+                .fetch_optional(&mut *self.tx)
+                .await
+                .map_err(unavailable)?
+                .unwrap_or(false);
+        if expired {
+            return Err(nexofolio_knowledge_contracts::StoreError::HistoryExpired);
+        }
         let rows = sqlx::query(
             "SELECT seq, target, before FROM revisions WHERE round_id = $1 ORDER BY seq DESC",
         )

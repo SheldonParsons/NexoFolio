@@ -50,6 +50,15 @@ pub fn fields(
     seen: &[Seen],
     declared: &BTreeMap<Key, DeclaredField>,
 ) -> Vec<FieldFacts> {
+    selected_fields(path_template, seen, declared, None)
+}
+
+pub fn selected_fields(
+    path_template: &str,
+    seen: &[Seen],
+    declared: &BTreeMap<Key, DeclaredField>,
+    wanted: Option<&str>,
+) -> Vec<FieldFacts> {
     let mut keys: BTreeSet<Key> = declared.keys().cloned().collect();
     for name in template::params(path_template) {
         keys.insert((
@@ -79,6 +88,11 @@ pub fn fields(
         }
     }
     keys.into_iter()
+        .filter(|(location, path)| {
+            wanted.is_none_or(|key| {
+                nexofolio_contracts::knowledge::qualified_field_key(*location, path) == key
+            })
+        })
         .map(|key| field(&key, seen, declared.get(&key).cloned()))
         .collect()
 }

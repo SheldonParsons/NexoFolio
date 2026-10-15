@@ -95,7 +95,7 @@ impl Completions for Recorded {
         *self.data.lock().unwrap() = record;
         response
             .map(|r| r.content)
-            .map_err(|e| CompletionError(e.to_string()))
+            .map_err(|e| CompletionError::InvalidReply(e.to_string()))
     }
 }
 #[tokio::test]

@@ -9,24 +9,34 @@ use nexofolio_common::ProjectId;
 use nexofolio_contracts::knowledge::{Candidate, CandidateState};
 use std::sync::Arc;
 
-fn frozen(candidate: &Candidate) -> Result<FrozenInput, CurationError> {
+pub(super) fn frozen(candidate: &Candidate) -> Result<FrozenInput, CurationError> {
     let value = candidate.execution_input.as_ref().ok_or_else(|| {
         CurationError::Conflict(
             "本轮未保存完整整理输入，无法安全续跑；请开始新一轮整理，已保存内容仍可查看".into(),
         )
     })?;
-    let input: FrozenInput = serde_json::from_value(value.clone()).map_err(|_| {
-        CurationError::Failed("本轮冻结资料格式不兼容，已保存内容保留；请开始新一轮整理".into())
+    let input: FrozenInput = serde::Deserialize::deserialize(value).map_err(|_| {
+        CurationError::Conflict("本轮冻结资料格式不兼容，已保存内容保留；请开始新一轮整理".into())
     })?;
-    if input.version != 2 || input.lifecycle_version != candidate.base.lifecycle.version {
-        return Err(CurationError::Failed(
+    if !matches!(input.version, 2 | 3)
+        || (input.version == 3) != input.manifest.is_some()
+        || (input.version == 2 && value.get("prepared").is_none())
+        || input.manifest.as_ref().is_some_and(|m| {
+            input.manifest_hash.as_deref()
+                != Some(nexofolio_contracts::knowledge::frozen_input_hash(value).as_str())
+                || m.project != candidate.project_id
+                || m.candidate != candidate.id
+        })
+        || input.lifecycle_version != candidate.base.lifecycle.version
+    {
+        return Err(CurationError::Conflict(
             "本轮冻结资料版本不兼容，已保存内容保留；请开始新一轮整理".into(),
         ));
     }
     Ok(input)
 }
 
-fn initialize(candidate: &Candidate, job: &Job, automatic: bool) {
+pub(super) fn initialize(candidate: &Candidate, job: &Job, automatic: bool) {
     let mut p: Progress = serde_json::from_value(candidate.progress.clone()).unwrap_or_default();
     if automatic
         && let Some(old) = p
@@ -56,7 +66,7 @@ fn initialize(candidate: &Candidate, job: &Job, automatic: bool) {
     p.heartbeat_at = None;
     p.resume_available = Some(true);
     p.recovery_blocked = false;
-    p.message = automatic.then(|| "服务重启后，系统继续本轮整理".into());
+    p.message = automatic.then(|| "系统自动继续本轮整理".into());
     p.attempts += 1;
     p.attempt_started_at = Some(chrono::Utc::now());
     p.attempt_history.push(Attempt::start(job.run_id));
@@ -66,7 +76,7 @@ fn initialize(candidate: &Candidate, job: &Job, automatic: bool) {
         stage,
         "resume",
         if automatic {
-            "服务重启后，系统继续本轮整理：沿用冻结资料，已确认保存的字段不重跑"
+            "系统自动继续本轮整理：沿用冻结资料，已确认保存的字段不重跑"
         } else {
             "补齐本轮缺口：沿用同一候选和冻结资料，已确认保存的字段不重跑"
         },
@@ -87,6 +97,9 @@ impl Curation {
         project: ProjectId,
         id: uuid::Uuid,
     ) -> Result<Progress, CurationError> {
+        if self.queue.is_some() {
+            return self.enqueue(project, None, None, Some(id)).await;
+        }
         if self.progress(project).status == Status::Running {
             return Err(CurationError::Busy);
         }
@@ -185,7 +198,7 @@ impl Curation {
         result.map(|_| true)
     }
 
-    async fn finish_resume(
+    pub(super) async fn finish_resume(
         &self,
         project: ProjectId,
         candidate: Candidate,

@@ -1,3 +1,4 @@
+mod storage;
 use std::fmt::Display;
 use std::str::FromStr;
 use std::time::Duration;
@@ -694,5 +695,18 @@ impl ObserveTx for PostgresTx {
                 .map_err(unavailable)?;
         }
         Ok(())
+    }
+}
+
+impl nexofolio_common::PoolTelemetry for PostgresObserve {
+    fn pool_snapshots(&self) -> Vec<nexofolio_common::PoolSnapshot> {
+        vec![nexofolio_common::PoolSnapshot {
+            name: "observe",
+            size: self.pool.size(),
+            idle: self.pool.num_idle(),
+            configured_max: self.pool.options().get_max_connections(),
+            waiting: None,
+            acquire_timeouts: None,
+        }]
     }
 }
